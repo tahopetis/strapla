@@ -13,6 +13,24 @@ The app needs exactly two environment variables:
 
 Additional Compose variables: `POSTGRES_PASSWORD`, `STRAPLA_TAG`.
 
+## Container images
+
+Multi-arch images are published to private GHCR by the `docker` workflow:
+
+```
+ghcr.io/tahopetis/strapla:latest            # latest main
+ghcr.io/tahopetis/strapla:sha-<shortsha>    # immutable per commit
+```
+
+Pulling on a deployment host requires a GitHub token with `read:packages` (the repo token used during development does not have it):
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+docker pull ghcr.io/tahopetis/strapla:sha-<shortsha>
+```
+
+Pin `STRAPLA_TAG` to a `sha-` tag in production and promote by changing the tag, not by rebuilding on the host. Images are built for `linux/amd64` and `linux/arm64`; the deployment below was verified on arm64 (see [`docs/checkpoints/m0/deploy-restore-drill.md`](checkpoints/m0/deploy-restore-drill.md)).
+
 ## Deploy (Docker Compose)
 
 ```bash
@@ -48,8 +66,7 @@ docker compose start app
 
 Restore is destructive: confirm you are restoring the intended dump and database before running it.
 
-The backup/restore procedure was drilled on 2026-10-25 and is recorded in
-[](checkpoints/m0/deploy-restore-drill.md).
+The backup/restore procedure was drilled on 2026-10-25 and the evidence is recorded in [`docs/checkpoints/m0/deploy-restore-drill.md`](checkpoints/m0/deploy-restore-drill.md).
 
 ## Upgrades
 
