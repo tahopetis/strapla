@@ -43,9 +43,14 @@ export default async function PlanOverviewPage() {
         title="Plan"
         description="One source of truth for the five-year plan and its annual delivery."
         actions={
-          <Link href="/plan/strategic" className={secondaryLink}>
-            Manage strategic plan
-          </Link>
+          <>
+            <Link href="/plan/strategic" className={secondaryLink}>
+              Manage strategic plan
+            </Link>
+            <Link href="/plan/opening-balances" className={secondaryLink}>
+              Opening balances
+            </Link>
+          </>
         }
       />
       <PlanNav />
@@ -101,10 +106,9 @@ export default async function PlanOverviewPage() {
           </p>
         </Card>
 
-        <Card title="Remaining M1 work" description="The plan module is almost complete.">
+        <Card title="M1 plan module complete" description="The plan is the source of truth for the portfolio; funding allocations arrive with M2.">
           <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Opening balances entry and reconciliation before the FY2027 plan goes live</li>
-            <li>The end-to-end plan pass (E2E) and navigation polish</li>
+            <li>Next: project year allocations, balances and over-budget flags (M2 funding)</li>
           </ol>
         </Card>
       </div>

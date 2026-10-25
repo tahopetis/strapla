@@ -8,9 +8,9 @@ Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the ar
 
 | Milestone | State |
 | --- | --- |
-| **M0 Skeleton** | In progress: Next.js 16 + PostgreSQL 18 + Drizzle, sessions and local auth, audit plumbing, CI and Docker images |
-| **M1 Plan** | Next: strategic plan, SIs, annual plans, programs, projects, recurring ops, opening balances |
-| **M2 Funding** | Top-down allocation, ijin prinsip, pricing chain, balances, flags |
+| **M0 Skeleton** | Done: Next.js 16 + PostgreSQL 18 + Drizzle, sessions and local auth, audit plumbing, CI, Docker images, deployment and restore drill |
+| **M1 Plan** | Done: strategic plan and SIs, annual plans, programs with continuation, projects with ijin prinsip, recurring ops, opening balances, E2E happy path |
+| **M2 Funding** | Next: project year allocations, balances and flags, contract value, reports and exports |
 | **M2.5 Insight** | Reports, CSV/XLSX exports, print views, administrator accounts — the December first release |
 | **M3 Execution** | Spend entries, commitments, settlement |
 | **M4 Multi-year** | Year close and carry-over |
@@ -46,7 +46,19 @@ First visit: `/setup` creates the first administrator (only when no users exist)
 | `pnpm test` | Vitest unit tests (domain and helpers) |
 | `pnpm db:generate` | Generate a migration from the Drizzle schema |
 | `pnpm db:migrate` | Apply pending migrations (`scripts/migrate.mjs`) |
-| `pnpm e2e` | Playwright end-to-end tests (from M1) |
+| `pnpm e2e` | Playwright end-to-end tests (needs a fresh database; see below) |
+
+### End-to-end tests
+
+Playwright drives the full plan happy path against a fresh database:
+
+```bash
+docker compose exec -T db psql -U strapla -d postgres -c 'CREATE DATABASE strapla_e2e'
+DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm db:migrate
+DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm e2e
+```
+
+CI runs the same suite with a PostgreSQL service and the Playwright-managed Chromium.
 
 ### Docker
 
