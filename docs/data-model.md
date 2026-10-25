@@ -1,0 +1,130 @@
+# Data model
+
+Source of truth for the Strapla schema. Implemented in `src/db/schema.ts` with Drizzle migrations under `drizzle/`. Domain rules that *use* this data are in `src/domain` and are specified in [ADR-0003](adr/0003-funding-and-settlement.md); vocabulary is in [GLOSSARY.md](../GLOSSARY.md).
+
+Conventions: UUID primary keys (`gen_random_uuid()`), `timestamptz` timestamps written in UTC and displayed in Asia/Jakarta, money as `bigint` whole Rupiah ≥ 0, `date` for business dates, `created_by`/`updated_by` user references on every mutable financial record, soft cancellation through `voided_at` + `voided_reason` (never `DELETE`). Every mutation also writes an `audit_entries` row in the same transaction ([ADR-0004](adr/0004-audit-and-roles.md)).
+
+## ERD
+
+```mermaid
+erDiagram
+  strategic_plans ||--o{ strategic_initiatives : "has"
+  strategic_plans ||--o{ annual_plans : "has"
+  strategic_initiatives ||--o{ annual_programs : "funded by (exactly one SI)"
+  annual_plans ||--o{ annual_programs : "contains"
+  annual_programs ||--o{ annual_programs : "continues (prev_program_id)"
+  annual_programs ||--o{ project_year_allocations : "allocates to"
+  annual_plans ||--o{ project_year_allocations : "fiscal year of"
+  projects ||--o{ project_year_allocations : "one slice per active FY"
+  projects ||--|| ijin_prinsip_records : "approved by"
+  annual_plans ||--o{ recurring_ops_items : "contains"
+  project_year_allocations ||--o{ commitment_entries : "committed in"
+  recurring_ops_items ||--o{ commitment_entries : "committed in"
+  project_year_allocations ||--o{ spend_entries : "spent against"
+  recurring_ops_items ||--o{ spend_entries : "spent against"
+  spend_categories ||--o{ spend_entries : "classifies"
+  spend_entries ||--o{ commitment_settlements : "pays"
+  commitment_entries ||--o{ commitment_settlements : "settled by"
+  annual_plans ||--o{ carry_over_records : "closed into (M4)"
+  users ||--o{ sessions : "authenticates"
+  users ||--o{ audit_entries : "acts as"
+```
+
+New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_entries` (E12), `spend_categories` (E13). Opening balances (E14) are columns on `strategic_initiatives`, `annual_programs`, `project_year_allocations` and `projects` (see “Opening balances”).
+
+## Enumerations
+
+| Enum | Values |
+| --- | --- |
+| `strategic_plan_status` | `draft`, `active`, `archived` |
+| `annual_plan_status` | `draft`, `active`, `closed` |
+| `project_status` | `active`, `cancelled` |
+| `component` | `capex`, `opex` |
+| `settlement_kind` | `current`, `prior_year_opening` (cross-year in-app settlements are derived, not stored) |
+| `carry_over_level` (M4) | `program`, `project_allocation` |
+
+Derived, never stored: commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags.
+
+## Tables
+
+### Identity and audit
+
+| Table | Key columns | Notes |
+| --- | --- | --- |
+| `users` | `id`, `email` (unique, lower-cased), `name`, `password_hash`, `is_active`, `created_by`, timestamps | Every user is an administrator ([ADR-0004](adr/0004-audit-and-roles.md)). Never deleted. |
+| `sessions` | `id`, `user_id`, `token_hash` (unique), `expires_at`, `last_seen_at`, `revoked_at`, `created_at` | Only the SHA-256 of the cookie token is stored. |
+| `audit_entries` | `id`, `actor_user_id`, `action`, `entity_type`, `entity_id`, `before` jsonb, `after` jsonb, `reason`, `created_at` | Append-only. Indexed by `(entity_type, entity_id, created_at)` and `(created_at)`. |
+| `spend_categories` | `id`, `name` (unique), `sort_order`, `is_active`, timestamps | Administrator-managed reference data; deactivated, never deleted. |
+
+### Plan
+
+| Table | Key columns | Notes |
+| --- | --- | --- |
+| `strategic_plans` | `id`, `name`, `start_fiscal_year`, `end_fiscal_year`, `status`, timestamps | At most one `active` plan and one `draft` plan at a time (enforced in domain + partial unique index). |
+| `strategic_initiatives` | `id`, `plan_id`, `code`, `name`, `owner`, `objective`, `envelope_amount`, `prior_program_budget_used`, `notes`, void/timestamps | Unique `(plan_id, code)`. `prior_program_budget_used` is the opening-balance layer for the envelope check. |
+| `annual_plans` | `id`, `plan_id`, `fiscal_year` (unique), `status`, `closed_at`, `closed_by`, `notes`, timestamps | One per fiscal year (BR-3). Status changes and close are audited. |
+| `annual_programs` | `id`, `annual_plan_id`, `si_id`, `prev_program_id` (self FK), `code`, `name`, `capex_budget`, `opex_budget`, `carry_in_capex`, `carry_in_opex`, `notes`, void/timestamps | Unique `(annual_plan_id, code)`. `prev_program_id` is the program continuation link (program thread). Carry-in comes from the prior year's close (or manual FY2026 close). |
+
+### Projects and annual slices
+
+| Table | Key columns | Notes |
+| --- | --- | --- |
+| `projects` | `id`, `originating_program_id`, `code` (unique, generated `PRJ-<FY>-<nnn>`), `external_reference`, `name`, `description`, `owner`, `start_fiscal_year`, `end_fiscal_year`, `status`, `cancelled_reason`, `allocated_budget_full_life`, `submitted_price`, `final_deal_price`, `opening_allocated`, `opening_committed`, `opening_spent`, void/timestamps | Created once, never duplicated per year (BR-5). `final_deal_price` is the contract value. Approved budget is derived from `ijin_prinsip_records`. |
+| `ijin_prinsip_records` | `id`, `project_id` (unique), `document_number`, `document_date`, `approved_amount`, `approver`, `document_url`, `notes`, timestamps | Exactly one active record per project (charter v0.2 §11 Q2). Edits are audited. `document_url` is the "document link" (no uploads). |
+| `project_year_allocations` | `id`, `project_id`, `annual_plan_id`, `annual_program_id`, `allocation_capex`, `allocation_opex`, `carry_in_capex`, `carry_in_opex`, `notes`, void/timestamps | Unique `(project_id, annual_plan_id)`; the annual slice (E6). Program's SI must equal the project's originating program's SI (BR-6, domain check). |
+| `recurring_ops_items` | `id`, `annual_plan_id`, `name`, `category_id`, `owner`, `opex_budget`, `carry_in_opex`, `notes`, void/timestamps | Opex-only, no SI, no projects (BR-12). Its budget is the ceiling; there is no contract value. |
+
+### Commitments, spend, settlement
+
+| Table | Key columns | Notes |
+| --- | --- | --- |
+| `commitment_entries` | `id`, `project_year_allocation_id` xor `recurring_ops_item_id`, `component`, `amount`, `commitment_date`, `reference`, `description`, void/timestamps | CHECK exactly one parent; recurring ops parent requires `component = 'opex'`. No stored status: derived from settlements. |
+| `spend_entries` | `id`, `project_year_allocation_id` xor `recurring_ops_item_id`, `component`, `amount`, `spent_on`, `category_id`, `vendor`, `reference`, `description`, `settlement_kind`, void/timestamps | CHECK exactly one parent; recurring ops parent requires opex. `prior_year_opening` marks money paying pre-FY2027 commitments ([ADR-0003](adr/0003-funding-and-settlement.md) §4). |
+| `commitment_settlements` | `id`, `spend_entry_id`, `commitment_entry_id`, `amount`, `created_by`, `created_at` | Unique `(spend_entry_id, commitment_entry_id)`; partial settlement via repeated updates (audited) or multiple rows. Sum per commitment ≤ commitment amount; sum per spend ≤ spend amount. Settlement is a lifecycle event and may happen after year close. |
+| `carry_over_records` (M4) | `id`, `closing_annual_plan_id`, `level`, `source_program_id`/`source_allocation_id`, `target_program_id`/`target_allocation_id`, `component`, `amount`, `approval_reference`, `created_by`, `created_at` | Explicit carry-over at year close (BR-13). The target's `carry_in_*` is written when the close completes. |
+
+## Opening balances
+
+The app's first in-app fiscal year is FY2027; FY2026 is closed manually outside the app. Pre-app data enters as opening figures, never as reconstructed records:
+
+| Where | Column(s) | Meaning |
+| --- | --- | --- |
+| `strategic_initiatives` | `prior_program_budget_used` | Program budgets already consumed before FY2027 (SI envelope check) |
+| `annual_programs` (FY2027) | `carry_in_capex`, `carry_in_opex` | Program budget carried forward from the manual FY2026 close |
+| `project_year_allocations` (FY2027) | `carry_in_capex`, `carry_in_opex` | Project allocation carried forward |
+| `projects` | `opening_allocated`, `opening_committed`, `opening_spent` | Lifetime figures before the app: allocated, still-open commitments, actual spend |
+
+Only projects with an allocation in an in-app fiscal year can receive in-app spend and commitments; legacy projects that ended before FY2027 are not modelled inside the app.
+
+## Invariants
+
+Domain functions in `src/domain` implement these; database constraints block the ones that can be structural. Tests reference the `INV` ids.
+
+| ID | Invariant |
+| --- | --- |
+| INV-1 | All amounts are integers ≥ 0 and safe in JS number arithmetic. |
+| INV-2 | A spend entry and a commitment entry each have exactly one parent: a project year allocation or a recurring ops item. |
+| INV-3 | Recurring ops parents only accept `component = 'opex'`. |
+| INV-4 | Sum of commitment amounts (not voided) per project year allocation, plus other commitments of the same project across years, may exceed contract value only with a flag (BR-8, never blocks). |
+| INV-5 | Settlement per commitment ≤ commitment amount; settlement per spend entry ≤ spend amount. |
+| INV-6 | `remaining = allocation + carry_in − open commitments − current-year spend`, per component, where cross-year settlements and `prior_year_opening` spends are excluded from current-year spend. |
+| INV-7 | Program unallocated = `budget + carry_in − allocated`, per component; allocations exceeding available are flagged (BR-7). |
+| INV-8 | SI envelope check = `prior_program_budget_used + Σ program budgets (in-app) ≤ envelope`; exceeding is flagged (BR-2). |
+| INV-9 | One annual plan per fiscal year; plans exist only within the strategic plan horizon (BR-1, BR-3). |
+| INV-10 | One project year allocation per project per active fiscal year; its program's SI must match the project's originating SI (BR-6). |
+| INV-11 | A fiscal year that is `closed` blocks mutations except audited administrator corrections and settlement lifecycle events. |
+| INV-12 | Financial records are never hard-deleted; void requires a reason and an audit entry. |
+| INV-13 | Every mutation writes exactly one audit entry in the same transaction. |
+| INV-14 | Carry-over amounts require an approval reference and are per component (BR-13). |
+
+## Report catalogue (figures come from `src/domain`)
+
+| Report | Level | Figures |
+| --- | --- | --- |
+| SI five-year view | SI | Envelope, prior consumed, cumulative program budget, allocations, commitments, spend, remaining headroom, per component + combined |
+| Annual plan | SI → program | Budget, carry-in, allocated, unallocated, commitments, spend, flags |
+| Project register | project → allocation | Full-life figures (allocated, approved, submitted, final), per-year allocation/commitments/spend, lifetime committed/spent, flags |
+| Budget versus actual | portfolio/SI/program/project/year | Budget, commitments, spend, cross-year settlements line, remaining, per component + combined |
+| Over-budget flags | all levels | The seven flags in ADR-0003 §6 |
+
+All reports export as CSV/XLSX and have a print-friendly route.
