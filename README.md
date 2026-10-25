@@ -1,0 +1,80 @@
+# Strapla
+
+IT portfolio management: plan it, fund it, execute it, spend it, and report it in one place.
+
+Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the architecture decisions in [`docs/adr/`](docs/adr/). The domain vocabulary is [`GLOSSARY.md`](GLOSSARY.md); the target schema is [`docs/data-model.md`](docs/data-model.md).
+
+## Status
+
+| Milestone | State |
+| --- | --- |
+| **M0 Skeleton** | In progress: Next.js 16 + PostgreSQL 18 + Drizzle, sessions and local auth, audit plumbing, CI and Docker images |
+| **M1 Plan** | Next: strategic plan, SIs, annual plans, programs, projects, recurring ops, opening balances |
+| **M2 Funding** | Top-down allocation, ijin prinsip, pricing chain, balances, flags |
+| **M2.5 Insight** | Reports, CSV/XLSX exports, print views, administrator accounts — the December first release |
+| **M3 Execution** | Spend entries, commitments, settlement |
+| **M4 Multi-year** | Year close and carry-over |
+| **M5 Insight** | Dashboards, audit search, polish |
+
+The issue tracker holds the work breakdown; milestones mirror the charter.
+
+## Local development
+
+Requires Node 24, pnpm 11 and Docker.
+
+```bash
+pnpm install
+cp .env.example .env          # adjust DATABASE_URL if needed
+docker compose up -d db       # PostgreSQL 18 on localhost:5432
+pnpm db:migrate               # apply the committed migrations
+pnpm dev                      # http://localhost:3000
+```
+
+When the Drizzle schema changes: `pnpm db:generate` creates a new migration in `drizzle/` (commit it), then `pnpm db:migrate` applies it.
+
+First visit: `/setup` creates the first administrator (only when no users exist), then sign in.
+
+### Commands
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm dev` | Development server |
+| `pnpm build` | Production build |
+| `pnpm start` | Start the production build |
+| `pnpm typecheck` | TypeScript, no emit |
+| `pnpm lint` | ESLint |
+| `pnpm test` | Vitest unit tests (domain and helpers) |
+| `pnpm db:generate` | Generate a migration from the Drizzle schema |
+| `pnpm db:migrate` | Apply pending migrations (`scripts/migrate.mjs`) |
+| `pnpm e2e` | Playwright end-to-end tests (from M1) |
+
+### Docker
+
+```bash
+docker compose up -d db        # database only, for local development
+docker compose up -d           # full stack (pulls the published GHCR image)
+docker compose build app       # build the app image locally
+```
+
+Images are multi-arch (`linux/amd64`, `linux/arm64`) published to private GHCR on `main`; see [`docs/operations.md`](docs/operations.md).
+
+## Layout
+
+```
+src/
+├── app/              Next.js App Router routes (auth pages, protected shell, /healthz)
+├── db/               Drizzle schema and client
+├── domain/           Pure money and funding rules (framework-free, unit tested)
+├── lib/              Display formatting
+└── server/           Auth, sessions, audit trail, server actions
+docs/                 Charter, ADRs, data model, operations
+drizzle/              Generated SQL migrations (committed)
+scripts/migrate.mjs   Migration runner used at container start
+```
+
+## Conventions
+
+- Money is whole Rupiah integers; all money arithmetic lives in `src/domain` (ADR-0003).
+- Every mutation writes an audit entry in the same transaction (ADR-0004).
+- No hard deletes: cancellation is a void status with a reason.
+- Planning artifacts and issues are the source of truth; code follows them.

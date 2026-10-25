@@ -1,0 +1,56 @@
+name: strapla
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: strapla
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strapla}
+      POSTGRES_DB: strapla
+    volumes:
+      - db-data:/var/lib/postgresql
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U strapla -d strapla && pg_isready -U strapla -d strapla']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: ghcr.io/tahopetis/strapla:${STRAPLA_TAG:-latest}
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://strapla:${POSTGRES_PASSWORD:-strapla}@db:5432/strapla
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-strapla}
+    volumes:
+      - backups:/backups
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        while true; do
+          sleep 86400
+          pg_dump -Fc -h db -U strapla -d strapla > "/backups/strapla-$$(date -u +%Y%m%dT%H%M%SZ).dump"
+          find /backups -name 'strapla-*.dump' -mtime +30 -delete
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  backups:
