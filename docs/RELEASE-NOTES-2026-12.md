@@ -70,5 +70,5 @@ gives them too:
 ## Verification evidence
 
 - Unit tests: 62 passing; production build green; E2E green in CI on every merge (the E2E runs a full annual cycle: setup → plan → funding → execution → reports → administration → close/carry-over → program thread).
-- Checkpoints: `docs/checkpoints/m0` (skeleton + deploy/restore drill), `m1` (plan module), `m2` (funding + reports), `m2.5` (administration), `m3` (execution + cross-year reporting), `m4` (year close + program threads), `m5` (dashboard + audit search), `uat` (acceptance dry run).
+- Checkpoints: `docs/checkpoints/m0` (skeleton + deploy/restore drill), `m1` (plan module), `m2` (funding + reports), `m2.5` (administration), `m3` (execution + cross-year reporting), `m4` (year close + program threads), `m5` (dashboard + audit search), `uat` (acceptance dry run), `go-live` (containerized deployment dry run).
 - Charter success criteria coverage is mapped in `docs/checkpoints/uat/README.md`.
