@@ -135,6 +135,33 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
     page.getByText('FY2027 · PRG-2027-001 · Workplace Modernisation 2027').first(),
   ).toBeVisible();
 
+  // ---------------------------------------- commitments, spend and settlement (M3)
+  await page.getByRole('link', { name: 'Open commitments & spend' }).first().click();
+  await expect(page.getByRole('heading', { name: /FY2027 allocation/ })).toBeVisible();
+
+  const commitmentForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add commitment' }) });
+  await commitmentForm.locator('select[name="component"]').selectOption('capex');
+  await commitmentForm.locator('input[name="amount"]').fill('100000000');
+  await commitmentForm.locator('input[name="commitmentDate"]').fill('2027-08-15');
+  await commitmentForm.locator('input[name="reference"]').fill('PO-2027-001');
+  await page.getByRole('button', { name: 'Add commitment' }).click();
+  await expect(page.getByText('Commitment recorded.')).toBeVisible();
+
+  const spendForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Record spend' }) });
+  await spendForm.locator('select[name="component"]').selectOption('capex');
+  await spendForm.locator('input[name="amount"]').fill('60000000');
+  await spendForm.locator('input[name="spentOn"]').fill('2027-09-01');
+  await spendForm.locator('input[name="vendor"]').fill('PT Vendor Nusantara');
+  await spendForm.locator('input[name="reference"]').fill('INV-2027-0001');
+  await spendForm.locator('input[name^="settle_"]').first().fill('60000000');
+  await page.getByRole('button', { name: 'Record spend' }).click();
+  await expect(page.getByText('Spend entry recorded.')).toBeVisible();
+  await expect(page.getByText('partially settled')).toBeVisible();
+
   // ---------------------------------------- program card reflects the allocation
   await page.goto('/plan/annual');
   await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();

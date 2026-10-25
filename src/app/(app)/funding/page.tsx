@@ -68,12 +68,15 @@ export default function FundingPage() {
         <Card
           title="Commitments, spend and settlement"
           description="The execution half of the funding model."
-          actions={<Badge>M3</Badge>}
+          actions={<Badge tone="success">live</Badge>}
         >
-          <p className="text-sm text-slate-700">
-            Commitment entries with the open → settled lifecycle, spend entries and cross-year settlement
-            (ADR-0003) arrive with the execution milestone in January.
-          </p>
+          <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
+            <li>Commitment entries with the open → partially settled → settled lifecycle</li>
+            <li>Spend entries with categories, vendors and invoice references</li>
+            <li>Settlements including cross-year settlement and prior-year opening payments</li>
+            <li>Remaining and the BR-11 spend-versus-commitment warning update immediately</li>
+          </ul>
+          <p className="mt-4 text-sm text-slate-600">Open a project year allocation or a recurring ops item and choose &quot;Open commitments &amp; spend&quot;.</p>
         </Card>
       </div>
     </div>

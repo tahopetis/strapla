@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import {
   HiddenField,
   MoneyField,
@@ -38,8 +39,8 @@ export function ProjectAllocationsSection({
       </div>
       <p className="text-sm text-slate-600">
         One allocation per active fiscal year, attached to that year&apos;s program for the same SI (BR-6).
-        Remaining = allocation + carry-in − open commitments − current-year spend; commitments and spend
-        arrive with M3, so remaining currently equals allocation + carry-in.
+        Remaining = allocation + carry-in − open commitments − current-year spend (ADR-0003), updated as
+        commitments and spend are recorded on the allocation page.
       </p>
 
       {editable && options.options.length > 0 ? (
@@ -92,7 +93,7 @@ export function ProjectAllocationsSection({
       ) : (
         <div className="space-y-4">
           {rows.map((row) => (
-            <AllocationCard key={row.allocation.id} row={row} editable={editable} />
+            <AllocationCard key={row.allocation.id} row={row} editable={editable} projectId={projectId} />
           ))}
         </div>
       )}
@@ -100,13 +101,27 @@ export function ProjectAllocationsSection({
   );
 }
 
-function AllocationCard({ row, editable }: { row: ProjectAllocationRow; editable: boolean }) {
+function AllocationCard({
+  row,
+  editable,
+  projectId,
+}: {
+  row: ProjectAllocationRow;
+  editable: boolean;
+  projectId: string;
+}) {
   const { allocation, annualPlan, program, position } = row;
   return (
     <Card
       title={`FY${annualPlan.fiscalYear} · ${program.code} · ${program.name}`}
       description={`Allocation status: ${annualPlan.status}`}
-      actions={<Badge tone="info">FY{annualPlan.fiscalYear}</Badge>}
+      actions={
+        <div className="flex flex-wrap gap-1">
+          <Badge tone="info">FY{annualPlan.fiscalYear}</Badge>
+          {row.br11Capex ? <Badge tone="danger">capex spend above commitment</Badge> : null}
+          {row.br11Opex ? <Badge tone="danger">opex spend above commitment</Badge> : null}
+        </div>
+      }
     >
       <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-6">
         <div>
@@ -148,6 +163,15 @@ function AllocationCard({ row, editable }: { row: ProjectAllocationRow; editable
       </dl>
 
       {allocation.notes ? <p className="mt-3 text-sm text-slate-600">{allocation.notes}</p> : null}
+
+      <p className="mt-3 text-sm">
+        <Link
+          href={`/plan/projects/${projectId}/allocations/${allocation.id}`}
+          className="text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+        >
+          Open commitments &amp; spend
+        </Link>
+      </p>
 
       {editable ? (
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">

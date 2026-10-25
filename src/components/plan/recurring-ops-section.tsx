@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import {
   HiddenField,
   MoneyField,
@@ -32,7 +33,7 @@ export function RecurringOpsSection({
       </div>
       <p className="text-sm text-slate-600">
         Opex-only annual budget items such as leased lines, existing maintenance and subscriptions. They
-        are not linked to an SI and have no projects (BR-12); commitments and spend arrive in M3.
+        are not linked to an SI and have no projects (BR-12); commitments and spend are managed on the item page.
       </p>
 
       {editable ? (
@@ -111,6 +112,15 @@ function RecurringOpsCard({
           </dd>
         </div>
       </dl>
+
+      <p className="mt-3 text-sm">
+        <Link
+          href={`/plan/annual/${detail.annualPlan.id}/recurring-ops/${item.id}`}
+          className="text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+        >
+          Open commitments &amp; spend
+        </Link>
+      </p>
 
       {item.owner ? <p className="mt-3 text-sm text-slate-600">Owner: {item.owner}</p> : null}
       {item.notes ? <p className="mt-1 text-sm text-slate-600">{item.notes}</p> : null}
