@@ -7,6 +7,7 @@ import {
   planYears,
   pricingFlags,
   programAvailability,
+  validateProjectYears,
   validatePlanYears,
 } from './plan';
 
@@ -105,5 +106,29 @@ describe('pricingFlags (BR-9/BR-18)', () => {
     expect(
       pricingFlags({ approvedBudget: null, submittedPrice: null, finalDealPrice: null }),
     ).toEqual({ overApprovedBudget: false, overSubmittedPrice: false });
+  });
+});
+
+describe('validateProjectYears', () => {
+  const horizon = { startFiscalYear: 2026, endFiscalYear: 2030 };
+
+  it('accepts projects inside the horizon', () => {
+    expect(validateProjectYears({ startFiscalYear: 2027, endFiscalYear: 2029, horizon })).toBeNull();
+    expect(validateProjectYears({ startFiscalYear: 2026, endFiscalYear: 2030, horizon })).toBeNull();
+  });
+
+  it('rejects reversed, too-long and out-of-horizon projects', () => {
+    expect(validateProjectYears({ startFiscalYear: 2029, endFiscalYear: 2028, horizon })).toMatch(
+      /end fiscal year/i,
+    );
+    expect(validateProjectYears({ startFiscalYear: 2000, endFiscalYear: 2015, horizon })).toMatch(
+      /at most 10/i,
+    );
+    expect(validateProjectYears({ startFiscalYear: 2025, endFiscalYear: 2027, horizon })).toMatch(
+      /inside the strategic plan horizon/,
+    );
+    expect(validateProjectYears({ startFiscalYear: 2029, endFiscalYear: 2032, horizon })).toMatch(
+      /inside the strategic plan horizon/,
+    );
   });
 });

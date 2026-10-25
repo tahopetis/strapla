@@ -10,6 +10,7 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/form';
+import { RecurringOpsSection } from '@/components/plan/recurring-ops-section';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader, StatusBadge } from '@/components/ui';
 import type { AnnualPlanDetail, ProgramRow } from '@/server/plan/annual-queries';
@@ -93,6 +94,8 @@ export default async function AnnualPlanPage({
         </Card>
 
         <ProgramsSection detail={detail} editable={editable} />
+
+        <RecurringOpsSection detail={detail} editable={editable} />
       </div>
     </div>
   );

@@ -175,3 +175,94 @@ export const programVoidSchema = z.object({ id: idSchema, reason: reasonSchema }
 export type ProgramCreateInput = z.infer<typeof programCreateSchema>;
 export type ProgramUpdateInput = z.infer<typeof programUpdateSchema>;
 export type ProgramVoidInput = z.infer<typeof programVoidSchema>;
+
+// ---------------------------------------------------------------- projects
+
+const projectCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'Project code is required.')
+  .max(40, 'Project code must be at most 40 characters.')
+  .regex(/^[A-Za-z0-9-]+$/, 'Project code may only contain letters, digits and hyphens.');
+
+const optionalDate = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((value, ctx) => {
+    if (!value) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      ctx.addIssue({ code: 'custom', message: 'Document date must use the YYYY-MM-DD format.' });
+      return z.NEVER;
+    }
+    return value;
+  });
+
+const optionalProjectCode = z
+  .string()
+  .trim()
+  .max(40, 'Project code must be at most 40 characters.')
+  .nullish()
+  .transform((value, ctx) => {
+    if (!value) return null;
+    if (!/^[A-Za-z0-9-]+$/.test(value)) {
+      ctx.addIssue({ code: 'custom', message: 'Project code may only contain letters, digits and hyphens.' });
+      return z.NEVER;
+    }
+    return value;
+  });
+
+const projectFields = z.object({
+  name: requiredText('Project name', 160),
+  externalReference: optionalText(120),
+  owner: optionalText(160),
+  description: optionalText(),
+  startFiscalYear: year('Start fiscal year'),
+  endFiscalYear: year('End fiscal year'),
+  allocatedBudgetFullLife: requiredRupiah('Full-life allocated budget'),
+  submittedPrice: optionalRupiah('Submitted price'),
+  finalDealPrice: optionalRupiah('Final deal price'),
+  openingAllocated: optionalRupiah('Opening allocated budget').transform((value) => value ?? 0),
+  openingCommitted: optionalRupiah('Opening open commitments').transform((value) => value ?? 0),
+  openingSpent: optionalRupiah('Opening actual spend').transform((value) => value ?? 0),
+});
+
+export const projectCreateSchema = projectFields.extend({ originatingProgramId: idSchema, code: optionalProjectCode });
+export const projectUpdateSchema = projectFields.extend({ id: idSchema, code: projectCodeSchema, reason: reasonSchema });
+export const projectCancelSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type ProjectCreateInput = z.infer<typeof projectCreateSchema>;
+export type ProjectUpdateInput = z.infer<typeof projectUpdateSchema>;
+
+// ---------------------------------------------------------------- ijin prinsip
+
+export const ijinPrinsipSaveSchema = z.object({
+  projectId: idSchema,
+  documentNumber: optionalText(120),
+  documentDate: optionalDate,
+  approvedAmount: requiredRupiah('Approved amount'),
+  approver: optionalText(160),
+  documentUrl: optionalText(1000),
+  notes: optionalText(),
+  reason: optionalText(1000),
+});
+
+export type IjinPrinsipSaveInput = z.infer<typeof ijinPrinsipSaveSchema>;
+
+// ---------------------------------------------------------------- recurring ops
+
+const recurringOpsFields = z.object({
+  name: requiredText('Name', 160),
+  categoryId: optionalUuid,
+  owner: optionalText(160),
+  opexBudget: requiredRupiah('Opex budget'),
+  carryInOpex: optionalRupiah('Opex carry-in').transform((value) => value ?? 0),
+  notes: optionalText(),
+});
+
+export const recurringOpsCreateSchema = recurringOpsFields.extend({ annualPlanId: idSchema });
+export const recurringOpsUpdateSchema = recurringOpsFields.extend({ id: idSchema, reason: reasonSchema });
+export const recurringOpsVoidSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type RecurringOpsCreateInput = z.infer<typeof recurringOpsCreateSchema>;
+export type RecurringOpsUpdateInput = z.infer<typeof recurringOpsUpdateSchema>;

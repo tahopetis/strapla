@@ -3,31 +3,40 @@ import { getDb } from '@/db/client';
 import {
   annualPlans,
   annualPrograms,
+  recurringOpsItems,
+  spendCategories,
   strategicInitiatives,
   strategicPlans,
   type AnnualPlan,
   type AnnualProgram,
+  type RecurringOpsItem,
   type StrategicPlan,
 } from '@/db/schema';
 import { formatEntityCode, programAvailability, type ProgramAvailability } from '@/domain/plan';
 
-/** Read queries for annual plans and annual programs (M1 #6/#7). */
+/** Read queries for annual plans, annual programs and recurring ops (M1 #6/#7/#9). */
 
 export interface AnnualPlanListRow {
   annualPlan: AnnualPlan;
   programCount: number;
+  recurringOpsCount: number;
 }
 
 export async function listAnnualPlans(planId: string): Promise<AnnualPlanListRow[]> {
   const rows = await getDb()
     .select({
       annualPlan: annualPlans,
-      programCount: sql<string>`count(${annualPrograms.id})::text`,
+      programCount: sql<string>`count(distinct ${annualPrograms.id})::text`,
+      recurringOpsCount: sql<string>`count(distinct ${recurringOpsItems.id})::text`,
     })
     .from(annualPlans)
     .leftJoin(
       annualPrograms,
       and(eq(annualPrograms.annualPlanId, annualPlans.id), isNull(annualPrograms.voidedAt)),
+    )
+    .leftJoin(
+      recurringOpsItems,
+      and(eq(recurringOpsItems.annualPlanId, annualPlans.id), isNull(recurringOpsItems.voidedAt)),
     )
     .where(eq(annualPlans.planId, planId))
     .groupBy(annualPlans.id)
@@ -36,6 +45,7 @@ export async function listAnnualPlans(planId: string): Promise<AnnualPlanListRow
   return rows.map((row) => ({
     annualPlan: row.annualPlan,
     programCount: Number(row.programCount ?? '0'),
+    recurringOpsCount: Number(row.recurringOpsCount ?? '0'),
   }));
 }
 
@@ -47,12 +57,21 @@ export interface ProgramRow {
   availability: ProgramAvailability;
 }
 
+export interface RecurringOpsRow {
+  item: RecurringOpsItem;
+  categoryName: string | null;
+  /** Budget + carry-in; commitments/spend arrive in M3. */
+  available: number;
+}
+
 export interface AnnualPlanDetail {
   annualPlan: AnnualPlan;
   strategicPlan: StrategicPlan;
   programs: ProgramRow[];
+  recurringOps: RecurringOpsRow[];
   initiativeOptions: Array<{ value: string; label: string }>;
   continuationOptions: Array<{ value: string; label: string }>;
+  categoryOptions: Array<{ value: string; label: string }>;
   suggestedProgramCode: string;
 }
 
@@ -78,6 +97,16 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
     .innerJoin(strategicInitiatives, eq(annualPrograms.siId, strategicInitiatives.id))
     .where(and(eq(annualPrograms.annualPlanId, id), isNull(annualPrograms.voidedAt)))
     .orderBy(asc(annualPrograms.code));
+
+  const recurringRows = await db
+    .select({
+      item: recurringOpsItems,
+      categoryName: spendCategories.name,
+    })
+    .from(recurringOpsItems)
+    .leftJoin(spendCategories, eq(recurringOpsItems.categoryId, spendCategories.id))
+    .where(and(eq(recurringOpsItems.annualPlanId, id), isNull(recurringOpsItems.voidedAt)))
+    .orderBy(asc(recurringOpsItems.name));
 
   const continuationIds = programRows
     .map((row) => row.program.prevProgramId)
@@ -136,6 +165,12 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
     )
     .orderBy(asc(annualPlans.fiscalYear), asc(annualPrograms.code));
 
+  const categoryRows = await db
+    .select({ id: spendCategories.id, name: spendCategories.name })
+    .from(spendCategories)
+    .where(eq(spendCategories.isActive, true))
+    .orderBy(asc(spendCategories.sortOrder), asc(spendCategories.name));
+
   return {
     annualPlan: header.annualPlan,
     strategicPlan: header.strategicPlan,
@@ -148,6 +183,11 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
         : null,
       availability: programAvailability(row.program),
     })),
+    recurringOps: recurringRows.map((row) => ({
+      item: row.item,
+      categoryName: row.categoryName,
+      available: row.item.opexBudget + row.item.carryInOpex,
+    })),
     initiativeOptions: initiativeRows.map((row) => ({
       value: row.id,
       label: `${row.code} · ${row.name}`,
@@ -156,6 +196,7 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
       value: row.id,
       label: `${row.code} · ${row.name} (FY${row.fiscalYear}, ${row.siCode})`,
     })),
+    categoryOptions: categoryRows.map((row) => ({ value: row.id, label: row.name })),
     suggestedProgramCode: formatEntityCode('program', header.annualPlan.fiscalYear, programRows.length + 1),
   };
 }
