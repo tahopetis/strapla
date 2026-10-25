@@ -363,3 +363,12 @@ export type CommitmentCreateInput = z.infer<typeof commitmentCreateSchema>;
 export type CommitmentUpdateInput = z.infer<typeof commitmentUpdateSchema>;
 export type SpendCreateInput = z.infer<typeof spendCreateSchema>;
 export type SpendUpdateInput = z.infer<typeof spendUpdateSchema>;
+
+// ---------------------------------------------------------------- year close (M4)
+
+export const closeFiscalYearSchema = z.object({
+  annualPlanId: idSchema,
+  reference: requiredText('Approval reference', 160),
+});
+
+export type CloseFiscalYearInput = z.infer<typeof closeFiscalYearSchema>;

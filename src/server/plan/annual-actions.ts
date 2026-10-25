@@ -72,12 +72,15 @@ async function loadAnnualPlan(id: string): Promise<AnnualPlanWithStrategic> {
   return row;
 }
 
-async function requireEditableAnnualPlan(id: string): Promise<AnnualPlanWithStrategic> {
+async function requireEditableAnnualPlan(
+  id: string,
+  options: { allowClosed?: boolean } = {},
+): Promise<AnnualPlanWithStrategic> {
   const loaded = await loadAnnualPlan(id);
   if (loaded.strategicPlan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
   }
-  if (loaded.annualPlan.status === 'closed') {
+  if (loaded.annualPlan.status === 'closed' && !options.allowClosed) {
     throw new FormError('This fiscal year is closed and read-only.');
   }
   return loaded;
