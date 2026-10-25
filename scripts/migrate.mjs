@@ -8,7 +8,7 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { max: 1 });
+const sql = postgres(url, { max: 1, onnotice: () => {} });
 try {
   await migrate(drizzle(sql), { migrationsFolder: './drizzle' });
   console.log('migrations applied');
