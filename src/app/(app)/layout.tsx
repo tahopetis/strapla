@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
+      <header className="app-header border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-baseline gap-3">
             <Link href="/dashboard" className="text-lg font-semibold tracking-tight">
@@ -40,8 +40,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6">
-        <nav aria-label="Main" className="w-52 shrink-0">
+      <div className="app-shell mx-auto flex max-w-7xl gap-6 px-4 py-6">
+        <nav aria-label="Main" className="app-nav w-52 shrink-0">
           <ul className="space-y-1 text-sm">
             {navigation.map((item) => (
               <li key={item.href}>
@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <p className="mt-8 px-3 text-xs text-slate-500">
-            M1 Plan complete: plan, programs, projects, recurring ops and opening balances are live. Funding allocations land in M2.
+            M2 funding: allocations, budgets and flags are live, with reports and exports. Administrator accounts and the audit view land next.
           </p>
         </nav>
         <main className="min-w-0 flex-1">{children}</main>

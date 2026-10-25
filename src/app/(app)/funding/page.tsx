@@ -52,11 +52,16 @@ export default function FundingPage() {
         <Card
           title="Reports and exports"
           description="SI five-year view, annual plan view, project register, budget versus actual — CSV/XLSX exports and print views."
-          actions={<Badge tone="warning">next</Badge>}
+          actions={<Badge tone="success">live</Badge>}
         >
           <p className="text-sm text-slate-700">
-            Tracked as <a className={linkClass} href="https://github.com/tahopetis/strapla/issues/15">#15 reports and exports</a>{' '}
-            for the December first release.
+            Every report downloads as CSV or XLSX and prints through the browser for director and finance
+            packs.
+          </p>
+          <p className="mt-4 text-sm">
+            <Link href="/reports" className={linkClass}>
+              Open the reports
+            </Link>
           </p>
         </Card>
 

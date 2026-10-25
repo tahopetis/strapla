@@ -10,8 +10,8 @@ Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the ar
 | --- | --- |
 | **M0 Skeleton** | Done: Next.js 16 + PostgreSQL 18 + Drizzle, sessions and local auth, audit plumbing, CI, Docker images, deployment and restore drill |
 | **M1 Plan** | Done: strategic plan and SIs, annual plans, programs with continuation, projects with ijin prinsip, recurring ops, opening balances, E2E happy path |
-| **M2 Funding** | In progress: project year allocations, balances and flag engine, contract value done; reports and exports next |
-| **M2.5 Insight** | Reports, CSV/XLSX exports, print views, administrator accounts — the December first release |
+| **M2 Funding** | Done: project year allocations, balances and flag engine, pricing chain/contract value, reports with CSV/XLSX exports and print views |
+| **M2.5 Insight** | Next: administrator accounts and audit-trail view, December UAT and go-live readiness — the first release |
 | **M3 Execution** | Spend entries, commitments, settlement |
 | **M4 Multi-year** | Year close and carry-over |
 | **M5 Insight** | Dashboards, audit search, polish |
