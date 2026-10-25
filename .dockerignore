@@ -6,7 +6,8 @@ node_modules
 .env.*
 !.env.example
 docs
-tests
+e2e
+playwright.config.ts
 test-results
 playwright-report
 coverage

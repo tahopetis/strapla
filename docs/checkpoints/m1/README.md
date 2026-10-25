@@ -1,6 +1,8 @@
-# M1 Plan — checkpoint evidence
+# M1 Plan — checkpoint 2 evidence
 
-Captured 2026-10-25/26 against the dev server with PostgreSQL 18.
+Captured 2026-10-25/26 against the dev server with PostgreSQL 18. **M1 is complete**: strategic
+plan and SIs, annual plans, annual programs with continuation, projects with ijin prinsip,
+recurring ops, opening balances, and a committed end-to-end test.
 
 | Screenshot | What it shows |
 | --- | --- |
@@ -14,8 +16,9 @@ Captured 2026-10-25/26 against the dev server with PostgreSQL 18.
 | `08-project-over-approved.png` | Project detail with the full-life pricing chain and the BR-9 flag (final deal price above the ijin prinsip approved amount) |
 | `09-recurring-ops.png` | FY2027 annual plan with the recurring ops section and `Leased lines 2027` (managed category, opex budget, availability) |
 | `10-annual-plans-counts.png` | Annual plans list showing program and recurring ops counts per fiscal year |
+| `11-opening-balances.png` | Opening balances reconciliation: SI envelope, program carry-in, project opening figures and totals |
 
-## Browser verification (headless Chromium)
+## Browser verification (headless Chromium, dev server)
 
 Strategic plan slice (#5):
 
@@ -44,13 +47,29 @@ Projects and recurring ops slice (#8, #9):
 14. Add recurring ops `Leased lines 2027` with the managed `Connectivity` category and opex
     budget Rp 240,000,000 → availability shows on the card and the annual plans list counts it
 
+Opening balances slice (#10):
+
+15. Record program carry-in on `PRG-2027-001` (capex Rp 100,000,000 / opex Rp 25,000,000) with a reason
+16. Record project opening figures on `PRJ-2027-001` (allocated Rp 300,000,000, committed
+    Rp 50,000,000, spent Rp 40,000,000) with a reason
+17. `/plan/opening-balances` reconciles: SI envelopes (prior + in-app programs), program carry-in,
+    project opening position, and totals (prior consumed Rp 1,150,000,000, carry-in and opening
+    figures as entered)
+
+End-to-end test (#11):
+
+18. `e2e/plan-happy-path.spec.ts` runs against a fresh database: first-run setup → strategic plan
+    and SIs → annual plan and program → project with ijin prinsip and BR-9 flag → recurring ops →
+    opening-balances view. It runs in CI (PostgreSQL 18 service, Playwright Chromium) on every PR.
+
 ## Audit trail
 
 `create` (plan, initiatives, annual plans, programs, projects, ijin prinsip, recurring ops),
 `status_change` (plan and annual plan activation with reasons), `update`/`void` actions all write
-`audit_entries` in the same transaction (ADR-0004). Ijin prinsip updates require a reason and store
-the before/after amounts.
+`audit_entries` in the same transaction (ADR-0004). Opening-balance edits are audited like any
+financial change, and ijin prinsip updates require a reason with before/after amounts.
 
-## Remaining M1 work
+## Next
 
-Tracked by #10 (opening balances entry and reconciliation) and #11 (E2E happy path and navigation).
+M2 funding: project year allocations, balances and the over-budget flag engine, contract value,
+reports and exports — the December first release target.

@@ -5,6 +5,7 @@ const links = [
   { href: '/plan/strategic', label: 'Strategic plan & SIs' },
   { href: '/plan/annual', label: 'Annual plans' },
   { href: '/plan/projects', label: 'Projects' },
+  { href: '/plan/opening-balances', label: 'Opening balances' },
 ];
 
 export function PlanNav() {
@@ -21,9 +22,6 @@ export function PlanNav() {
             </Link>
           </li>
         ))}
-        <li>
-          <span className="inline-block px-3 py-2 text-slate-400">Opening balances (next)</span>
-        </li>
       </ul>
     </nav>
   );

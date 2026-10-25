@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <p className="mt-8 px-3 text-xs text-slate-500">
-            M1 Plan in progress: plan, programs, projects and recurring ops are live. Opening balances and the end-to-end pass land next.
+            M1 Plan complete: plan, programs, projects, recurring ops and opening balances are live. Funding allocations land in M2.
           </p>
         </nav>
         <main className="min-w-0 flex-1">{children}</main>
