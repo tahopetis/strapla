@@ -19,6 +19,7 @@ Additional Compose variables: `POSTGRES_PASSWORD`, `STRAPLA_TAG`.
 # on the target host
 export POSTGRES_PASSWORD='<strong-password>'
 export APP_BASE_URL='https://<host>'
+export STRAPLA_TAG='sha-<shortsha>'   # pin a published image
 docker compose pull
 docker compose up -d
 ```
@@ -46,6 +47,9 @@ docker compose start app
 ```
 
 Restore is destructive: confirm you are restoring the intended dump and database before running it.
+
+The backup/restore procedure was drilled on 2026-10-25 and is recorded in
+[](checkpoints/m0/deploy-restore-drill.md).
 
 ## Upgrades
 
