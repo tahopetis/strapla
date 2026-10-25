@@ -299,4 +299,43 @@ export type Project = typeof projects.$inferSelect;
 export type IjinPrinsipRecord = typeof ijinPrinsipRecords.$inferSelect;
 export type RecurringOpsItem = typeof recurringOpsItems.$inferSelect;
 export type SpendCategory = typeof spendCategories.$inferSelect;
+export type ProjectYearAllocation = typeof projectYearAllocations.$inferSelect;
 export type PlanComponent = (typeof component.enumValues)[number];
+
+// ---------------------------------------------------------------- funding (M2)
+
+export const projectYearAllocations = pgTable(
+  'project_year_allocations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    annualPlanId: uuid('annual_plan_id')
+      .notNull()
+      .references(() => annualPlans.id),
+    annualProgramId: uuid('annual_program_id')
+      .notNull()
+      .references(() => annualPrograms.id),
+    allocationCapex: money('allocation_capex').notNull().default(0),
+    allocationOpex: money('allocation_opex').notNull().default(0),
+    carryInCapex: money('carry_in_capex').notNull().default(0),
+    carryInOpex: money('carry_in_opex').notNull().default(0),
+    notes: text('notes'),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedReason: text('voided_reason'),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('project_year_allocations_project_plan_idx').on(table.projectId, table.annualPlanId),
+    index('project_year_allocations_project_idx').on(table.projectId),
+    index('project_year_allocations_program_idx').on(table.annualProgramId),
+    index('project_year_allocations_plan_idx').on(table.annualPlanId),
+    check(
+      'project_year_allocations_non_negative',
+      sql`${table.allocationCapex} >= 0 AND ${table.allocationOpex} >= 0 AND ${table.carryInCapex} >= 0 AND ${table.carryInOpex} >= 0`,
+    ),
+  ],
+);

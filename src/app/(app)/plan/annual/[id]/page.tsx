@@ -185,43 +185,57 @@ function ProgramCard({
   detail: AnnualPlanDetail;
   editable: boolean;
 }) {
-  const { program, availability } = row;
+  const { program, availability, allocatedCapex, allocatedOpex, position } = row;
   return (
     <Card
       title={`${program.code} · ${program.name}`}
       description={`${row.siCode} · ${row.siName}`}
       actions={<Badge tone="info">{row.siCode}</Badge>}
     >
-      <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <dt className="text-slate-500">Capex available</dt>
+          <dt className="text-slate-500">Capex available (budget + carry-in)</dt>
           <dd className="mt-1 font-medium">
             <Money value={availability.capexAvailable} />
           </dd>
         </div>
         <div>
-          <dt className="text-slate-500">Opex available</dt>
+          <dt className="text-slate-500">Capex allocated</dt>
           <dd className="mt-1 font-medium">
-            <Money value={availability.opexAvailable} />
+            <Money value={allocatedCapex} />
           </dd>
         </div>
         <div>
           <dt className="text-slate-500">Capex unallocated</dt>
           <dd className="mt-1 font-medium">
-            <Money value={availability.capexAvailable} />
+            <Money value={position.capex.unallocated} />
+            {position.capex.over ? <Badge tone="danger">over-allocated</Badge> : null}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Opex available (budget + carry-in)</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={availability.opexAvailable} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Opex allocated</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={allocatedOpex} />
           </dd>
         </div>
         <div>
           <dt className="text-slate-500">Opex unallocated</dt>
           <dd className="mt-1 font-medium">
-            <Money value={availability.opexAvailable} />
+            <Money value={position.opex.unallocated} />
+            {position.opex.over ? <Badge tone="danger">over-allocated</Badge> : null}
           </dd>
         </div>
       </dl>
 
       <p className="mt-3 text-xs text-slate-500">
-        Unallocated equals available until project year allocations land in M2 (#12). No project money is
-        committed yet in this milestone.
+        Allocations above the program budget are flagged, never blocked (BR-7/BR-17). Project allocations are
+        managed on the project page.
       </p>
 
       {row.continuationLabel ? (

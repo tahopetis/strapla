@@ -10,10 +10,12 @@ import {
   TextField,
 } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
+import { ProjectAllocationsSection } from '@/components/plan/project-allocations';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
 import { formatDate } from '@/lib/format';
 import type { ProjectDetail } from '@/server/plan/project-queries';
 import { getProjectDetail } from '@/server/plan/project-queries';
+import { listAllocationProgramOptions, listProjectAllocations } from '@/server/plan/allocation-queries';
 import {
   cancelProjectAction,
   saveIjinPrinsipAction,
@@ -41,6 +43,11 @@ export default async function ProjectPage({
     detail.project.status !== 'cancelled' &&
     detail.strategicPlan.status !== 'archived' &&
     detail.annualPlan.status !== 'closed';
+
+  const [allocations, allocationOptions] = await Promise.all([
+    listProjectAllocations(detail.project.id),
+    listAllocationProgramOptions(detail.project.id),
+  ]);
 
   return (
     <div>
@@ -103,13 +110,12 @@ export default async function ProjectPage({
         <PricingCard detail={detail} editable={editable} />
         <IjinPrinsipCard detail={detail} editable={editable} />
 
-        <Card title="Annual slices, commitments and spend" description="Coming in M2/M3.">
-          <p className="text-sm text-slate-600">
-            Project year allocations (one per active fiscal year), fiscal-year commitments and settlement
-            arrive with the funding milestone (#12–#15) and execution milestone (#18–#20). Until then the
-            full-life figures above are the reference record.
-          </p>
-        </Card>
+        <ProjectAllocationsSection
+          projectId={detail.project.id}
+          rows={allocations}
+          options={allocationOptions}
+          editable={editable}
+        />
 
         {editable ? (
           <Card title="Cancel project" description="Cancellation keeps the record and its history; nothing is deleted (BR-14).">
@@ -129,7 +135,7 @@ export default async function ProjectPage({
 }
 
 function PricingCard({ detail, editable }: { detail: ProjectDetail; editable: boolean }) {
-  const { project, flags } = detail;
+  const { project } = detail;
   const approved = detail.ijin?.approvedAmount ?? null;
   return (
     <Card
@@ -137,8 +143,11 @@ function PricingCard({ detail, editable }: { detail: ProjectDetail; editable: bo
       description="Allocated budget, approved budget (ijin prinsip), submitted price and final deal price — the contract value."
       actions={
         <div className="flex flex-wrap gap-1">
-          {flags.overApprovedBudget ? <Badge tone="danger">over approved budget (BR-9)</Badge> : null}
-          {flags.overSubmittedPrice ? <Badge tone="warning">above submitted price (BR-18)</Badge> : null}
+          {detail.fundingFlags.map((flag) => (
+            <Badge key={flag.code} tone={flagTone(flag.code)}>
+              {flagLabel(flag.code)}
+            </Badge>
+          ))}
         </div>
       }
     >
@@ -186,6 +195,27 @@ function PricingCard({ detail, editable }: { detail: ProjectDetail; editable: bo
           <dt className="text-slate-500">Opening actual spend</dt>
           <dd className="mt-1 font-medium">
             <Money value={project.openingSpent} />
+          </dd>
+        </div>
+      </dl>
+
+      <dl className="mt-4 grid gap-4 border-t border-slate-100 pt-4 text-sm sm:grid-cols-3">
+        <div>
+          <dt className="text-slate-500">Lifetime commitments (opening + in-app)</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={detail.lifetimeCommitments} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Total annual allocations</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={detail.totalAllocated} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Full-life allocated budget</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={detail.project.allocatedBudgetFullLife} />
           </dd>
         </div>
       </dl>
@@ -333,4 +363,21 @@ function IjinPrinsipCard({ detail, editable }: { detail: ProjectDetail; editable
       ) : null}
     </Card>
   );
+}
+
+const FLAG_LABELS: Record<string, string> = {
+  over_approved_budget: 'over approved budget (BR-9)',
+  above_submitted_price: 'above submitted price (BR-18)',
+  commitments_over_contract: 'commitments over contract (BR-8)',
+  project_allocations_over_full_life: 'allocations over full-life allocated',
+};
+
+function flagLabel(code: string): string {
+  return FLAG_LABELS[code] ?? code;
+}
+
+function flagTone(code: string): 'danger' | 'warning' {
+  return code === 'above_submitted_price' || code === 'project_allocations_over_full_life'
+    ? 'warning'
+    : 'danger';
 }

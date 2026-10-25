@@ -3,6 +3,7 @@ import { getDb } from '@/db/client';
 import {
   annualPlans,
   annualPrograms,
+  projectYearAllocations,
   recurringOpsItems,
   spendCategories,
   strategicInitiatives,
@@ -13,6 +14,7 @@ import {
   type StrategicPlan,
 } from '@/db/schema';
 import { formatEntityCode, programAvailability, type ProgramAvailability } from '@/domain/plan';
+import { programBudgetPosition, type ProgramBudgetPosition } from '@/domain/funding';
 
 /** Read queries for annual plans, annual programs and recurring ops (M1 #6/#7/#9). */
 
@@ -55,6 +57,9 @@ export interface ProgramRow {
   siName: string;
   continuationLabel: string | null;
   availability: ProgramAvailability;
+  allocatedCapex: number;
+  allocatedOpex: number;
+  position: ProgramBudgetPosition;
 }
 
 export interface RecurringOpsRow {
@@ -107,6 +112,22 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
     .leftJoin(spendCategories, eq(recurringOpsItems.categoryId, spendCategories.id))
     .where(and(eq(recurringOpsItems.annualPlanId, id), isNull(recurringOpsItems.voidedAt)))
     .orderBy(asc(recurringOpsItems.name));
+
+  const allocationRows = await db
+    .select({
+      annualProgramId: projectYearAllocations.annualProgramId,
+      capex: sql<string>`coalesce(sum(${projectYearAllocations.allocationCapex}), 0)::text`,
+      opex: sql<string>`coalesce(sum(${projectYearAllocations.allocationOpex}), 0)::text`,
+    })
+    .from(projectYearAllocations)
+    .where(and(eq(projectYearAllocations.annualPlanId, id), isNull(projectYearAllocations.voidedAt)))
+    .groupBy(projectYearAllocations.annualProgramId);
+  const allocationMap = new Map(
+    allocationRows.map((row) => [
+      row.annualProgramId,
+      { capex: Number(row.capex ?? '0'), opex: Number(row.opex ?? '0') },
+    ]),
+  );
 
   const continuationIds = programRows
     .map((row) => row.program.prevProgramId)
@@ -174,15 +195,28 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
   return {
     annualPlan: header.annualPlan,
     strategicPlan: header.strategicPlan,
-    programs: programRows.map((row) => ({
-      program: row.program,
-      siCode: row.siCode,
-      siName: row.siName,
-      continuationLabel: row.program.prevProgramId
-        ? (continuationLabels.get(row.program.prevProgramId) ?? null)
-        : null,
-      availability: programAvailability(row.program),
-    })),
+    programs: programRows.map((row) => {
+      const allocated = allocationMap.get(row.program.id) ?? { capex: 0, opex: 0 };
+      return {
+        program: row.program,
+        siCode: row.siCode,
+        siName: row.siName,
+        continuationLabel: row.program.prevProgramId
+          ? (continuationLabels.get(row.program.prevProgramId) ?? null)
+          : null,
+        availability: programAvailability(row.program),
+        allocatedCapex: allocated.capex,
+        allocatedOpex: allocated.opex,
+        position: programBudgetPosition({
+          capexBudget: row.program.capexBudget,
+          opexBudget: row.program.opexBudget,
+          carryInCapex: row.program.carryInCapex,
+          carryInOpex: row.program.carryInOpex,
+          allocatedCapex: allocated.capex,
+          allocatedOpex: allocated.opex,
+        }),
+      };
+    }),
     recurringOps: recurringRows.map((row) => ({
       item: row.item,
       categoryName: row.categoryName,

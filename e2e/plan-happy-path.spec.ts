@@ -119,9 +119,34 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('Ijin prinsip saved.')).toBeVisible();
   await expect(page.getByText('over approved budget (BR-9)')).toBeVisible();
 
-  // ------------------------------------------------------------ recurring ops
+  // ------------------------------------------------ project year allocation (M2)
+  const allocationForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add allocation' }) });
+  await allocationForm.locator('select[name="annualProgramId"]').selectOption({
+    label: 'FY2027 · PRG-2027-001 · Workplace Modernisation 2027',
+  });
+  await allocationForm.locator('input[name="allocationCapex"]').fill('500000000');
+  await allocationForm.locator('input[name="allocationOpex"]').fill('100000000');
+  await page.getByRole('button', { name: 'Add allocation' }).click();
+  await expect(page.getByText('Project year allocation saved.')).toBeVisible();
+  await expect(
+    page.getByText('FY2027 · PRG-2027-001 · Workplace Modernisation 2027').first(),
+  ).toBeVisible();
+
+  // ---------------------------------------- program card reflects the allocation
   await page.goto('/plan/annual');
   await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
+  const programCard = page
+    .locator('section')
+    .filter({ hasText: 'PRG-2027-001 · Workplace Modernisation 2027' })
+    .last();
+  await expect(programCard.getByText('Capex allocated')).toBeVisible();
+  await expect(programCard.getByText('Rp 500.000.000')).toBeVisible();
+  await expect(programCard.getByText('Rp 700.000.000')).toBeVisible();
+
+  // ------------------------------------------------------------ recurring ops
   const recurringForm = page
     .locator('form')
     .filter({ has: page.getByRole('button', { name: 'Add recurring ops item' }) });
