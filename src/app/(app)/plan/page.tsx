@@ -101,11 +101,10 @@ export default async function PlanOverviewPage() {
           </p>
         </Card>
 
-        <Card title="What lands next in M1" description="The plan module is being built in the order below.">
+        <Card title="Remaining M1 work" description="The plan module is almost complete.">
           <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Projects with their full-life figures and ijin prinsip records</li>
-            <li>Recurring operations items with opex budgets</li>
             <li>Opening balances entry and reconciliation before the FY2027 plan goes live</li>
+            <li>The end-to-end plan pass (E2E) and navigation polish</li>
           </ol>
         </Card>
       </div>

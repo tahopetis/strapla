@@ -10,6 +10,10 @@ Captured 2026-10-25/26 against the dev server with PostgreSQL 18.
 | `04-si-envelope-after-programs.png` | SI-01 headroom after the program budget: in-app program budgets Rp 1,500,000,000, headroom Rp 2,750,000,000 |
 | `05-continuation-program.png` | FY2028 program continuing `PRG-2027-001` (program thread), with its own budgets and availability |
 | `06-annual-plans-list.png` | Annual plans list showing FY2027 and FY2028 with status and program counts |
+| `07-projects-register.png` | Project register after creating `PRJ-2027-001` (auto code) under `PRG-2027-001` |
+| `08-project-over-approved.png` | Project detail with the full-life pricing chain and the BR-9 flag (final deal price above the ijin prinsip approved amount) |
+| `09-recurring-ops.png` | FY2027 annual plan with the recurring ops section and `Leased lines 2027` (managed category, opex budget, availability) |
+| `10-annual-plans-counts.png` | Annual plans list showing program and recurring ops counts per fiscal year |
 
 ## Browser verification (headless Chromium)
 
@@ -30,13 +34,23 @@ Annual plans and programs slice (#6, #7):
 9. Create the FY2028 annual plan, activate it, and add `PRG-2028-001` continuing `PRG-2027-001` —
    the continuation link renders and is validated as the same SI from an earlier fiscal year
 
+Projects and recurring ops slice (#8, #9):
+
+10. Create a project under `PRG-2027-001` leaving the code empty — `PRJ-2027-001` is generated
+11. Record the ijin prinsip: document `IP-2027-017`, approved Rp 800,000,000 against a final deal
+    price of Rp 900,000,000 → the BR-9 "over approved budget" flag appears
+12. Raise the approved amount to Rp 1,000,000,000 with a required reason → the flag clears
+13. A project outside the plan horizon (start FY2032) is rejected with a friendly message
+14. Add recurring ops `Leased lines 2027` with the managed `Connectivity` category and opex
+    budget Rp 240,000,000 → availability shows on the card and the annual plans list counts it
+
 ## Audit trail
 
-`create` (plan, initiatives, annual plans, programs), `status_change` (plan and annual plan
-activation with reasons), `update`/`void` actions all write `audit_entries` in the same
-transaction (ADR-0004).
+`create` (plan, initiatives, annual plans, programs, projects, ijin prinsip, recurring ops),
+`status_change` (plan and annual plan activation with reasons), `update`/`void` actions all write
+`audit_entries` in the same transaction (ADR-0004). Ijin prinsip updates require a reason and store
+the before/after amounts.
 
 ## Remaining M1 work
 
-Tracked by #8 (projects + ijin prinsip), #9 (recurring ops items), #10 (opening balances and
-reconciliation), #11 (E2E happy path and navigation).
+Tracked by #10 (opening balances entry and reconciliation) and #11 (E2E happy path and navigation).

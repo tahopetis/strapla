@@ -1,0 +1,159 @@
+import {
+  HiddenField,
+  MoneyField,
+  ReasonField,
+  SelectField,
+  SubmitButton,
+  TextAreaField,
+  TextField,
+} from '@/components/form';
+import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import type { AnnualPlanDetail, RecurringOpsRow } from '@/server/plan/annual-queries';
+import {
+  createRecurringOpsAction,
+  updateRecurringOpsAction,
+  voidRecurringOpsAction,
+} from '@/server/plan/recurring-actions';
+
+const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
+
+export function RecurringOpsSection({
+  detail,
+  editable,
+}: {
+  detail: AnnualPlanDetail;
+  editable: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold tracking-tight">Recurring operations</h2>
+        <Badge>{detail.recurringOps.length}</Badge>
+      </div>
+      <p className="text-sm text-slate-600">
+        Opex-only annual budget items such as leased lines, existing maintenance and subscriptions. They
+        are not linked to an SI and have no projects (BR-12); commitments and spend arrive in M3.
+      </p>
+
+      {editable ? (
+        <Card
+          title="Add recurring ops item"
+          description="The annual opex budget is the ceiling; carry-in comes from an opening balance or a prior-year carry-over."
+        >
+          <form action={createRecurringOpsAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <HiddenField name="annualPlanId" value={detail.annualPlan.id} />
+            <TextField label="Name" name="name" required maxLength={160} />
+            <SelectField
+              label="Category"
+              name="categoryId"
+              placeholder="No category"
+              options={detail.categoryOptions}
+            />
+            <TextField label="Owner" name="owner" maxLength={160} />
+            <MoneyField label="Opex budget" name="opexBudget" defaultValue={0} required />
+            <MoneyField label="Opex carry-in" name="carryInOpex" defaultValue={0} />
+            <div className="sm:col-span-2 lg:col-span-3">
+              <TextAreaField label="Notes" name="notes" rows={2} />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <SubmitButton>Add recurring ops item</SubmitButton>
+            </div>
+          </form>
+        </Card>
+      ) : null}
+
+      {detail.recurringOps.length === 0 ? (
+        <EmptyState>No recurring ops items in this annual plan yet.</EmptyState>
+      ) : (
+        <div className="space-y-4">
+          {detail.recurringOps.map((row) => (
+            <RecurringOpsCard key={row.item.id} row={row} detail={detail} editable={editable} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecurringOpsCard({
+  row,
+  detail,
+  editable,
+}: {
+  row: RecurringOpsRow;
+  detail: AnnualPlanDetail;
+  editable: boolean;
+}) {
+  const { item } = row;
+  return (
+    <Card
+      title={item.name}
+      description={row.categoryName ? `Category: ${row.categoryName}` : undefined}
+      actions={<Badge tone="info">Opex only</Badge>}
+    >
+      <dl className="grid gap-4 text-sm sm:grid-cols-3">
+        <div>
+          <dt className="text-slate-500">Opex budget</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={item.opexBudget} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Opex carry-in</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={item.carryInOpex} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Available</dt>
+          <dd className="mt-1 font-medium">
+            <Money value={row.available} />
+          </dd>
+        </div>
+      </dl>
+
+      {item.owner ? <p className="mt-3 text-sm text-slate-600">Owner: {item.owner}</p> : null}
+      {item.notes ? <p className="mt-1 text-sm text-slate-600">{item.notes}</p> : null}
+
+      {editable ? (
+        <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
+          <details>
+            <summary className={summaryClass}>Edit item</summary>
+            <form action={updateRecurringOpsAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+              <HiddenField name="id" value={item.id} />
+              <TextField label="Name" name="name" defaultValue={item.name} required maxLength={160} />
+              <SelectField
+                label="Category"
+                name="categoryId"
+                placeholder="No category"
+                options={detail.categoryOptions}
+                defaultValue={item.categoryId ?? ''}
+              />
+              <TextField label="Owner" name="owner" defaultValue={item.owner} maxLength={160} />
+              <MoneyField label="Opex budget" name="opexBudget" defaultValue={item.opexBudget} required />
+              <MoneyField label="Opex carry-in" name="carryInOpex" defaultValue={item.carryInOpex} />
+              <div className="sm:col-span-2">
+                <TextAreaField label="Notes" name="notes" defaultValue={item.notes} rows={2} />
+              </div>
+              <div className="sm:col-span-2">
+                <ReasonField />
+              </div>
+              <div className="sm:col-span-2">
+                <SubmitButton>Save changes</SubmitButton>
+              </div>
+            </form>
+          </details>
+
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-red-700">Void item</summary>
+            <form action={voidRecurringOpsAction} className="mt-4 space-y-3">
+              <HiddenField name="id" value={item.id} />
+              <ReasonField hint="Voiding keeps the record and its history." />
+              <SubmitButton variant="danger">Void item</SubmitButton>
+            </form>
+          </details>
+        </div>
+      ) : null}
+    </Card>
+  );
+}

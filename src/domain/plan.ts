@@ -127,3 +127,33 @@ export function pricingFlags(input: {
       submittedPrice !== null && finalDealPrice !== null && finalDealPrice > submittedPrice,
   };
 }
+
+/**
+ * Project years must sit inside the strategic plan horizon (BR-1/BR-5) and a
+ * project spans at most ten fiscal years.
+ */
+export function validateProjectYears(input: {
+  startFiscalYear: number;
+  endFiscalYear: number;
+  horizon: { startFiscalYear: number; endFiscalYear: number };
+}): string | null {
+  try {
+    assertFiscalYear(input.startFiscalYear, 'start fiscal year');
+    assertFiscalYear(input.endFiscalYear, 'end fiscal year');
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Invalid project years';
+  }
+  if (input.endFiscalYear < input.startFiscalYear) {
+    return 'The project end fiscal year must not be before its start.';
+  }
+  if (input.endFiscalYear - input.startFiscalYear + 1 > 10) {
+    return 'A project can span at most 10 fiscal years.';
+  }
+  if (
+    input.startFiscalYear < input.horizon.startFiscalYear ||
+    input.endFiscalYear > input.horizon.endFiscalYear
+  ) {
+    return `The project years must be inside the strategic plan horizon (${input.horizon.startFiscalYear}–${input.horizon.endFiscalYear}).`;
+  }
+  return null;
+}

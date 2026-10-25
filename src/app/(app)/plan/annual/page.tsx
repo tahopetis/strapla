@@ -106,6 +106,7 @@ export default async function AnnualPlansPage({
                   <th className="py-2 pr-4">Fiscal year</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Programs</th>
+                  <th className="py-2 pr-4">Recurring ops</th>
                   <th className="py-2">Actions</th>
                 </tr>
               </thead>
@@ -118,6 +119,9 @@ export default async function AnnualPlansPage({
                     </td>
                     <td className="py-3 pr-4">
                       <Badge>{row.programCount}</Badge>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <Badge>{row.recurringOpsCount}</Badge>
                     </td>
                     <td className="py-3">
                       <Link href={`/plan/annual/${row.annualPlan.id}`} className={linkClass}>
