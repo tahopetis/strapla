@@ -9,6 +9,7 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/form';
+import { EntityHistory } from '@/components/entity-history';
 import { PlanNav } from '@/components/plan-nav';
 import { ProjectAllocationsSection } from '@/components/plan/project-allocations';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
@@ -16,6 +17,7 @@ import { formatDate } from '@/lib/format';
 import type { ProjectDetail } from '@/server/plan/project-queries';
 import { getProjectDetail } from '@/server/plan/project-queries';
 import { listAllocationProgramOptions, listProjectAllocations } from '@/server/plan/allocation-queries';
+import { listEntityHistory } from '@/server/admin/queries';
 import {
   cancelProjectAction,
   saveIjinPrinsipAction,
@@ -44,9 +46,10 @@ export default async function ProjectPage({
     detail.strategicPlan.status !== 'archived' &&
     detail.annualPlan.status !== 'closed';
 
-  const [allocations, allocationOptions] = await Promise.all([
+  const [allocations, allocationOptions, history] = await Promise.all([
     listProjectAllocations(detail.project.id),
     listAllocationProgramOptions(detail.project.id),
+    listEntityHistory('project', detail.project.id, 10),
   ]);
 
   return (
@@ -116,6 +119,8 @@ export default async function ProjectPage({
           options={allocationOptions}
           editable={editable}
         />
+
+        <EntityHistory entries={history} />
 
         {editable ? (
           <Card title="Cancel project" description="Cancellation keeps the record and its history; nothing is deleted (BR-14).">

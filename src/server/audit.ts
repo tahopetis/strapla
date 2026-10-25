@@ -19,6 +19,7 @@ export type AuditAction =
   | 'settle'
   | 'member_create'
   | 'member_deactivate'
+  | 'member_activate'
   | 'password_reset'
   | 'session_revoke';
 

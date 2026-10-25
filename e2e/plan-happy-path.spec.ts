@@ -194,6 +194,32 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   expect(xlsx.status()).toBe(200);
   expect(xlsx.headers()['content-type']).toContain('spreadsheetml');
 
+  // ------------------------------------------------------ administration (M2.5)
+  await page.goto('/admin/members');
+  await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
+  const createMember = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Create member' }) });
+  await createMember.locator('input[name="name"]').fill('Second Admin');
+  await createMember.locator('input[name="email"]').fill('second-admin@strapla.test');
+  await createMember.locator('input[name="password"]').fill('another strong password');
+  await page.getByRole('button', { name: 'Create member' }).click();
+  await expect(page.getByText('Member created.')).toBeVisible();
+  await expect(page.getByText('second-admin@strapla.test')).toBeVisible();
+
+  const memberRow = page.locator('tbody tr', { hasText: 'second-admin@strapla.test' });
+  await memberRow.locator('summary', { hasText: 'Manage' }).click();
+  const deactivateForm = memberRow
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Deactivate member' }) });
+  await deactivateForm.locator('textarea[name="reason"]').fill('Testing the deactivation flow.');
+  await deactivateForm.getByRole('button', { name: 'Deactivate member' }).click();
+  await expect(page.getByText('Member deactivated.')).toBeVisible();
+
+  await page.goto('/admin/audit?entityType=user');
+  await expect(page.getByText('member_create').first()).toBeVisible();
+  await expect(page.getByText('member_deactivate').first()).toBeVisible();
+
   // ------------------------------------------------------ plan is persisted
   await page.goto('/plan/strategic');
   await expect(page.getByText('SI-01 · Digital Workplace')).toBeVisible();
