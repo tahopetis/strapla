@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <p className="mt-8 px-3 text-xs text-slate-500">
-            M0 walking skeleton. The plan and funding modules land in M1 and M2.
+            M1 Plan in progress: the strategic plan and its initiatives are live. Annual plans, programs and projects land next.
           </p>
         </nav>
         <main className="min-w-0 flex-1">{children}</main>
