@@ -103,7 +103,6 @@ export default async function PlanOverviewPage() {
 
         <Card title="What lands next in M1" description="The plan module is being built in the order below.">
           <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Annual plans per fiscal year, then annual programs with capex/opex budgets and continuation links</li>
             <li>Projects with their full-life figures and ijin prinsip records</li>
             <li>Recurring operations items with opex budgets</li>
             <li>Opening balances entry and reconciliation before the FY2027 plan goes live</li>
