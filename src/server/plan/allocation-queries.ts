@@ -12,6 +12,7 @@ import {
   type ProjectYearAllocation,
 } from '@/db/schema';
 import { allocationRemaining, type AllocationPosition } from '@/domain/funding';
+import { getAllocationFunding } from './execution-queries';
 
 /** Read queries for project year allocations (M2 #12). */
 
@@ -20,6 +21,8 @@ export interface ProjectAllocationRow {
   annualPlan: AnnualPlan;
   program: AnnualProgram;
   position: AllocationPosition;
+  br11Capex: boolean;
+  br11Opex: boolean;
 }
 
 export async function listProjectAllocations(projectId: string): Promise<ProjectAllocationRow[]> {
@@ -37,17 +40,26 @@ export async function listProjectAllocations(projectId: string): Promise<Project
     )
     .orderBy(asc(annualPlans.fiscalYear));
 
-  return rows.map((row) => ({
-    allocation: row.allocation,
-    annualPlan: row.annualPlan,
-    program: row.program,
-    position: allocationRemaining({
-      allocationCapex: row.allocation.allocationCapex,
-      allocationOpex: row.allocation.allocationOpex,
-      carryInCapex: row.allocation.carryInCapex,
-      carryInOpex: row.allocation.carryInOpex,
+  return Promise.all(
+    rows.map(async (row) => {
+      const funding = await getAllocationFunding(row.allocation.id);
+      return {
+        allocation: row.allocation,
+        annualPlan: row.annualPlan,
+        program: row.program,
+        position: funding
+          ? { capex: funding.totals.remainingCapex, opex: funding.totals.remainingOpex }
+          : allocationRemaining({
+              allocationCapex: row.allocation.allocationCapex,
+              allocationOpex: row.allocation.allocationOpex,
+              carryInCapex: row.allocation.carryInCapex,
+              carryInOpex: row.allocation.carryInOpex,
+            }),
+        br11Capex: funding?.totals.br11Capex ?? false,
+        br11Opex: funding?.totals.br11Opex ?? false,
+      };
     }),
-  }));
+  );
 }
 
 export interface AllocationProgramOptions {

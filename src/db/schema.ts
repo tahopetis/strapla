@@ -300,6 +300,10 @@ export type IjinPrinsipRecord = typeof ijinPrinsipRecords.$inferSelect;
 export type RecurringOpsItem = typeof recurringOpsItems.$inferSelect;
 export type SpendCategory = typeof spendCategories.$inferSelect;
 export type ProjectYearAllocation = typeof projectYearAllocations.$inferSelect;
+export type CommitmentEntry = typeof commitmentEntries.$inferSelect;
+export type SpendEntry = typeof spendEntries.$inferSelect;
+export type CommitmentSettlement = typeof commitmentSettlements.$inferSelect;
+export type SettlementKind = (typeof settlementKind.enumValues)[number];
 export type PlanComponent = (typeof component.enumValues)[number];
 
 // ---------------------------------------------------------------- funding (M2)
@@ -337,5 +341,107 @@ export const projectYearAllocations = pgTable(
       'project_year_allocations_non_negative',
       sql`${table.allocationCapex} >= 0 AND ${table.allocationOpex} >= 0 AND ${table.carryInCapex} >= 0 AND ${table.carryInOpex} >= 0`,
     ),
+  ],
+);
+
+// ---------------------------------------------------------------- execution (M3)
+
+export const settlementKind = pgEnum('settlement_kind', ['current', 'prior_year_opening']);
+
+export const commitmentEntries = pgTable(
+  'commitment_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectYearAllocationId: uuid('project_year_allocation_id').references(
+      () => projectYearAllocations.id,
+    ),
+    recurringOpsItemId: uuid('recurring_ops_item_id').references(() => recurringOpsItems.id),
+    component: component('component').notNull(),
+    amount: money('amount').notNull(),
+    commitmentDate: date('commitment_date', { mode: 'string' }).notNull(),
+    reference: text('reference'),
+    description: text('description'),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedReason: text('voided_reason'),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    index('commitment_entries_allocation_idx').on(table.projectYearAllocationId),
+    index('commitment_entries_recurring_idx').on(table.recurringOpsItemId),
+    check('commitment_entries_amount_positive', sql`${table.amount} > 0`),
+    check(
+      'commitment_entries_one_parent',
+      sql`(
+        (${table.projectYearAllocationId} IS NOT NULL AND ${table.recurringOpsItemId} IS NULL)
+        OR (${table.projectYearAllocationId} IS NULL AND ${table.recurringOpsItemId} IS NOT NULL)
+      )`,
+    ),
+    check(
+      'commitment_entries_recurring_opex_only',
+      sql`${table.recurringOpsItemId} IS NULL OR ${table.component} = 'opex'`,
+    ),
+  ],
+);
+
+export const spendEntries = pgTable(
+  'spend_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectYearAllocationId: uuid('project_year_allocation_id').references(
+      () => projectYearAllocations.id,
+    ),
+    recurringOpsItemId: uuid('recurring_ops_item_id').references(() => recurringOpsItems.id),
+    component: component('component').notNull(),
+    amount: money('amount').notNull(),
+    spentOn: date('spent_on', { mode: 'string' }).notNull(),
+    categoryId: uuid('category_id').references(() => spendCategories.id),
+    vendor: text('vendor'),
+    reference: text('reference'),
+    description: text('description'),
+    settlementKind: settlementKind('settlement_kind').notNull().default('current'),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedReason: text('voided_reason'),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    index('spend_entries_allocation_idx').on(table.projectYearAllocationId),
+    index('spend_entries_recurring_idx').on(table.recurringOpsItemId),
+    check('spend_entries_amount_positive', sql`${table.amount} > 0`),
+    check(
+      'spend_entries_one_parent',
+      sql`(
+        (${table.projectYearAllocationId} IS NOT NULL AND ${table.recurringOpsItemId} IS NULL)
+        OR (${table.projectYearAllocationId} IS NULL AND ${table.recurringOpsItemId} IS NOT NULL)
+      )`,
+    ),
+    check(
+      'spend_entries_recurring_opex_only',
+      sql`${table.recurringOpsItemId} IS NULL OR ${table.component} = 'opex'`,
+    ),
+  ],
+);
+
+export const commitmentSettlements = pgTable(
+  'commitment_settlements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    spendEntryId: uuid('spend_entry_id')
+      .notNull()
+      .references(() => spendEntries.id),
+    commitmentEntryId: uuid('commitment_entry_id')
+      .notNull()
+      .references(() => commitmentEntries.id),
+    amount: money('amount').notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('commitment_settlements_pair_idx').on(table.spendEntryId, table.commitmentEntryId),
+    index('commitment_settlements_commitment_idx').on(table.commitmentEntryId),
+    check('commitment_settlements_amount_positive', sql`${table.amount} > 0`),
   ],
 );

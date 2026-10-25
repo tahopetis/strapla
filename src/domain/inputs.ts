@@ -319,3 +319,47 @@ export const memberPasswordResetSchema = z.object({
 export type MemberCreateInput = z.infer<typeof memberCreateSchema>;
 export type MemberReasonInput = z.infer<typeof memberReasonSchema>;
 export type MemberPasswordResetInput = z.infer<typeof memberPasswordResetSchema>;
+
+// ---------------------------------------------------------------- execution (M3)
+
+const componentSchema = z.enum(['capex', 'opex']);
+const isoDateSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the YYYY-MM-DD date format.');
+
+const commitmentFields = z.object({
+  component: componentSchema,
+  amount: requiredRupiah('Commitment amount'),
+  commitmentDate: isoDateSchema,
+  reference: optionalText(120),
+  description: optionalText(),
+  allocationId: optionalUuid,
+  recurringOpsItemId: optionalUuid,
+});
+
+export const commitmentCreateSchema = commitmentFields;
+export const commitmentUpdateSchema = commitmentFields.extend({ id: idSchema, reason: reasonSchema });
+export const commitmentVoidSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+const spendFields = z.object({
+  component: componentSchema,
+  amount: requiredRupiah('Spend amount'),
+  spentOn: isoDateSchema,
+  categoryId: optionalUuid,
+  vendor: optionalText(160),
+  reference: optionalText(120),
+  description: optionalText(),
+  settlementKind: z.enum(['current', 'prior_year_opening']),
+  allocationId: optionalUuid,
+  recurringOpsItemId: optionalUuid,
+});
+
+export const spendCreateSchema = spendFields;
+export const spendUpdateSchema = spendFields.extend({ id: idSchema, reason: reasonSchema });
+export const spendVoidSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type CommitmentCreateInput = z.infer<typeof commitmentCreateSchema>;
+export type CommitmentUpdateInput = z.infer<typeof commitmentUpdateSchema>;
+export type SpendCreateInput = z.infer<typeof spendCreateSchema>;
+export type SpendUpdateInput = z.infer<typeof spendUpdateSchema>;

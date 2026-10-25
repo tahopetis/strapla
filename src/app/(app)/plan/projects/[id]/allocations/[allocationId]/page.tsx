@@ -1,0 +1,87 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import {
+  CommitmentsSection,
+  FundingSummaryCard,
+  SpendSection,
+} from '@/components/execution/execution-sections';
+import { PlanNav } from '@/components/plan-nav';
+import { Flash, PageHeader } from '@/components/ui';
+import {
+  getAllocationFunding,
+  listSpendCategoryOptions,
+} from '@/server/plan/execution-queries';
+
+export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: 'Allocation execution' };
+
+export default async function AllocationFundingPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string; allocationId: string }>;
+  searchParams: Promise<{ error?: string; message?: string }>;
+}) {
+  const { id, allocationId } = await params;
+  const { error, message } = await searchParams;
+  const funding = await getAllocationFunding(allocationId);
+  if (!funding || funding.project.id !== id) notFound();
+
+  const categories = await listSpendCategoryOptions();
+  const editable =
+    funding.strategicPlan.status !== 'archived' &&
+    funding.annualPlan.status !== 'closed' &&
+    funding.project.status !== 'cancelled';
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div>
+      <PageHeader
+        title={`FY${funding.annualPlan.fiscalYear} allocation · ${funding.program.code}`}
+        description={`${funding.project.code} · ${funding.project.name}`}
+        actions={
+          <Link href={`/plan/projects/${funding.project.id}`} className="text-sm text-slate-600 hover:text-slate-900">
+            ← Project
+          </Link>
+        }
+      />
+      <PlanNav />
+      <Flash error={error} message={message} />
+
+      <div className="space-y-6">
+        <FundingSummaryCard
+          title="Allocation and execution"
+          description="Commitments and spend for this fiscal-year slice; remaining follows ADR-0003."
+          totals={funding.totals}
+          allocationCapex={funding.allocation.allocationCapex}
+          allocationOpex={funding.allocation.allocationOpex}
+          carryInCapex={funding.allocation.carryInCapex}
+          carryInOpex={funding.allocation.carryInOpex}
+          allowCapex
+        />
+
+        <CommitmentsSection
+          parentKind="allocation"
+          parentId={funding.allocation.id}
+          rows={funding.commitments}
+          editable={editable}
+          allowCapex
+          today={today}
+        />
+
+        <SpendSection
+          parentKind="allocation"
+          parentId={funding.allocation.id}
+          rows={funding.spends}
+          settlementOptions={funding.settlementOptions}
+          categoryOptions={categories}
+          editable={editable}
+          allowCapex
+          today={today}
+          fiscalYear={funding.annualPlan.fiscalYear}
+        />
+      </div>
+    </div>
+  );
+}
