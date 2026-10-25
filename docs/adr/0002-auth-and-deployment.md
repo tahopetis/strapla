@@ -26,7 +26,7 @@
 
 - Opaque random token (32 bytes, base64url) in an `HttpOnly`, `SameSite=Lax`, `Path=/` cookie; `Secure` when the app is served over HTTPS.
 - The database stores only the SHA-256 of the token in a `sessions` table with `user_id`, `created_at`, `expires_at`, `last_seen_at`, and `revoked_at`.
-- Sessions expire after 30 days, sliding (the expiry is extended when fewer than 15 days remain). A password change or administrator reset revokes all of the account's sessions.
+- Sessions expire 30 days after sign-in; signing in again issues a new session. A password change or administrator reset revokes all of the account's sessions (sessions are revocable from the database at any time).
 - Authentication is enforced by a server-side helper used in the root layout and in every mutating server action; there is no client-side trust.
 
 ### Audit of security events
@@ -38,7 +38,7 @@
 
 - Multi-stage `Dockerfile`: pnpm install → `next build` (standalone output) → runtime image on `node:24-alpine`, non-root user, `HEALTHCHECK` against `/healthz`.
 - `docker-compose.yml` at the repo root: `app`, `db` (`postgres:18-alpine`), and a backup service. PostgreSQL data lives in a named volume. Migrations run on app start (`drizzle-kit migrate` in the entrypoint) before the server starts — single-instance deployment, so this is safe.
-- Configuration is environment only: `DATABASE_URL`, `APP_BASE_URL`, `SESSION_SECRET`. Nothing else is required to boot.
+- Configuration is environment only: `DATABASE_URL` and `APP_BASE_URL`. Nothing else is required to boot.
 - Images are published to private GHCR as **multi-arch** (`linux/amd64`, `linux/arm64`) with `sha-<commit>` and `latest` tags, so the same image runs on the dev box and on a future VPS.
 - TLS terminates at a reverse proxy (Caddy or the platform) once a host and domain exist. Until then the app runs on HTTP for local use; the secure-cookie flag follows `APP_BASE_URL`.
 - **Nightly backup:** `pg_dump -Fc` to a mounted volume, retained 30 days; a documented restore procedure is part of M0 and is tested at least once. Off-site copies are deferred until the host is known.
@@ -50,7 +50,6 @@ Host, domain, TLS and SSH ownership are deferred (charter §11); images and comp
 ## Consequences
 
 - No external dependency before go-live; SSO can be added later because email is the identity key and `users` has no provider coupling.
-- Rotating `SESSION_SECRET` logs every session out; acceptable and documented.
 - The in-memory login limiter is per-process; the deployment is a single instance, so this is adequate.
 - Migrating on container start is simple but means a bad migration delays boot; migrations are reviewed in PRs and tested in CI.
 - Multi-arch images double CI build time but keep both the dev box (arm64) and a conventional VPS (amd64) deployable with the same tag.
