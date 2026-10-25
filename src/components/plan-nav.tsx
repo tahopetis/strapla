@@ -3,6 +3,7 @@ import Link from 'next/link';
 const links = [
   { href: '/plan', label: 'Overview' },
   { href: '/plan/strategic', label: 'Strategic plan & SIs' },
+  { href: '/plan/annual', label: 'Annual plans' },
 ];
 
 export function PlanNav() {
@@ -19,9 +20,6 @@ export function PlanNav() {
             </Link>
           </li>
         ))}
-        <li>
-          <span className="inline-block px-3 py-2 text-slate-400">Annual plans (next)</span>
-        </li>
         <li>
           <span className="inline-block px-3 py-2 text-slate-400">Projects (next)</span>
         </li>

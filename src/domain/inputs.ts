@@ -117,3 +117,61 @@ export const initiativeVoidSchema = z.object({ id: idSchema, reason: reasonSchem
 export type InitiativeCreateInput = z.infer<typeof initiativeCreateSchema>;
 export type InitiativeUpdateInput = z.infer<typeof initiativeUpdateSchema>;
 export type InitiativeVoidInput = z.infer<typeof initiativeVoidSchema>;
+
+// ---------------------------------------------------------------- annual plan
+
+const fiscalYearSchema = year('Fiscal year');
+
+export const annualPlanCreateSchema = z.object({
+  planId: idSchema,
+  fiscalYear: fiscalYearSchema,
+  notes: optionalText(),
+});
+
+export const annualPlanStatusSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type AnnualPlanCreateInput = z.infer<typeof annualPlanCreateSchema>;
+export type AnnualPlanStatusInput = z.infer<typeof annualPlanStatusSchema>;
+
+// ---------------------------------------------------------------- annual program
+
+const programCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'Program code is required.')
+  .max(40, 'Program code must be at most 40 characters.')
+  .regex(/^[A-Za-z0-9-]+$/, 'Program code may only contain letters, digits and hyphens.');
+
+const optionalUuid = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((value, ctx) => {
+    if (!value) return null;
+    const parsed = z.uuid().safeParse(value);
+    if (!parsed.success) {
+      ctx.addIssue({ code: 'custom', message: 'The selected program is invalid.' });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
+
+const programFields = z.object({
+  code: programCodeSchema,
+  name: requiredText('Program name', 160),
+  siId: idSchema,
+  prevProgramId: optionalUuid,
+  capexBudget: requiredRupiah('Capex budget'),
+  opexBudget: requiredRupiah('Opex budget'),
+  carryInCapex: optionalRupiah('Capex carry-in').transform((value) => value ?? 0),
+  carryInOpex: optionalRupiah('Opex carry-in').transform((value) => value ?? 0),
+  notes: optionalText(),
+});
+
+export const programCreateSchema = programFields.extend({ annualPlanId: idSchema });
+export const programUpdateSchema = programFields.extend({ id: idSchema, reason: reasonSchema });
+export const programVoidSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type ProgramCreateInput = z.infer<typeof programCreateSchema>;
+export type ProgramUpdateInput = z.infer<typeof programUpdateSchema>;
+export type ProgramVoidInput = z.infer<typeof programVoidSchema>;
