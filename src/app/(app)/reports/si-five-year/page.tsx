@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'SI five-year view' };
 
 const th = 'py-2 pr-3 text-left text-xs uppercase tracking-wide text-slate-500';
-const m3 = <span className="text-slate-400">M3</span>;
 
 export default async function SiFiveYearPage() {
   const plan = await getCurrentStrategicPlan();
@@ -24,8 +23,9 @@ export default async function SiFiveYearPage() {
       reportKey="si-five-year"
     >
       <ReportNote>
-        Commitments and actual spend arrive with M3 and are shown as placeholder columns. Consumed = prior
-        program budget consumed + in-app program budgets; headroom is the envelope remaining (BR-2).
+        Committed and spent are the in-app execution figures: fiscal-year commitments and actual spend
+        entries (including cross-year settlements of earlier-year commitments). Consumed = prior program
+        budget consumed + in-app program budgets; headroom is the envelope remaining (BR-2).
       </ReportNote>
 
       <Card title="Strategic initiatives" description="Envelope, consumption and headroom across the five-year horizon.">
@@ -64,8 +64,12 @@ export default async function SiFiveYearPage() {
                   <td className="py-3 pr-3 whitespace-nowrap">
                     <Money value={row.allocationCapex + row.allocationOpex} />
                   </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">{m3}</td>
-                  <td className="py-3 pr-3 whitespace-nowrap">{m3}</td>
+                  <td className="py-3 pr-3 whitespace-nowrap">
+                    <Money value={row.commitmentCapex + row.commitmentOpex} />
+                  </td>
+                  <td className="py-3 pr-3 whitespace-nowrap">
+                    <Money value={row.spendCapex + row.spendOpex} />
+                  </td>
                   <td className="py-3 pr-3 whitespace-nowrap">
                     <Money value={row.consumed} />
                   </td>
@@ -97,8 +101,12 @@ export default async function SiFiveYearPage() {
                 <td className="py-3 pr-3 whitespace-nowrap">
                   <Money value={report.totals.allocationCapex + report.totals.allocationOpex} />
                 </td>
-                <td className="py-3 pr-4">{m3}</td>
-                <td className="py-3 pr-4">{m3}</td>
+                <td className="py-3 pr-3 whitespace-nowrap">
+                  <Money value={report.totals.commitmentCapex + report.totals.commitmentOpex} />
+                </td>
+                <td className="py-3 pr-3 whitespace-nowrap">
+                  <Money value={report.totals.spendCapex + report.totals.spendOpex} />
+                </td>
                 <td className="py-3 pr-3 whitespace-nowrap">
                   <Money value={report.totals.consumed} />
                 </td>

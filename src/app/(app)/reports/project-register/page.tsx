@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Project register report' };
 
 const th = 'py-2 pr-4 text-left text-xs uppercase tracking-wide text-slate-500';
-const m3 = <span className="text-slate-400">M3</span>;
 
 export default async function ProjectRegisterReportPage() {
   const plan = await getCurrentStrategicPlan();
@@ -24,8 +23,9 @@ export default async function ProjectRegisterReportPage() {
       reportKey="project-register"
     >
       <ReportNote>
-        Lifetime commitments include the opening committed amount; in-app commitments and actual spend arrive
-        with M3. Flags are from the funding flag engine (ADR-0003 §6) and never block entry.
+        Lifetime commitments = opening committed + in-app commitment entries; spent to date = opening spend +
+        in-app spend entries (ADR-0003). Prior-year opening payments settle pre-app commitments and are shown
+        separately. Flags are from the funding flag engine (ADR-0003 §6) and never block entry.
       </ReportNote>
 
       <Card title="Projects" description="Full-life figures, allocations and funding flags.">
@@ -40,7 +40,7 @@ export default async function ProjectRegisterReportPage() {
                 <th className={th}>Approved</th>
                 <th className={th}>Final deal</th>
                 <th className={th}>Allocated</th>
-                <th className={th}>Lifetime committed</th>
+                <th className={th}>Lifetime commitments</th>
                 <th className={th}>Spent to date</th>
                 <th className={th}>Flags</th>
               </tr>
@@ -74,10 +74,10 @@ export default async function ProjectRegisterReportPage() {
                     <Money value={row.totalAllocated} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
-                    <Money value={row.project.openingCommitted} />
+                    <Money value={row.lifetimeCommitments} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
-                    <Money value={row.project.openingSpent} />
+                    <Money value={row.spentToDate} />
                   </td>
                   <td className="py-3">
                     {row.project.status === 'cancelled' ? <Badge tone="danger">cancelled</Badge> : null}
@@ -125,16 +125,18 @@ export default async function ProjectRegisterReportPage() {
                   <Money value={report.totals.lifetimeCommitments} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
-                  <Money value={report.totals.openingSpent} />
+                  <Money value={report.totals.spentToDate} />
                 </td>
-                <td className="py-3">{m3}</td>
+                <td className="py-3" />
               </tr>
             </tfoot>
           </table>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          The CSV/XLSX export also carries the capex/opex component split, carry-in and submitted price per
-          project.
+          Open commitments: <Money value={report.totals.openCommitments} /> · prior-year opening settlements:{' '}
+          <Money value={report.totals.priorOpeningSettlements} /> · in-app spend:{' '}
+          <Money value={report.totals.inAppSpend} />. The CSV/XLSX export also carries the capex/opex component
+          split, carry-in and submitted price per project.
         </p>
       </Card>
     </ReportShell>

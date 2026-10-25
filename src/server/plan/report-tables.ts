@@ -17,8 +17,8 @@ export const REPORT_TITLES: Record<ReportKey, string> = {
   'budget-vs-actual': 'Budget versus actual',
 };
 
-const M3_NOTE =
-  'Commitments and actual spend arrive with the execution milestone (M3). Figures here are budget, allocations and opening balances.';
+const EXECUTION_NOTE =
+  'Commitments and actual spend come from the execution module. Prior-year settlements are spend paying earlier-year commitments (excluded from the current year); prior-year opening payments settle pre-app commitments.';
 
 function table(name: string, columns: ExportColumn[]): ExportTable {
   return { name, columns, rows: [] };
@@ -30,7 +30,7 @@ export async function buildReportDocument(
   planName: string,
 ): Promise<ExportDocument> {
   const generatedAt = new Date();
-  const note = M3_NOTE;
+  const note = EXECUTION_NOTE;
 
   if (report === 'si-five-year') {
     const data = await getSiFiveYearReport(planId);
@@ -148,6 +148,10 @@ export async function buildReportDocument(
       { key: 'opexBudget', header: 'Opex budget', kind: 'money' },
       { key: 'carryInOpex', header: 'Opex carry-in', kind: 'money' },
       { key: 'available', header: 'Available', kind: 'money' },
+      { key: 'commitmentOpex', header: 'Committed', kind: 'money' },
+      { key: 'spendOpex', header: 'Spent', kind: 'money' },
+      { key: 'priorOpeningOpex', header: 'Prior-year openings', kind: 'money' },
+      { key: 'remainingOpex', header: 'Remaining', kind: 'money' },
     ]);
     recurring.rows = data.recurringOps.map((row) => ({
       fiscalYear: row.fiscalYear,
@@ -156,6 +160,10 @@ export async function buildReportDocument(
       opexBudget: row.opexBudget,
       carryInOpex: row.carryInOpex,
       available: row.available,
+      commitmentOpex: row.commitmentOpex,
+      spendOpex: row.spendOpex,
+      priorOpeningOpex: row.priorOpeningOpex,
+      remainingOpex: row.remainingOpex,
     }));
     return {
       title: REPORT_TITLES[report],
@@ -186,7 +194,9 @@ export async function buildReportDocument(
       { key: 'carryInOpex', header: 'Opex carry-in', kind: 'money' },
       { key: 'totalAllocated', header: 'Total allocated', kind: 'money' },
       { key: 'lifetimeCommitted', header: 'Lifetime commitments', kind: 'money' },
-      { key: 'openingSpent', header: 'Spent to date (opening)', kind: 'money' },
+      { key: 'spentToDate', header: 'Spent to date', kind: 'money' },
+      { key: 'openCommitments', header: 'Open commitments', kind: 'money' },
+      { key: 'priorOpening', header: 'Prior-year opening settlements', kind: 'money' },
       { key: 'flags', header: 'Flags' },
     ]);
     register.rows = data.rows.map((row) => ({
@@ -206,8 +216,10 @@ export async function buildReportDocument(
       carryInCapex: row.carryInCapex,
       carryInOpex: row.carryInOpex,
       totalAllocated: row.totalAllocated,
-      lifetimeCommitted: row.project.openingCommitted,
-      openingSpent: row.project.openingSpent,
+      lifetimeCommitted: row.lifetimeCommitments,
+      spentToDate: row.spentToDate,
+      openCommitments: row.openCommitments,
+      priorOpening: row.priorOpeningSettlements,
       flags: row.flags.map((flag) => flag.message).join(' | '),
     }));
     const total = table('Totals', [
@@ -217,7 +229,9 @@ export async function buildReportDocument(
       { key: 'finalDeal', header: 'Final deal price', kind: 'money' },
       { key: 'allocated', header: 'Total allocated', kind: 'money' },
       { key: 'lifetimeCommitted', header: 'Lifetime commitments', kind: 'money' },
-      { key: 'openingSpent', header: 'Spent to date (opening)', kind: 'money' },
+      { key: 'spentToDate', header: 'Spent to date', kind: 'money' },
+      { key: 'openCommitments', header: 'Open commitments', kind: 'money' },
+      { key: 'priorOpening', header: 'Prior-year opening settlements', kind: 'money' },
     ]);
     total.rows = [
       {
@@ -227,7 +241,9 @@ export async function buildReportDocument(
         finalDeal: data.totals.finalDeal,
         allocated: data.totals.allocated,
         lifetimeCommitted: data.totals.lifetimeCommitments,
-        openingSpent: data.totals.openingSpent,
+        spentToDate: data.totals.spentToDate,
+        openCommitments: data.totals.openCommitments,
+        priorOpening: data.totals.priorOpeningSettlements,
       },
     ];
     return { title: REPORT_TITLES[report], subtitle: planName, generatedAt, note, tables: [register, total] };
@@ -248,6 +264,8 @@ export async function buildReportDocument(
     { key: 'spendOpex', header: 'Opex spent', kind: 'money' },
     { key: 'settlementCapex', header: 'Capex prior-year settlements', kind: 'money' },
     { key: 'settlementOpex', header: 'Opex prior-year settlements', kind: 'money' },
+    { key: 'priorOpeningCapex', header: 'Capex prior-year openings', kind: 'money' },
+    { key: 'priorOpeningOpex', header: 'Opex prior-year openings', kind: 'money' },
     { key: 'unallocatedCapex', header: 'Capex unallocated', kind: 'money' },
     { key: 'unallocatedOpex', header: 'Opex unallocated', kind: 'money' },
     { key: 'status', header: 'Status' },
@@ -266,6 +284,8 @@ export async function buildReportDocument(
     spendOpex: row.spendOpex,
     settlementCapex: row.settlementCapex,
     settlementOpex: row.settlementOpex,
+    priorOpeningCapex: row.priorOpeningCapex,
+    priorOpeningOpex: row.priorOpeningOpex,
     unallocatedCapex: row.unallocatedCapex,
     unallocatedOpex: row.unallocatedOpex,
     status: row.overCapex || row.overOpex ? 'over-allocated' : 'within budget',

@@ -41,3 +41,35 @@ Captured 2026-10-26 against the dev server with PostgreSQL 18.
 - Voiding a commitment is blocked while it has settlements; a commitment cannot be reduced below the
   amount already settled.
 - Cross-year settlement data flows into the M3 reporting line (#20, next).
+
+## Cross-year settlement reporting (#20)
+
+| Screenshot | What it shows |
+| --- | --- |
+| `04-cross-year-settlement.png` | FY2028 allocation execution page: a FY2028 spend paying a FY2027 commitment is marked as a cross-year settlement and excluded from the current year's remaining |
+| `05-budget-vs-actual-execution.png` | Budget-versus-actual with committed/spent columns filled and the prior-year settlement and prior-year opening columns |
+| `06-annual-plan-execution.png` | Annual plan report with execution figures, including recurring ops committed/spent/prior-year opening/remaining |
+| `07-project-register-execution.png` | Project register with lifetime commitments (opening committed + in-app commitments) and spent to date (opening spend + in-app spend) |
+| `08-si-five-year-execution.png` | SI five-year view with committed and spent columns filled per initiative |
+
+### Browser verification (headless Chromium)
+
+1. Create a project spanning FY2027–FY2028 (200M full-life).
+2. FY2027 allocation 100M capex + commitment 100M; FY2028 allocation 100M capex.
+3. On the FY2028 allocation page record a 100M spend dated 2028-03-01 settling the FY2027 commitment
+   (the prior-year commitment appears in the settlement options with a `PRIOR YEAR` label): the spend
+   shows the **cross-year settlement** badge and does not reduce FY2028 remaining.
+4. Reports: budget-versus-actual shows the prior-year settlement line for FY2028 (Rp 100.000.000);
+   the annual plan shows prior-year opening columns for recurring ops; the project register shows
+   lifetime commitments and spent to date; the SI five-year view shows committed and spent.
+5. CSV exports of all four reports carry the new execution columns (`Committed capex`,
+   `Prior-year settlements`, `Prior-year openings`, `Lifetime commitments`, `Spent to date`,
+   `Open commitments`).
+
+### What changed in the queries
+
+`src/server/plan/execution-aggregates.ts` loads commitments, spend and settlements for the plan and
+rolls them up by allocation, program, SI, project and recurring ops item: FY commitments, open
+commitments, all in-app spend, current-year spend net of cross-year portions, cross-year settlement
+amounts and prior-year opening payments. The four report queries consume those rollups; the exports
+share the same shapes.

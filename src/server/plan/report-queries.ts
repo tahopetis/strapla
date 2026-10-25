@@ -18,6 +18,7 @@ import {
   projectFundingFlags,
   type FundingFlag,
 } from '@/domain/funding';
+import { loadExecutionAggregates } from './execution-aggregates';
 
 /**
  * Report queries for M2 #15. Commitments and spend are zero until M3; the
@@ -57,6 +58,10 @@ export interface SiFiveYearReport {
     consumed: number;
     headroom: number;
     over: boolean;
+    commitmentCapex: number;
+    commitmentOpex: number;
+    spendCapex: number;
+    spendOpex: number;
   };
 }
 
@@ -99,10 +104,12 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
 
   const programMap = new Map(programRows.map((row) => [row.siId, row]));
   const allocationMap = new Map(allocationRows.map((row) => [row.siId, row]));
+  const execution = await loadExecutionAggregates(planId);
 
   const rows: SiFiveYearRow[] = initiatives.map((initiative) => {
     const program = programMap.get(initiative.id);
     const allocation = allocationMap.get(initiative.id);
+    const executionTotals = execution.bySi.get(initiative.id);
     const programCapex = num(program?.capex);
     const programOpex = num(program?.opex);
     const allocationCapex = num(allocation?.capex);
@@ -115,10 +122,10 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
       programOpex,
       allocationCapex,
       allocationOpex,
-      commitmentCapex: 0,
-      commitmentOpex: 0,
-      spendCapex: 0,
-      spendOpex: 0,
+      commitmentCapex: executionTotals?.commitmentCapex ?? 0,
+      commitmentOpex: executionTotals?.commitmentOpex ?? 0,
+      spendCapex: executionTotals?.spendCapex ?? 0,
+      spendOpex: executionTotals?.spendOpex ?? 0,
       consumed,
       headroom,
       over: headroom < 0,
@@ -135,6 +142,10 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
       allocationOpex: total.allocationOpex + row.allocationOpex,
       consumed: total.consumed + row.consumed,
       headroom: total.headroom + row.headroom,
+      commitmentCapex: total.commitmentCapex + row.commitmentCapex,
+      commitmentOpex: total.commitmentOpex + row.commitmentOpex,
+      spendCapex: total.spendCapex + row.spendCapex,
+      spendOpex: total.spendOpex + row.spendOpex,
     }),
     {
       envelope: 0,
@@ -145,6 +156,10 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
       allocationOpex: 0,
       consumed: 0,
       headroom: 0,
+      commitmentCapex: 0,
+      commitmentOpex: 0,
+      spendCapex: 0,
+      spendOpex: 0,
     },
   );
 
@@ -170,6 +185,10 @@ export interface AnnualPlanProgramRow {
   commitmentOpex: number;
   spendCapex: number;
   spendOpex: number;
+  crossYearCapex: number;
+  crossYearOpex: number;
+  priorOpeningCapex: number;
+  priorOpeningOpex: number;
   availableCapex: number;
   availableOpex: number;
   unallocatedCapex: number;
@@ -185,6 +204,10 @@ export interface AnnualPlanRecurringOpsRow {
   opexBudget: number;
   carryInOpex: number;
   available: number;
+  commitmentOpex: number;
+  spendOpex: number;
+  priorOpeningOpex: number;
+  remainingOpex: number;
 }
 
 export interface AnnualPlanReport {
@@ -206,6 +229,7 @@ export interface AnnualPlanReport {
 
 export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanReport> {
   const db = getDb();
+  const execution = await loadExecutionAggregates(planId);
 
   const programRows = await db
     .select({
@@ -264,10 +288,14 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       carryInOpex: row.carryInOpex,
       allocatedCapex,
       allocatedOpex,
-      commitmentCapex: 0,
-      commitmentOpex: 0,
-      spendCapex: 0,
-      spendOpex: 0,
+      commitmentCapex: execution.byProgram.get(row.programId)?.commitmentCapex ?? 0,
+      commitmentOpex: execution.byProgram.get(row.programId)?.commitmentOpex ?? 0,
+      spendCapex: execution.byProgram.get(row.programId)?.spendCapex ?? 0,
+      spendOpex: execution.byProgram.get(row.programId)?.spendOpex ?? 0,
+      crossYearCapex: execution.byProgram.get(row.programId)?.crossYearCapex ?? 0,
+      crossYearOpex: execution.byProgram.get(row.programId)?.crossYearOpex ?? 0,
+      priorOpeningCapex: execution.byProgram.get(row.programId)?.priorOpeningCapex ?? 0,
+      priorOpeningOpex: execution.byProgram.get(row.programId)?.priorOpeningOpex ?? 0,
       availableCapex: position.capex.available,
       availableOpex: position.opex.available,
       unallocatedCapex: position.capex.unallocated,
@@ -284,6 +312,7 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       categoryName: spendCategories.name,
       opexBudget: recurringOpsItems.opexBudget,
       carryInOpex: recurringOpsItems.carryInOpex,
+      itemId: recurringOpsItems.id,
     })
     .from(recurringOpsItems)
     .innerJoin(annualPlans, eq(recurringOpsItems.annualPlanId, annualPlans.id))
@@ -291,14 +320,25 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
     .where(and(eq(annualPlans.planId, planId), isNull(recurringOpsItems.voidedAt)))
     .orderBy(asc(annualPlans.fiscalYear), asc(recurringOpsItems.name));
 
-  const recurringOps: AnnualPlanRecurringOpsRow[] = recurringRows.map((row) => ({
-    fiscalYear: row.fiscalYear,
-    name: row.name,
-    categoryName: row.categoryName,
-    opexBudget: row.opexBudget,
-    carryInOpex: row.carryInOpex,
-    available: row.opexBudget + row.carryInOpex,
-  }));
+  const recurringOps: AnnualPlanRecurringOpsRow[] = recurringRows.map((row) => {
+    const executionTotals = execution.byRecurringItem.get(row.itemId);
+    const available = row.opexBudget + row.carryInOpex;
+    return {
+      fiscalYear: row.fiscalYear,
+      name: row.name,
+      categoryName: row.categoryName,
+      opexBudget: row.opexBudget,
+      carryInOpex: row.carryInOpex,
+      available,
+      commitmentOpex: executionTotals?.commitmentOpex ?? 0,
+      spendOpex: executionTotals?.spendOpex ?? 0,
+      priorOpeningOpex: executionTotals?.priorOpeningOpex ?? 0,
+      remainingOpex:
+        available -
+        (executionTotals?.openCommitmentOpex ?? 0) -
+        (executionTotals?.currentSpendOpex ?? 0),
+    };
+  });
 
   const totals = programs.reduce(
     (total, row) => ({
@@ -353,6 +393,12 @@ export interface ProjectRegisterReportRow {
   spendCapex: number;
   spendOpex: number;
   totalAllocated: number;
+  inAppCommitments: number;
+  inAppSpend: number;
+  openCommitments: number;
+  priorOpeningSettlements: number;
+  lifetimeCommitments: number;
+  spentToDate: number;
   flags: FundingFlag[];
 }
 
@@ -365,6 +411,11 @@ export interface ProjectRegisterReport {
     allocated: number;
     lifetimeCommitments: number;
     openingSpent: number;
+    inAppCommitments: number;
+    inAppSpend: number;
+    openCommitments: number;
+    priorOpeningSettlements: number;
+    spentToDate: number;
   };
 }
 
@@ -372,6 +423,7 @@ export async function getProjectRegisterReport(
   planId: string,
 ): Promise<ProjectRegisterReport> {
   const db = getDb();
+  const execution = await loadExecutionAggregates(planId);
   const projectRows = await db
     .select({
       project: projects,
@@ -409,6 +461,14 @@ export async function getProjectRegisterReport(
     const carryInCapex = num(allocation?.carryCapex);
     const carryInOpex = num(allocation?.carryOpex);
     const totalAllocated = allocationCapex + allocationOpex;
+    const executionTotals = execution.byProject.get(row.project.id);
+    const inAppCommitments =
+      (executionTotals?.commitmentCapex ?? 0) + (executionTotals?.commitmentOpex ?? 0);
+    const inAppSpend = (executionTotals?.spendCapex ?? 0) + (executionTotals?.spendOpex ?? 0);
+    const priorOpeningSettlements =
+      (executionTotals?.priorOpeningCapex ?? 0) + (executionTotals?.priorOpeningOpex ?? 0);
+    const openCommitments =
+      (executionTotals?.openCommitmentCapex ?? 0) + (executionTotals?.openCommitmentOpex ?? 0);
     return {
       project: row.project,
       siCode: row.siCode,
@@ -421,17 +481,23 @@ export async function getProjectRegisterReport(
       allocationOpex,
       carryInCapex,
       carryInOpex,
-      commitmentCapex: 0,
-      commitmentOpex: 0,
-      spendCapex: 0,
-      spendOpex: 0,
+      commitmentCapex: executionTotals?.commitmentCapex ?? 0,
+      commitmentOpex: executionTotals?.commitmentOpex ?? 0,
+      spendCapex: executionTotals?.spendCapex ?? 0,
+      spendOpex: executionTotals?.spendOpex ?? 0,
       totalAllocated,
+      inAppCommitments,
+      inAppSpend,
+      openCommitments,
+      priorOpeningSettlements,
+      lifetimeCommitments: row.project.openingCommitted + inAppCommitments,
+      spentToDate: row.project.openingSpent + inAppSpend,
       flags: projectFundingFlags({
         approvedBudget: row.approvedAmount,
         submittedPrice: row.project.submittedPrice,
         finalDealPrice: row.project.finalDealPrice,
         openingCommitted: row.project.openingCommitted,
-        inAppCommitments: 0,
+        inAppCommitments,
         allocatedFullLife: row.project.allocatedBudgetFullLife,
         totalAllocated,
       }),
@@ -444,8 +510,13 @@ export async function getProjectRegisterReport(
       approved: total.approved + (row.approvedAmount ?? 0),
       finalDeal: total.finalDeal + (row.finalDealPrice ?? 0),
       allocated: total.allocated + row.totalAllocated,
-      lifetimeCommitments: total.lifetimeCommitments + row.project.openingCommitted,
+      lifetimeCommitments: total.lifetimeCommitments + row.lifetimeCommitments,
       openingSpent: total.openingSpent + row.project.openingSpent,
+      inAppCommitments: total.inAppCommitments + row.inAppCommitments,
+      inAppSpend: total.inAppSpend + row.inAppSpend,
+      openCommitments: total.openCommitments + row.openCommitments,
+      priorOpeningSettlements: total.priorOpeningSettlements + row.priorOpeningSettlements,
+      spentToDate: total.spentToDate + row.spentToDate,
     }),
     {
       fullLifeAllocated: 0,
@@ -454,6 +525,11 @@ export async function getProjectRegisterReport(
       allocated: 0,
       lifetimeCommitments: 0,
       openingSpent: 0,
+      inAppCommitments: 0,
+      inAppSpend: 0,
+      openCommitments: 0,
+      priorOpeningSettlements: 0,
+      spentToDate: 0,
     },
   );
 
@@ -478,6 +554,8 @@ export interface BudgetVsActualRow {
   spendOpex: number;
   settlementCapex: number;
   settlementOpex: number;
+  priorOpeningCapex: number;
+  priorOpeningOpex: number;
   unallocatedCapex: number;
   unallocatedOpex: number;
   overCapex: boolean;
@@ -497,6 +575,10 @@ export interface BudgetVsActualReport {
     spendOpex: number;
     unallocatedCapex: number;
     unallocatedOpex: number;
+    settlementCapex: number;
+    settlementOpex: number;
+    priorOpeningCapex: number;
+    priorOpeningOpex: number;
   };
 }
 
@@ -518,8 +600,10 @@ export async function getBudgetVsActualReport(
     commitmentOpex: row.commitmentOpex,
     spendCapex: row.spendCapex,
     spendOpex: row.spendOpex,
-    settlementCapex: 0,
-    settlementOpex: 0,
+    settlementCapex: row.crossYearCapex,
+    settlementOpex: row.crossYearOpex,
+    priorOpeningCapex: row.priorOpeningCapex,
+    priorOpeningOpex: row.priorOpeningOpex,
     unallocatedCapex: row.unallocatedCapex,
     unallocatedOpex: row.unallocatedOpex,
     overCapex: row.overCapex,
@@ -536,6 +620,10 @@ export async function getBudgetVsActualReport(
       commitmentOpex: total.commitmentOpex + row.commitmentOpex,
       spendCapex: total.spendCapex + row.spendCapex,
       spendOpex: total.spendOpex + row.spendOpex,
+      settlementCapex: total.settlementCapex + row.settlementCapex,
+      settlementOpex: total.settlementOpex + row.settlementOpex,
+      priorOpeningCapex: total.priorOpeningCapex + row.priorOpeningCapex,
+      priorOpeningOpex: total.priorOpeningOpex + row.priorOpeningOpex,
       unallocatedCapex: total.unallocatedCapex + row.unallocatedCapex,
       unallocatedOpex: total.unallocatedOpex + row.unallocatedOpex,
     }),
@@ -548,6 +636,10 @@ export async function getBudgetVsActualReport(
       commitmentOpex: 0,
       spendCapex: 0,
       spendOpex: 0,
+      settlementCapex: 0,
+      settlementOpex: 0,
+      priorOpeningCapex: 0,
+      priorOpeningOpex: 0,
       unallocatedCapex: 0,
       unallocatedOpex: 0,
     },
