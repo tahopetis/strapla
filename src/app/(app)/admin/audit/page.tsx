@@ -2,7 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Card, PageHeader } from '@/components/ui';
 import { formatDateTime } from '@/lib/format';
-import { listAuditActors, listAuditEntries, listAuditEntityTypes } from '@/server/admin/queries';
+import {
+  listAuditActions,
+  listAuditActors,
+  listAuditEntries,
+  listAuditEntityTypes,
+} from '@/server/admin/queries';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Audit trail' };
@@ -14,14 +19,28 @@ const labelClass = 'block text-sm font-medium text-slate-700';
 export default async function AuditTrailPage({
   searchParams,
 }: {
-  searchParams: Promise<{ entityType?: string; actor?: string }>;
+  searchParams: Promise<{ entityType?: string; actor?: string; action?: string; q?: string }>;
 }) {
-  const { entityType, actor } = await searchParams;
-  const [entries, entityTypes, actors] = await Promise.all([
-    listAuditEntries({ entityType, actorUserId: actor, limit: 200 }),
+  const { entityType, actor, action, q } = await searchParams;
+  const filters = {
+    entityType: entityType || undefined,
+    actorUserId: actor || undefined,
+    action: action || undefined,
+    q: q || undefined,
+    limit: 200,
+  };
+  const [entries, entityTypes, actors, actions] = await Promise.all([
+    listAuditEntries(filters),
     listAuditEntityTypes(),
     listAuditActors(),
+    listAuditActions(),
   ]);
+  const exportParams = new URLSearchParams();
+  if (q) exportParams.set('q', q);
+  if (entityType) exportParams.set('entityType', entityType);
+  if (action) exportParams.set('action', action);
+  if (actor) exportParams.set('actor', actor);
+  const exportHref = `/admin/audit/export${exportParams.toString() ? `?${exportParams.toString()}` : ''}`;
 
   return (
     <div>
@@ -29,15 +48,35 @@ export default async function AuditTrailPage({
         title="Audit trail"
         description="Append-only record of every change: actor, action, entity, before/after values and reason (ADR-0004)."
         actions={
-          <Link href="/admin" className="text-sm text-slate-600 hover:text-slate-900">
-            ← Administration
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href={exportHref}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Export CSV
+            </Link>
+            <Link href="/admin" className="text-sm text-slate-600 hover:text-slate-900">
+              ← Administration
+            </Link>
+          </div>
         }
       />
 
       <div className="space-y-6">
-        <Card title="Filter" description={`Showing the latest ${entries.length} matching entries (max 200).`}>
-          <form method="get" action="/admin/audit" className="grid gap-4 sm:grid-cols-3">
+        <Card
+          title="Search and filter"
+          description={`Showing the latest ${entries.length} matching entries (max 200 on screen; CSV export up to 5000). Search matches actor, entity, action and reason.`}
+        >
+          <form method="get" action="/admin/audit" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <label className={`${labelClass} sm:col-span-2`}>
+              Search
+              <input
+                name="q"
+                defaultValue={q ?? ''}
+                placeholder="Actor, entity id, action or reason"
+                className={selectClass}
+              />
+            </label>
             <label className={labelClass}>
               Entity type
               <select name="entityType" defaultValue={entityType ?? ''} className={selectClass}>
@@ -45,6 +84,17 @@ export default async function AuditTrailPage({
                 {entityTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={labelClass}>
+              Action
+              <select name="action" defaultValue={action ?? ''} className={selectClass}>
+                <option value="">All actions</option>
+                {actions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
                 ))}
               </select>
@@ -60,7 +110,7 @@ export default async function AuditTrailPage({
                 ))}
               </select>
             </label>
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 sm:col-span-2">
               <button
                 type="submit"
                 className="rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"

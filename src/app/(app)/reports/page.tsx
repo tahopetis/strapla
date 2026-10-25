@@ -15,7 +15,7 @@ const reports = [
     href: '/reports/annual-plan',
     title: 'Annual plan by SI and program',
     description:
-      'Every annual program with capex/opex budget, carry-in, allocated and unallocated money, plus the recurring operations budget.',
+      'Every annual program with capex/opex budget, carry-in, allocated and unallocated money, plus recurring operations with their committed, spent, prior-year opening and remaining opex.',
   },
   {
     href: '/reports/project-register',
@@ -27,7 +27,7 @@ const reports = [
     href: '/reports/budget-vs-actual',
     title: 'Budget versus actual',
     description:
-      'Program-level budget versus allocated, committed and spent money with prior-year settlement lines (execution data arrives in M3).',
+      'Program-level budget versus allocated, committed and spent money, with prior-year settlement and prior-year opening lines from the execution module.',
   },
 ];
 

@@ -18,7 +18,7 @@ const ADMIN = {
 
 test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // Generous cap so the suite also passes on slow development boxes; CI runs it in seconds.
-  test.setTimeout(420_000);
+  test.setTimeout(600_000);
   // ---------------------------------------------------------------- setup
   await page.goto('/setup');
   await expect(page.getByRole('heading', { name: 'Strapla — first-run setup' })).toBeVisible();
@@ -244,8 +244,53 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('Member deactivated.')).toBeVisible();
 
   await page.goto('/admin/audit?entityType=user');
-  await expect(page.getByText('member_create').first()).toBeVisible();
-  await expect(page.getByText('member_deactivate').first()).toBeVisible();
+  await expect(page.locator('tbody').getByText('member_create').first()).toBeVisible();
+  await expect(page.locator('tbody').getByText('member_deactivate').first()).toBeVisible();
+
+  // ------------------------------------------------ full annual cycle (M4/M5)
+  await page.goto('/plan/annual');
+  const annualForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Create annual plan' }) });
+  await annualForm.locator('select[name="fiscalYear"]').selectOption('2028');
+  await page.getByRole('button', { name: 'Create annual plan' }).click();
+  await expect(page.getByText('Annual plan created.')).toBeVisible();
+  await expect(page.locator('tbody tr', { hasText: 'FY2028' })).toBeVisible();
+
+  await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { name: 'FY2028 annual plan' })).toBeVisible();
+  const continuationForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add program' }) });
+  await continuationForm.locator('input[name="name"]').fill('Workplace Modernisation 2028');
+  await continuationForm.locator('select[name="siId"]').selectOption({ label: 'SI-01 · Digital Workplace' });
+  await continuationForm
+    .locator('select[name="prevProgramId"]')
+    .selectOption({ label: 'PRG-2027-001 · Workplace Modernisation 2027 (FY2027, SI-01)' });
+  await page.getByRole('button', { name: 'Add program' }).click();
+  await expect(page.getByText('Annual program created.')).toBeVisible();
+  await expect(page.getByText('Continues program').first()).toBeVisible();
+
+  // close FY2027 with a program carry-over
+  await page.goto('/plan/annual');
+  await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
+  await page.getByRole('link', { name: 'Close fiscal year' }).click();
+  await expect(page.getByRole('heading', { name: 'Close FY2027' })).toBeVisible();
+  const closeProgramRow = page.locator('tbody tr', { hasText: 'PRG-2027-001' }).first();
+  await closeProgramRow.locator('input[name$="_capex"]').fill('100000000');
+  await page.locator('input[name="reference"]').fill('E2E-CLOSE-FY2027');
+  await page.getByRole('button', { name: /Close FY2027 and carry over/ }).click();
+  await expect(page.getByText('Fiscal year closed and carry-over recorded.')).toBeVisible();
+  await page.goto('/plan/annual');
+  await expect(page.locator('tbody tr', { hasText: 'FY2027' }).getByText('closed')).toBeVisible();
+
+  // carry-in landed on the FY2028 continuation program and the thread is visible
+  await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { name: 'FY2028 annual plan' })).toBeVisible();
+  await expect(page.getByText('Rp 100.000.000').first()).toBeVisible();
+  await page.goto('/plan/annual');
+  await expect(page.getByRole('heading', { name: 'Program threads' })).toBeVisible();
+  await expect(page.getByText('FY2028 PRG-2028-001').first()).toBeVisible();
 
   // ------------------------------------------------------ plan is persisted
   await page.goto('/plan/strategic');

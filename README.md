@@ -13,8 +13,8 @@ Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the ar
 | **M2 Funding** | Done: project year allocations, balances and flag engine, pricing chain/contract value, reports with CSV/XLSX exports and print views |
 | **M2.5 Insight** | Release-ready: administrator accounts, audit trail, UAT plan, opening-balance load workplan and go-live checklist done — awaiting host + owner UAT |
 | **M3 Execution** | Spend entries, commitments, settlement |
-| **M4 Multi-year** | Year close and carry-over |
-| **M5 Insight** | Dashboards, audit search, polish |
+| **M4 Multi-year** | Done: year close + carry-over, closed-year locks, program threads |
+| **M5 Insight** | Done: portfolio dashboard, audit search + CSV export, reporting polish |
 
 The issue tracker holds the work breakdown; milestones mirror the charter. Readiness documents for the December release: [UAT plan](docs/UAT-PLAN.md), [opening-balance load](docs/OPENING-BALANCE-LOAD.md), [go-live checklist](docs/GO-LIVE-CHECKLIST.md), [user guide](docs/USER-GUIDE.md), [release notes](docs/RELEASE-NOTES-2026-12.md).
 
