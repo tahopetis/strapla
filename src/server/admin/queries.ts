@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { auditEntries, users, type AuditEntry, type User } from '@/db/schema';
 
@@ -48,13 +48,32 @@ export interface AuditRow {
 export interface AuditFilters {
   entityType?: string;
   actorUserId?: string;
+  action?: string;
+  /** Free text across actor, entity, action and reason. */
+  q?: string;
   limit?: number;
 }
 
-export async function listAuditEntries(filters: AuditFilters = {}): Promise<AuditRow[]> {
+export async function listAuditEntries(
+  filters: AuditFilters = {},
+  maxLimit = 200,
+): Promise<AuditRow[]> {
   const conditions = [];
   if (filters.entityType) conditions.push(eq(auditEntries.entityType, filters.entityType));
   if (filters.actorUserId) conditions.push(eq(auditEntries.actorUserId, filters.actorUserId));
+  if (filters.action) conditions.push(eq(auditEntries.action, filters.action));
+  if (filters.q?.trim()) {
+    const pattern = `%${filters.q.trim()}%`;
+    const search = or(
+      ilike(auditEntries.entityType, pattern),
+      ilike(auditEntries.entityId, pattern),
+      ilike(auditEntries.action, pattern),
+      ilike(auditEntries.reason, pattern),
+      ilike(users.name, pattern),
+      ilike(users.email, pattern),
+    );
+    if (search) conditions.push(search);
+  }
 
   const rows = await getDb()
     .select({
@@ -66,7 +85,7 @@ export async function listAuditEntries(filters: AuditFilters = {}): Promise<Audi
     .leftJoin(users, eq(auditEntries.actorUserId, users.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(auditEntries.createdAt))
-    .limit(Math.min(filters.limit ?? 100, 200));
+    .limit(Math.min(filters.limit ?? 100, maxLimit));
 
   return rows.map((row) => ({ entry: row.entry, actorEmail: row.actorEmail, actorName: row.actorName }));
 }
@@ -97,6 +116,14 @@ export async function listAuditEntityTypes(): Promise<string[]> {
     .from(auditEntries)
     .orderBy(asc(auditEntries.entityType));
   return rows.map((row) => row.entityType);
+}
+
+export async function listAuditActions(): Promise<string[]> {
+  const rows = await getDb()
+    .selectDistinct({ action: auditEntries.action })
+    .from(auditEntries)
+    .orderBy(asc(auditEntries.action));
+  return rows.map((row) => row.action);
 }
 
 export async function listAuditActors(): Promise<Array<{ value: string; label: string }>> {

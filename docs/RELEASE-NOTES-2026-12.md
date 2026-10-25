@@ -51,15 +51,24 @@ December release manages the plan and the funding, not the execution.
 - TLS terminates at a reverse proxy; `APP_BASE_URL=https://…` enables secure cookies.
 - Follow `docs/GO-LIVE-CHECKLIST.md`; data load per `docs/OPENING-BALANCE-LOAD.md`.
 
+## Post-first-release scope (built ahead in this repository)
+
+The milestones after the December release are implemented and verified; deploying the tip of `main`
+gives them too:
+
+- **M3 Execution (January 2027)**: commitment entries with the open → settled lifecycle, spend entries with categories/vendors/references, settlements including cross-year and prior-year opening payments, and the execution figures in all four reports/exports.
+- **M4 Multi-year (before the FY2027 close)**: manual year close with per-component carry-over decisions and an approval reference, carry-over snapshot, closed-year lock with audited administrator corrections, settlement lifecycle allowed after close, and program continuation threads with carry-in reconciliation.
+- **M5 Insight**: portfolio dashboard (envelope, program budget, allocated, open commitments, spend, remaining, flags, year status, threads, recent activity), full audit search with CSV export, and reporting polish.
+
 ## Known limitations
 
 - One strategic plan and one administrator role (charter A1/A6).
-- The audit-trail list shows the latest 200 entries; exports of the audit trail are not in this release.
-- Reports show commitment/spend/prior-year settlement columns as placeholders until the January release.
-- "Closed" fiscal years cannot be reached yet except by the future close workflow; the December release has no close action, and FY2026 stays in the spreadsheets.
+- The audit-trail list shows the latest 200 entries on screen; the CSV export covers up to 5000.
+- FY2026 stays in the spreadsheets: opening figures are entered once and audited, never reconstructed as records.
+- No reopen, rollback or restore for closed years (by design, charter §6.7).
 
 ## Verification evidence
 
-- Unit tests: 46 passing; production build green; E2E green in CI on every merge.
-- Checkpoints: `docs/checkpoints/m0` (skeleton + deploy/restore drill), `m1` (plan module), `m2` (funding + reports), `m2.5` (administration), `uat` (acceptance dry run).
+- Unit tests: 62 passing; production build green; E2E green in CI on every merge (the E2E runs a full annual cycle: setup → plan → funding → execution → reports → administration → close/carry-over → program thread).
+- Checkpoints: `docs/checkpoints/m0` (skeleton + deploy/restore drill), `m1` (plan module), `m2` (funding + reports), `m2.5` (administration), `m3` (execution + cross-year reporting), `m4` (year close + program threads), `m5` (dashboard + audit search), `uat` (acceptance dry run).
 - Charter success criteria coverage is mapped in `docs/checkpoints/uat/README.md`.
