@@ -8,3 +8,45 @@ body {
   background-color: #f8fafc;
   color: #0f172a;
 }
+
+/* Print-friendly report views: hide application chrome, keep tables intact. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  .report-body table {
+    font-size: 8.5pt;
+  }
+
+  .report-body th,
+  .report-body td {
+    padding-right: 6px;
+  }
+
+  .app-header,
+  .app-nav,
+  .screen-only {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .report body,
+  body {
+    background: #ffffff;
+  }
+
+  .report-body section {
+    break-inside: avoid;
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}

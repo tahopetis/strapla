@@ -1,25 +1,70 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { Badge, Card, PageHeader } from '@/components/ui';
 
 export const metadata: Metadata = { title: 'Reports' };
+
+const reports = [
+  {
+    href: '/reports/si-five-year',
+    title: 'SI five-year view',
+    description:
+      'Envelope, prior consumption, in-app program budgets, allocations, commitments and spend per strategic initiative across the horizon.',
+  },
+  {
+    href: '/reports/annual-plan',
+    title: 'Annual plan by SI and program',
+    description:
+      'Every annual program with capex/opex budget, carry-in, allocated and unallocated money, plus the recurring operations budget.',
+  },
+  {
+    href: '/reports/project-register',
+    title: 'Project register',
+    description:
+      'Full-life figures, ijin prinsip approval, allocations, lifetime commitments and funding flags for every project.',
+  },
+  {
+    href: '/reports/budget-vs-actual',
+    title: 'Budget versus actual',
+    description:
+      'Program-level budget versus allocated, committed and spent money with prior-year settlement lines (execution data arrives in M3).',
+  },
+];
+
+const linkClass = 'text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900';
 
 export default function ReportsPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          The December release ships the SI five-year view, the annual plan by SI and program, and the
-          project register — each with capex/opex separation, over-budget flags, CSV/XLSX exports and
-          print-friendly views for directors and finance.
-        </p>
+      <PageHeader
+        title="Reports"
+        description="Budget versus actual and commitment versus contract at every level, ready for directors and finance."
+      />
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {reports.map((report) => (
+          <Card key={report.href} title={report.title} actions={<Badge tone="success">live</Badge>}>
+            <p className="text-sm text-slate-700">{report.description}</p>
+            <p className="mt-4 text-sm">
+              <Link href={report.href} className={linkClass}>
+                Open report
+              </Link>
+            </p>
+          </Card>
+        ))}
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-700">
-        <p>
-          Tracked as <a className="underline" href="https://github.com/tahopetis/strapla/issues/15">#15 reports and exports</a>{' '}
-          and delivered in M2.5. Budget-versus-actual and commitment-versus-contract fill in as M3
-          data arrives.
+
+      <Card title="Exports and print views" description="Every report carries the same table definitions on screen and in the exports.">
+        <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
+          <li>CSV downloads for finance consolidation and spreadsheet working.</li>
+          <li>XLSX workbooks with one sheet per report table and raw Rupiah integers.</li>
+          <li>Print / PDF views that hide the application chrome and keep the tables intact.</li>
+        </ul>
+        <p className="mt-3 text-xs text-slate-500">
+          Commitments and actual spend arrive with the execution milestone (M3); those report columns are
+          present but empty until then. The audit-trail view arrives with M2.5.
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

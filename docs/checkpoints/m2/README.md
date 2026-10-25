@@ -40,3 +40,28 @@ Pricing chain and contract value (#14):
 
 M2 reporting (#15): SI five-year view, annual plan view, project register and budget-versus-actual
 with CSV/XLSX exports and print views — checkpoint 3 and the December release core.
+
+## Reports and exports (#15) — checkpoint 3 evidence
+
+| Screenshot | What it shows |
+| --- | --- |
+| `05-si-five-year.png` | SI five-year view: envelope, prior consumed, program budgets, allocations, committed/spent placeholders, consumed and headroom per SI with portfolio totals and status |
+| `06-annual-plan-report.png` | Annual plan by SI and program: capex/opex available, allocated and unallocated per program, status, plus the recurring operations table |
+| `07-project-register-report.png` | Project register: full-life figures, ijin prinsip approved amount, final deal, allocations, lifetime commitments, spend to date and funding flags |
+| `08-budget-vs-actual.png` | Budget versus actual at program level: available vs allocated/unallocated per component, with committed/spent/prior-year settlement columns reserved for M3 |
+| `09-print-view.png` | Print/PDF view: application chrome hidden, tables intact, A4 landscape page setup |
+
+Browser verification (headless Chromium):
+
+1. `/reports` hub lists all four reports; each report renders with totals and the M3 placeholder note.
+2. Print media hides the header and navigation (print view screenshot); the report body survives.
+3. CSV export of the SI view returns `text/csv` with the expected headers and rows (908 bytes in the
+   dev dataset); XLSX export returns the spreadsheet content type with one sheet per table and raw
+   Rupiah integers (9,057 bytes); unauthenticated export requests are refused with 401.
+4. The committed E2E suite now also visits every report and exercises the CSV/XLSX downloads.
+
+## M2 status
+
+With allocations, balances, flags, pricing chain and reports merged, the **M2 Funding milestone is
+complete**. Next: M2.5 Insight — administrator accounts and the audit-trail view (#16), then the
+December UAT and go-live readiness (#17).

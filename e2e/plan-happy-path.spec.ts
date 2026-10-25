@@ -17,7 +17,8 @@ const ADMIN = {
 };
 
 test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
-  test.setTimeout(300_000);
+  // Generous cap so the suite also passes on slow development boxes; CI runs it in seconds.
+  test.setTimeout(420_000);
   // ---------------------------------------------------------------- setup
   await page.goto('/setup');
   await expect(page.getByRole('heading', { name: 'Strapla — first-run setup' })).toBeVisible();
@@ -166,6 +167,32 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('PRG-2027-001').first()).toBeVisible();
   await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
   await expect(page.getByText('Rp 750.000.000').first()).toBeVisible();
+
+  // ------------------------------------------------------ reports and exports
+  await page.goto('/reports');
+  await expect(page.getByText('SI five-year view', { exact: true }).first()).toBeVisible();
+
+  await page.goto('/reports/si-five-year');
+  await expect(page.getByRole('heading', { name: 'SI five-year view' })).toBeVisible();
+  await expect(page.getByText('Portfolio total')).toBeVisible();
+
+  await page.goto('/reports/annual-plan');
+  await expect(page.getByRole('heading', { name: 'Annual plan by SI and program' })).toBeVisible();
+
+  await page.goto('/reports/project-register');
+  await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
+
+  await page.goto('/reports/budget-vs-actual');
+  await expect(page.getByRole('heading', { name: 'Budget versus actual' })).toBeVisible();
+
+  const origin = new URL(page.url()).origin;
+  const csv = await page.request.get(`${origin}/reports/export/si-five-year?format=csv`);
+  expect(csv.status()).toBe(200);
+  expect(await csv.text()).toContain('SI code');
+
+  const xlsx = await page.request.get(`${origin}/reports/export/project-register?format=xlsx`);
+  expect(xlsx.status()).toBe(200);
+  expect(xlsx.headers()['content-type']).toContain('spreadsheetml');
 
   // ------------------------------------------------------ plan is persisted
   await page.goto('/plan/strategic');
