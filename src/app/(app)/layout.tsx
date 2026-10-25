@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <p className="mt-8 px-3 text-xs text-slate-500">
-            M2.5: member accounts and the audit trail are live. December UAT and go-live readiness are next.
+            December release ready: plan, funding, reports and administration are live. Waiting on the host and your UAT.
           </p>
         </nav>
         <main className="min-w-0 flex-1">{children}</main>

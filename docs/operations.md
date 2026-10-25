@@ -1,6 +1,6 @@
 # Operations
 
-How Strapla is deployed, upgraded, backed up and restored. Expanded by M0 issue #4; keep this file current as the host decision is made (charter §11 — host, domain and TLS are deferred until mid-November 2026).
+How Strapla is deployed, upgraded, backed up and restored. Keep this file current as the host decision is made. The release go-live sequence is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md) and the first-release scope is in [RELEASE-NOTES-2026-12.md](RELEASE-NOTES-2026-12.md).
 
 ## Configuration
 
