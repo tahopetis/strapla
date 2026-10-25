@@ -243,9 +243,6 @@ async function updateAllocation(userId: string, input: AllocationUpdateInput): P
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
   requireAllocationEditable(context);
-  if (context.annualPlan.status === 'closed') {
-    throw new FormError('That fiscal year is closed and read-only.');
-  }
   requireProjectActiveYear(context.project, context.annualPlan.fiscalYear);
 
   await getDb().transaction(async (tx) => {
@@ -279,6 +276,9 @@ async function voidAllocation(userId: string, id: string, reason: string): Promi
   const context = await loadAllocationContext(id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is already voided.');
   requireAllocationEditable(context);
+  if (context.annualPlan.status === 'closed') {
+    throw new FormError('This fiscal year is closed; allocations cannot be voided.');
+  }
 
   await getDb().transaction(async (tx) => {
     const [updated] = await tx

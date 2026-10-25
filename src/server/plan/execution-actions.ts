@@ -122,6 +122,16 @@ function requireEditable(context: ParentContext): void {
   }
 }
 
+/** Spend lifecycle events (settling pre-existing commitments) may still occur after close. */
+function requireSpendLifecycle(context: ParentContext): void {
+  if (context.strategicPlan.status === 'archived') {
+    throw new FormError('The strategic plan is archived and read-only.');
+  }
+  if (context.project?.status === 'cancelled') {
+    throw new FormError('This project is cancelled and read-only.');
+  }
+}
+
 function requireComponentAllowed(context: ParentContext, component: 'capex' | 'opex'): void {
   if (context.kind === 'recurring' && component !== 'opex') {
     throw new FormError('Recurring ops items are opex only (BR-12).');
@@ -335,6 +345,11 @@ async function createSpend(
   requireComponentAllowed(context, input.component);
 
   const splits = parseSettlementSplits(formData);
+  if (context.annualPlan.status === 'closed' && splits.length === 0 && input.settlementKind !== 'prior_year_opening') {
+    throw new FormError(
+      'This fiscal year is closed: only spend entries settling existing commitments can be recorded.',
+    );
+  }
   if (input.settlementKind === 'prior_year_opening' && splits.length > 0) {
     throw new FormError('A prior-year opening payment cannot settle an in-app commitment.');
   }
@@ -477,7 +492,7 @@ async function updateSpend(
 ): Promise<void> {
   const { spend, context } = await loadSpend(input.id);
   if (spend.voidedAt) throw new FormError('This spend entry is voided and read-only.');
-  requireEditable(context);
+  requireSpendLifecycle(context);
 
   const settlements = await getDb()
     .select({ amount: commitmentSettlements.amount })
@@ -523,7 +538,7 @@ async function updateSpend(
 async function voidSpend(actorId: string, id: string, reason: string): Promise<void> {
   const { spend, context } = await loadSpend(id);
   if (spend.voidedAt) throw new FormError('This spend entry is already voided.');
-  requireEditable(context);
+  requireSpendLifecycle(context);
 
   await getDb().transaction(async (tx) => {
     const [updated] = await tx

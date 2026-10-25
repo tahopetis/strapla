@@ -106,11 +106,14 @@ async function loadProjectContext(projectId: string): Promise<ProjectContext> {
   return row;
 }
 
-function requireEditableContext(context: { annualPlan: AnnualPlan; strategicPlan: StrategicPlan }): void {
+function requireEditableContext(
+  context: { annualPlan: AnnualPlan; strategicPlan: StrategicPlan },
+  options: { allowClosed?: boolean } = {},
+): void {
   if (context.strategicPlan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
   }
-  if (context.annualPlan.status === 'closed') {
+  if (context.annualPlan.status === 'closed' && !options.allowClosed) {
     throw new FormError('The originating fiscal year is closed and read-only.');
   }
 }

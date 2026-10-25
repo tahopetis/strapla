@@ -50,9 +50,19 @@ export default async function AnnualPlanPage({
         title={`FY${detail.annualPlan.fiscalYear} annual plan`}
         description={detail.strategicPlan.name}
         actions={
-          <Link href="/plan/annual" className="text-sm text-slate-600 hover:text-slate-900">
-            ← All annual plans
-          </Link>
+          <div className="flex items-center gap-4">
+            {detail.annualPlan.status === 'active' ? (
+              <Link
+                href={`/plan/annual/${detail.annualPlan.id}/close`}
+                className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+              >
+                Close fiscal year
+              </Link>
+            ) : null}
+            <Link href="/plan/annual" className="text-sm text-slate-600 hover:text-slate-900">
+              ← All annual plans
+            </Link>
+          </div>
         }
       />
       <PlanNav />

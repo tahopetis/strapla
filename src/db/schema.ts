@@ -154,6 +154,7 @@ export const annualPlans = pgTable(
     notes: text('notes'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedBy: uuid('closed_by').references(() => users.id),
+    closeReference: text('close_reference'),
     createdBy: uuid('created_by').references(() => users.id),
     updatedBy: uuid('updated_by').references(() => users.id),
     ...timestamps,
@@ -304,6 +305,8 @@ export type CommitmentEntry = typeof commitmentEntries.$inferSelect;
 export type SpendEntry = typeof spendEntries.$inferSelect;
 export type CommitmentSettlement = typeof commitmentSettlements.$inferSelect;
 export type SettlementKind = (typeof settlementKind.enumValues)[number];
+export type CarryOverEntry = typeof carryOverEntries.$inferSelect;
+export type CarryOverEntityType = (typeof carryOverEntityType.enumValues)[number];
 export type PlanComponent = (typeof component.enumValues)[number];
 
 // ---------------------------------------------------------------- funding (M2)
@@ -443,5 +446,40 @@ export const commitmentSettlements = pgTable(
     uniqueIndex('commitment_settlements_pair_idx').on(table.spendEntryId, table.commitmentEntryId),
     index('commitment_settlements_commitment_idx').on(table.commitmentEntryId),
     check('commitment_settlements_amount_positive', sql`${table.amount} > 0`),
+  ],
+);
+
+// ---------------------------------------------------------------- year close (M4)
+
+export const carryOverEntityType = pgEnum('carry_over_entity_type', ['program', 'allocation']);
+
+export const carryOverEntries = pgTable(
+  'carry_over_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceAnnualPlanId: uuid('source_annual_plan_id')
+      .notNull()
+      .references(() => annualPlans.id),
+    targetAnnualPlanId: uuid('target_annual_plan_id')
+      .notNull()
+      .references(() => annualPlans.id),
+    entityType: carryOverEntityType('entity_type').notNull(),
+    sourceEntityId: uuid('source_entity_id').notNull(),
+    targetEntityId: uuid('target_entity_id').notNull(),
+    component: component('component').notNull(),
+    amount: money('amount').notNull(),
+    approvalReference: text('approval_reference').notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('carry_over_entries_source_idx').on(table.sourceAnnualPlanId),
+    uniqueIndex('carry_over_entries_unique_idx').on(
+      table.sourceAnnualPlanId,
+      table.entityType,
+      table.sourceEntityId,
+      table.component,
+    ),
+    check('carry_over_entries_amount_non_negative', sql`${table.amount} >= 0`),
   ],
 );
