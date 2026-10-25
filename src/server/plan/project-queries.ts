@@ -4,6 +4,7 @@ import {
   annualPlans,
   annualPrograms,
   ijinPrinsipRecords,
+  projectYearAllocations,
   projects,
   strategicInitiatives,
   strategicPlans,
@@ -13,6 +14,7 @@ import {
   type Project,
   type StrategicPlan,
 } from '@/db/schema';
+import { projectFundingFlags, type FundingFlag } from '@/domain/funding';
 import { pricingFlags, type PricingFlags } from '@/domain/plan';
 
 /** Read queries for projects, ijin prinsip and their pricing flags (M1 #8). */
@@ -69,6 +71,9 @@ export interface ProjectDetail {
   siName: string;
   ijin: IjinPrinsipRecord | null;
   flags: PricingFlags;
+  fundingFlags: FundingFlag[];
+  totalAllocated: number;
+  lifetimeCommitments: number;
 }
 
 export async function getProjectDetail(id: string): Promise<ProjectDetail | null> {
@@ -93,6 +98,23 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
 
   const row = rows[0];
   if (!row) return null;
+
+  const allocationRows = await getDb()
+    .select({
+      allocationCapex: projectYearAllocations.allocationCapex,
+      allocationOpex: projectYearAllocations.allocationOpex,
+    })
+    .from(projectYearAllocations)
+    .where(
+      and(eq(projectYearAllocations.projectId, id), isNull(projectYearAllocations.voidedAt)),
+    );
+
+  const totalAllocated = allocationRows.reduce(
+    (sum, allocation) => sum + allocation.allocationCapex + allocation.allocationOpex,
+    0,
+  );
+  const lifetimeCommitments = row.project.openingCommitted;
+
   return {
     project: row.project,
     program: row.program,
@@ -106,6 +128,17 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
       submittedPrice: row.project.submittedPrice,
       finalDealPrice: row.project.finalDealPrice,
     }),
+    fundingFlags: projectFundingFlags({
+      approvedBudget: row.ijin?.approvedAmount ?? null,
+      submittedPrice: row.project.submittedPrice,
+      finalDealPrice: row.project.finalDealPrice,
+      openingCommitted: row.project.openingCommitted,
+      inAppCommitments: 0,
+      allocatedFullLife: row.project.allocatedBudgetFullLife,
+      totalAllocated,
+    }),
+    totalAllocated,
+    lifetimeCommitments,
   };
 }
 

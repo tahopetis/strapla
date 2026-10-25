@@ -266,3 +266,23 @@ export const recurringOpsVoidSchema = z.object({ id: idSchema, reason: reasonSch
 
 export type RecurringOpsCreateInput = z.infer<typeof recurringOpsCreateSchema>;
 export type RecurringOpsUpdateInput = z.infer<typeof recurringOpsUpdateSchema>;
+
+// ---------------------------------------------------------------- project year allocations (M2)
+
+const allocationFields = z.object({
+  allocationCapex: requiredRupiah('Capex allocation'),
+  allocationOpex: requiredRupiah('Opex allocation'),
+  carryInCapex: optionalRupiah('Capex carry-in').transform((value) => value ?? 0),
+  carryInOpex: optionalRupiah('Opex carry-in').transform((value) => value ?? 0),
+  notes: optionalText(),
+});
+
+export const allocationCreateSchema = allocationFields.extend({
+  projectId: idSchema,
+  annualProgramId: idSchema,
+});
+export const allocationUpdateSchema = allocationFields.extend({ id: idSchema, reason: reasonSchema });
+export const allocationVoidSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type AllocationCreateInput = z.infer<typeof allocationCreateSchema>;
+export type AllocationUpdateInput = z.infer<typeof allocationUpdateSchema>;

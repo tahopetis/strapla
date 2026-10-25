@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { formatRupiah } from '@/domain/money';
+import { formatRupiahSigned } from '@/domain/money';
 
 export const inputClass =
   'mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
@@ -113,7 +113,7 @@ export function StatusBadge({ status }: { status: 'draft' | 'active' | 'archived
 export function Money({ value, className }: { value: number | null | undefined; className?: string }) {
   return (
     <span className={`tabular-nums ${className ?? ''}`}>
-      {value === null || value === undefined ? '—' : formatRupiah(value)}
+      {value === null || value === undefined ? '—' : formatRupiahSigned(value)}
     </span>
   );
 }

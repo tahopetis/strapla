@@ -3,6 +3,7 @@ import {
   MoneyError,
   assertRupiah,
   formatRupiah,
+  formatRupiahSigned,
   parseRupiah,
   remaining,
   sumRupiah,
@@ -39,6 +40,18 @@ describe('formatRupiah', () => {
     expect(formatRupiah(0)).toBe('Rp 0');
     expect(formatRupiah(1_234_567)).toBe('Rp 1.234.567');
     expect(formatRupiah(1_000_000_000)).toBe('Rp 1.000.000.000');
+  });
+});
+
+describe('formatRupiahSigned', () => {
+  it('formats negative computed amounts with a leading sign', () => {
+    expect(formatRupiahSigned(-100_000_000)).toBe('-Rp 100.000.000');
+    expect(formatRupiahSigned(0)).toBe('Rp 0');
+    expect(formatRupiahSigned(1_234_567)).toBe('Rp 1.234.567');
+  });
+
+  it('rejects unsafe integers', () => {
+    expect(() => formatRupiahSigned(1.5)).toThrow(MoneyError);
   });
 });
 

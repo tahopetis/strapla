@@ -35,6 +35,16 @@ export function formatRupiah(value: Rupiah): string {
   return `Rp ${grouped}`;
 }
 
+/** Display a computed amount that may be negative (for example over-allocated unallocated budget). */
+export function formatRupiahSigned(value: number): string {
+  if (!Number.isSafeInteger(value)) {
+    throw new MoneyError(`amount must be a safe integer (got ${value})`);
+  }
+  const sign = value < 0 ? '-' : '';
+  const grouped = String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${sign}Rp ${grouped}`;
+}
+
 /** Parse user input such as "1.234.567", "1234567" or "Rp 1 234 567" into whole Rupiah. */
 export function parseRupiah(input: string): Rupiah {
   const cleaned = input
