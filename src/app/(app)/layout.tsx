@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <p className="mt-8 px-3 text-xs text-slate-500">
-            Execution release: commitments, spend and settlement are live. Year close (M4) and final polish next.
+            Multi-year live: year close, carry-over and program threads. Dashboards, audit search and polish (M5) next.
           </p>
         </nav>
         <main className="min-w-0 flex-1">{children}</main>

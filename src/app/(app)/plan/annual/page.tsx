@@ -6,6 +6,7 @@ import { Badge, Card, EmptyState, Flash, PageHeader, StatusBadge } from '@/compo
 import { planYears } from '@/domain/plan';
 import { createAnnualPlanAction } from '@/server/plan/annual-actions';
 import { listAnnualPlans } from '@/server/plan/annual-queries';
+import { listProgramThreads } from '@/server/plan/program-queries';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,7 @@ export default async function AnnualPlansPage({
   }
 
   const rows = await listAnnualPlans(strategicPlan.id);
+  const threads = await listProgramThreads(strategicPlan.id);
   const usedYears = new Set(rows.map((row) => row.annualPlan.fiscalYear));
   const availableYears = planYears(strategicPlan).filter((year) => !usedYears.has(year));
   const canCreate = strategicPlan.status === 'active' && availableYears.length > 0;
@@ -133,6 +135,35 @@ export default async function AnnualPlansPage({
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
+
+      <Card
+        title="Program threads"
+        description="Programs that continue across fiscal years; carry-over lands on the continuation program."
+      >
+        {threads.length === 0 ? (
+          <EmptyState>No programs yet. Add programs inside an annual plan.</EmptyState>
+        ) : (
+          <ul className="space-y-3 text-sm">
+            {threads.map((thread) => (
+              <li key={thread.rootId} className="flex flex-wrap items-center gap-2">
+                {thread.entries.map((entry, index) => (
+                  <span key={entry.programId} className="flex items-center gap-2">
+                    {index > 0 ? <span className="text-slate-400">→</span> : null}
+                    <Link href={`/plan/programs/${entry.programId}`} className={linkClass}>
+                      FY{entry.fiscalYear} {entry.code}
+                    </Link>
+                    <span className="text-xs text-slate-500">{entry.name}</span>
+                    {index === thread.entries.length - 1 ? null : null}
+                  </span>
+                ))}
+                {thread.entries.length === 1 ? (
+                  <span className="text-xs text-slate-500">(no continuation yet)</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         )}
       </Card>
     </div>

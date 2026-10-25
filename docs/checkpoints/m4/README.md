@@ -40,3 +40,17 @@ Captured 2026-10-26 against the dev server with PostgreSQL 18.
   creates and voids are blocked.
 - Settlement lifecycle events after close (spend entries settling existing commitments) are allowed
   and audited, per charter §6.7.
+
+## Program continuation thread (#22)
+
+| Screenshot | What it shows |
+| --- | --- |
+| `04-program-thread.png` | Program thread page for PRG-2028-001: the FY2027 → FY2028 chain with budgets, carry-in, allocations, unallocated budget and project counts; the close-recorded carry-over versus carry-in reconciliation (approval reference `BOARD-CLOSE-FY2027-001`); and the current program figures |
+
+### Browser verification (headless Chromium)
+
+1. The annual plans overview lists the **Program threads** chain `FY2027 PRG-2027-001 → FY2028
+   PRG-2028-001` with links to each program.
+2. The thread page for PRG-2028-001 renders both years (current highlighted), the close approval
+   reference, and the reconciliation badge **carry-in includes the close**.
+3. Each program card in the annual plan has a **Thread** link to the same page.

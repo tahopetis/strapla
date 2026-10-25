@@ -200,7 +200,17 @@ function ProgramCard({
     <Card
       title={`${program.code} · ${program.name}`}
       description={`${row.siCode} · ${row.siName}`}
-      actions={<Badge tone="info">{row.siCode}</Badge>}
+      actions={
+        <div className="flex items-center gap-3">
+          <Badge tone="info">{row.siCode}</Badge>
+          <Link
+            href={`/plan/programs/${program.id}`}
+            className="text-xs font-medium text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+          >
+            Thread
+          </Link>
+        </div>
+      }
     >
       <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div>
