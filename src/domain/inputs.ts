@@ -286,3 +286,36 @@ export const allocationVoidSchema = z.object({ id: idSchema, reason: reasonSchem
 
 export type AllocationCreateInput = z.infer<typeof allocationCreateSchema>;
 export type AllocationUpdateInput = z.infer<typeof allocationUpdateSchema>;
+
+// ---------------------------------------------------------------- administration (M2.5)
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const memberCreateSchema = z.object({
+  name: requiredText('Name', 120),
+  email: z
+    .string()
+    .trim()
+    .max(254, 'Email must be at most 254 characters.')
+    .regex(EMAIL_PATTERN, 'Enter a valid email address.')
+    .transform((value) => value.toLowerCase()),
+  password: z
+    .string()
+    .min(12, 'Password must be at least 12 characters.')
+    .max(200, 'Password must be at most 200 characters.'),
+});
+
+export const memberReasonSchema = z.object({ userId: idSchema, reason: reasonSchema });
+
+export const memberPasswordResetSchema = z.object({
+  userId: idSchema,
+  password: z
+    .string()
+    .min(12, 'Password must be at least 12 characters.')
+    .max(200, 'Password must be at most 200 characters.'),
+  reason: reasonSchema,
+});
+
+export type MemberCreateInput = z.infer<typeof memberCreateSchema>;
+export type MemberReasonInput = z.infer<typeof memberReasonSchema>;
+export type MemberPasswordResetInput = z.infer<typeof memberPasswordResetSchema>;

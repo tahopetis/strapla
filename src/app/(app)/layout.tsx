@@ -55,7 +55,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
           <p className="mt-8 px-3 text-xs text-slate-500">
-            M2 funding: allocations, budgets and flags are live, with reports and exports. Administrator accounts and the audit view land next.
+            M2.5: member accounts and the audit trail are live. December UAT and go-live readiness are next.
           </p>
         </nav>
         <main className="min-w-0 flex-1">{children}</main>
