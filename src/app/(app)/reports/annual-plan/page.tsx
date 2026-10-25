@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Annual plan report' };
 
 const th = 'py-2 pr-4 text-left text-xs uppercase tracking-wide text-slate-500';
-const m3 = <span className="text-slate-400">M3</span>;
 
 export default async function AnnualPlanReportPage() {
   const plan = await getCurrentStrategicPlan();
@@ -16,6 +15,13 @@ export default async function AnnualPlanReportPage() {
     return <p className="text-sm text-slate-600">Create the strategic plan to see this report.</p>;
   }
   const report = await getAnnualPlanReport(plan.id);
+  const recurringCommitments = report.recurringOps.reduce((sum, row) => sum + row.commitmentOpex, 0);
+  const recurringSpend = report.recurringOps.reduce((sum, row) => sum + row.spendOpex, 0);
+  const recurringPriorOpening = report.recurringOps.reduce(
+    (sum, row) => sum + row.priorOpeningOpex,
+    0,
+  );
+  const recurringRemaining = report.recurringOps.reduce((sum, row) => sum + row.remainingOpex, 0);
 
   return (
     <ReportShell
@@ -24,8 +30,9 @@ export default async function AnnualPlanReportPage() {
       reportKey="annual-plan"
     >
       <ReportNote>
-        Available = budget + carry-in; unallocated = available − allocations, per component (BR-7). Commitments
-        and spend arrive with M3.
+        Available = budget + carry-in; unallocated = available − allocations, per component (BR-7).
+        Committed and spent are the in-app execution figures; recurring ops show their own committed, spent,
+        prior-year opening and remaining amounts.
       </ReportNote>
 
       <Card title="Annual programs" description="One row per program, ordered by fiscal year.">
@@ -74,8 +81,12 @@ export default async function AnnualPlanReportPage() {
                   <td className={`py-3 pr-4 whitespace-nowrap ${row.overOpex ? 'text-red-700' : ''}`}>
                     <Money value={row.unallocatedOpex} />
                   </td>
-                  <td className="py-3 pr-4">{m3}</td>
-                  <td className="py-3 pr-4">{m3}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.commitmentCapex + row.commitmentOpex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.spendCapex + row.spendOpex} />
+                  </td>
                   <td className="py-3">
                     {row.overCapex || row.overOpex ? (
                       <Badge tone="danger">over-allocated</Badge>
@@ -109,8 +120,12 @@ export default async function AnnualPlanReportPage() {
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.unallocatedOpex} />
                 </td>
-                <td className="py-3 pr-4">{m3}</td>
-                <td className="py-3 pr-4">{m3}</td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.programs.reduce((sum, row) => sum + row.commitmentCapex + row.commitmentOpex, 0)} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.programs.reduce((sum, row) => sum + row.spendCapex + row.spendOpex, 0)} />
+                </td>
                 <td className="py-3" />
               </tr>
             </tfoot>
@@ -132,6 +147,10 @@ export default async function AnnualPlanReportPage() {
                   <th className={th}>Opex budget</th>
                   <th className={th}>Opex carry-in</th>
                   <th className={th}>Available</th>
+                  <th className={th}>Committed</th>
+                  <th className={th}>Spent</th>
+                  <th className={th}>Prior-year openings</th>
+                  <th className={th}>Remaining</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -146,8 +165,20 @@ export default async function AnnualPlanReportPage() {
                     <td className="py-3 pr-4 whitespace-nowrap">
                       <Money value={row.carryInOpex} />
                     </td>
-                    <td className="py-3 whitespace-nowrap">
+                    <td className="py-3 pr-4 whitespace-nowrap">
                       <Money value={row.available} />
+                    </td>
+                    <td className="py-3 pr-4 whitespace-nowrap">
+                      <Money value={row.commitmentOpex} />
+                    </td>
+                    <td className="py-3 pr-4 whitespace-nowrap">
+                      <Money value={row.spendOpex} />
+                    </td>
+                    <td className="py-3 pr-4 whitespace-nowrap">
+                      <Money value={row.priorOpeningOpex} />
+                    </td>
+                    <td className="py-3 whitespace-nowrap">
+                      <Money value={row.remainingOpex} />
                     </td>
                   </tr>
                 ))}
@@ -163,8 +194,20 @@ export default async function AnnualPlanReportPage() {
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={report.totals.recurringCarryInOpex} />
                   </td>
-                  <td className="py-3 whitespace-nowrap">
+                  <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={report.totals.recurringOpexBudget + report.totals.recurringCarryInOpex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={recurringCommitments} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={recurringSpend} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={recurringPriorOpening} />
+                  </td>
+                  <td className="py-3 whitespace-nowrap">
+                    <Money value={recurringRemaining} />
                   </td>
                 </tr>
               </tfoot>

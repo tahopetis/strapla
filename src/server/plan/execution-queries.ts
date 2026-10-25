@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import {
   annualPlans,
@@ -323,6 +323,78 @@ function settlementOptionsFromCommitments(rows: CommitmentRow[]): SettlementOpti
     }));
 }
 
+async function settledAmountsFor(commitmentIds: string[]): Promise<Map<string, number>> {
+  if (commitmentIds.length === 0) return new Map();
+  const rows = await getDb()
+    .select({
+      commitmentEntryId: commitmentSettlements.commitmentEntryId,
+      settled: sql<string>`coalesce(sum(${commitmentSettlements.amount}), 0)::text`,
+    })
+    .from(commitmentSettlements)
+    .innerJoin(spendEntries, eq(commitmentSettlements.spendEntryId, spendEntries.id))
+    .where(
+      and(
+        isNull(spendEntries.voidedAt),
+        inArray(commitmentSettlements.commitmentEntryId, commitmentIds),
+      ),
+    )
+    .groupBy(commitmentSettlements.commitmentEntryId);
+  return new Map(rows.map((row) => [row.commitmentEntryId, Number(row.settled ?? '0')]));
+}
+
+/** Open commitments of the same project from earlier fiscal years (cross-year settlement). */
+async function loadPriorSettlementOptions(
+  projectId: string,
+  currentFiscalYear: number,
+): Promise<SettlementOption[]> {
+  const rows = await getDb()
+    .select({
+      commitmentId: commitmentEntries.id,
+      component: commitmentEntries.component,
+      amount: commitmentEntries.amount,
+      commitmentDate: commitmentEntries.commitmentDate,
+      reference: commitmentEntries.reference,
+      fiscalYear: annualPlans.fiscalYear,
+    })
+    .from(commitmentEntries)
+    .innerJoin(
+      projectYearAllocations,
+      eq(commitmentEntries.projectYearAllocationId, projectYearAllocations.id),
+    )
+    .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
+    .where(
+      and(
+        eq(projectYearAllocations.projectId, projectId),
+        isNull(projectYearAllocations.voidedAt),
+        isNull(commitmentEntries.voidedAt),
+        lt(annualPlans.fiscalYear, currentFiscalYear),
+      ),
+    )
+    .orderBy(asc(annualPlans.fiscalYear), asc(commitmentEntries.commitmentDate));
+  if (rows.length === 0) return [];
+
+  const settled = await settledAmountsFor(rows.map((row) => row.commitmentId));
+  return rows
+    .map((row) => {
+      const openAmount = row.amount - (settled.get(row.commitmentId) ?? 0);
+      return {
+        commitmentId: row.commitmentId,
+        label: [
+          'PRIOR YEAR',
+          row.component.toUpperCase(),
+          `FY${row.fiscalYear}`,
+          row.commitmentDate,
+          row.reference ?? 'no reference',
+          `open ${openAmount}`,
+        ].join(' · '),
+        openAmount,
+        component: row.component,
+        fiscalYear: row.fiscalYear,
+      };
+    })
+    .filter((option) => option.openAmount > 0);
+}
+
 export async function getAllocationFunding(
   allocationId: string,
 ): Promise<AllocationFunding | null> {
@@ -366,7 +438,10 @@ export async function getAllocationFunding(
       carryInCapex: header.allocation.carryInCapex,
       carryInOpex: header.allocation.carryInOpex,
     }),
-    settlementOptions: settlementOptionsFromCommitments(commitments),
+    settlementOptions: [
+      ...settlementOptionsFromCommitments(commitments),
+      ...(await loadPriorSettlementOptions(header.project.id, header.annualPlan.fiscalYear)),
+    ],
   };
 }
 

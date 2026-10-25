@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Budget versus actual' };
 
 const th = 'py-2 pr-4 text-left text-xs uppercase tracking-wide text-slate-500';
-const m3 = <span className="text-slate-400">M3</span>;
 
 export default async function BudgetVsActualPage() {
   const plan = await getCurrentStrategicPlan();
@@ -24,8 +23,10 @@ export default async function BudgetVsActualPage() {
       reportKey="budget-vs-actual"
     >
       <ReportNote>
-        Available = budget + carry-in; unallocated = available − allocations. Committed, spent and prior-year
-        settlement columns arrive with M3 (ADR-0003 §3/§4). Capex and opex are shown per component.
+        Available = budget + carry-in; unallocated = available − allocations. Committed and spent are the
+        in-app execution figures; prior-year settlements are spend paying earlier-year commitments (excluded
+        from the current year, ADR-0003 §4); prior-year opening payments settle pre-app commitments. Capex and
+        opex are shown per component.
       </ReportNote>
 
       <Card title="Programs" description="Budget availability versus allocation, commitment and spend.">
@@ -44,6 +45,7 @@ export default async function BudgetVsActualPage() {
                 <th className={th}>Committed</th>
                 <th className={th}>Spent</th>
                 <th className={th}>Prior-year settlements</th>
+                <th className={th}>Prior-year openings</th>
                 <th className={th}>Status</th>
               </tr>
             </thead>
@@ -75,9 +77,18 @@ export default async function BudgetVsActualPage() {
                   <td className={`py-3 pr-4 whitespace-nowrap ${row.overOpex ? 'text-red-700' : ''}`}>
                     <Money value={row.unallocatedOpex} />
                   </td>
-                  <td className="py-3 pr-4">{m3}</td>
-                  <td className="py-3 pr-4">{m3}</td>
-                  <td className="py-3 pr-4">{m3}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.commitmentCapex + row.commitmentOpex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.spendCapex + row.spendOpex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.settlementCapex + row.settlementOpex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.priorOpeningCapex + row.priorOpeningOpex} />
+                  </td>
                   <td className="py-3">
                     {row.overCapex || row.overOpex ? (
                       <Badge tone="danger">over-allocated</Badge>
@@ -111,9 +122,18 @@ export default async function BudgetVsActualPage() {
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.unallocatedOpex} />
                 </td>
-                <td className="py-3 pr-4">{m3}</td>
-                <td className="py-3 pr-4">{m3}</td>
-                <td className="py-3 pr-4">{m3}</td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.commitmentCapex + report.totals.commitmentOpex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.spendCapex + report.totals.spendOpex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.settlementCapex + report.totals.settlementOpex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.priorOpeningCapex + report.totals.priorOpeningOpex} />
+                </td>
                 <td className="py-3" />
               </tr>
             </tfoot>
