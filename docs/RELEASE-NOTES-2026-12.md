@@ -6,6 +6,7 @@
 | Status | Release candidate; UAT and go-live checklist outstanding |
 | Scope | Plan module, funding module, reports/exports, administrator accounts |
 | Deployment | Docker Compose (`app` + PostgreSQL 18 + nightly backup), private GHCR image |
+| Image | `ghcr.io/tahopetis/strapla:v2026.12.0` (versioned) / `:latest` (current `main`) |
 | Charter | `docs/CHARTER.md` v0.2 |
 
 ## What is in this release

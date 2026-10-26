@@ -2,6 +2,24 @@
 
 How Strapla is deployed, upgraded, backed up and restored. Keep this file current as the host decision is made. The release go-live sequence is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md) and the first-release scope is in [RELEASE-NOTES-2026-12.md](RELEASE-NOTES-2026-12.md).
 
+## Images, versions and updates
+
+- GitHub Actions publishes `ghcr.io/tahopetis/strapla` on every push to `main`: `latest`, `sha-<commit>`.
+- Release tags `v*` publish semantic version tags: `v2026.12.0` → `2026.12.0` and `2026.12`.
+- The app header shows the running build (`v<version> · <commit>`), which is the quickest way to confirm what is deployed.
+- Docker Compose will keep using a locally cached image even when a newer one is published. To update:
+
+```bash
+docker compose pull app
+docker compose up -d --force-recreate app
+docker compose ps            # app should become healthy
+```
+
+- Pin a release with `STRAPLA_TAG=v2026.12.0` in `.env` (default is `latest`).
+- Pulling needs a GitHub token with `read:packages`: `echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin`.
+- `docker compose build app` remains available for local development; it tags the local image with
+  `STRAPLA_TAG` and bakes `STRAPLA_VERSION`/`STRAPLA_COMMIT` from the build args.
+
 ## Configuration
 
 The app needs exactly two environment variables:
