@@ -18,6 +18,27 @@ Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the ar
 
 The issue tracker holds the work breakdown; milestones mirror the charter. Readiness documents for the December release: [UAT plan](docs/UAT-PLAN.md), [opening-balance load](docs/OPENING-BALANCE-LOAD.md), [go-live checklist](docs/GO-LIVE-CHECKLIST.md), [user guide](docs/USER-GUIDE.md), [release notes](docs/RELEASE-NOTES-2026-12.md).
 
+## Images, versions and updates
+
+GitHub Actions builds and publishes the multi-arch image on every push to `main`:
+
+- `latest` — the current `main` build
+- `sha-<commit>` — one immutable tag per commit
+- `v<year>.<month>.<patch>` / `<year>.<month>` — release tags (for example `v2026.12.0` → `2026.12.0`, `2026.12`)
+
+The running build is shown in the app header (version · commit), so you can always see which image is live.
+
+Update a deployment to the newest published image (this matters when a host has an older image
+cached — Docker Compose reuses a local image and will not pull by itself):
+
+```bash
+docker compose pull app
+docker compose up -d --force-recreate app
+```
+
+To pin a release, set `STRAPLA_TAG=v2026.12.0` in `.env`. The token used by `docker login ghcr.io`
+needs `read:packages`.
+
 ## Local development
 
 Requires Node 24, pnpm 11 and Docker.

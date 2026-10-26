@@ -13,6 +13,10 @@ const navigation = [
   { href: '/admin', label: 'Administration' },
 ];
 
+const buildVersion = process.env.STRAPLA_VERSION ?? 'dev';
+const buildCommit = process.env.STRAPLA_COMMIT ?? null;
+const versionLabel = buildCommit ? `${buildVersion} · ${buildCommit.slice(0, 7)}` : buildVersion;
+
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
 
@@ -25,6 +29,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               Strapla
             </Link>
             <span className="hidden text-xs text-slate-500 sm:inline">IT portfolio management</span>
+            <span
+              className="hidden rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-500 sm:inline"
+              title="Running build (version · commit)"
+            >
+              v{versionLabel}
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-600">{user.name}</span>

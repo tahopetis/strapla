@@ -32,6 +32,8 @@ jobs:
           images: ghcr.io/tahopetis/strapla
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
       - uses: docker/build-push-action@v6
         with:
@@ -40,5 +42,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            STRAPLA_VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
+            STRAPLA_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

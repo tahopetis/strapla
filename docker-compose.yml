@@ -19,9 +19,15 @@ services:
       retries: 20
 
   app:
+    # Published image built by GitHub Actions (main -> latest + sha-<commit>,
+    # v* tags -> semantic version + sha). On a host, update with:
+    #   docker compose pull app && docker compose up -d --force-recreate app
     image: ghcr.io/tahopetis/strapla:${STRAPLA_TAG:-latest}
     build:
       context: .
+      args:
+        STRAPLA_VERSION: ${STRAPLA_VERSION:-dev}
+        STRAPLA_COMMIT: ${STRAPLA_COMMIT:-dev}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://strapla:${POSTGRES_PASSWORD:-strapla}@db:5432/strapla
