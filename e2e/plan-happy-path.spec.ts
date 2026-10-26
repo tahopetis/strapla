@@ -292,6 +292,13 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Program threads' })).toBeVisible();
   await expect(page.getByText('FY2028 PRG-2028-001').first()).toBeVisible();
 
+  // ------------------------------------------------------ in-app help guide
+  await page.goto('/help');
+  await expect(page.getByRole('heading', { name: 'Help & user guide' })).toBeVisible();
+  await expect(page.getByText('Is there a default username or password?')).toBeVisible();
+  await page.goto('/dashboard');
+  await expect(page.getByRole('link', { name: 'Help' })).toBeVisible();
+
   // ------------------------------------------------------ plan is persisted
   await page.goto('/plan/strategic');
   await expect(page.getByText('SI-01 · Digital Workplace')).toBeVisible();

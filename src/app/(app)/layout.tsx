@@ -11,6 +11,7 @@ const navigation = [
   { href: '/funding', label: 'Funding' },
   { href: '/reports', label: 'Reports' },
   { href: '/admin', label: 'Administration' },
+  { href: '/help', label: 'Help' },
 ];
 
 const buildVersion = process.env.STRAPLA_VERSION ?? 'dev';
