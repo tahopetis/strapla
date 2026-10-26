@@ -16,7 +16,9 @@ Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the ar
 | **M4 Multi-year** | Done: year close + carry-over, closed-year locks, program threads |
 | **M5 Insight** | Done: portfolio dashboard, audit search + CSV export, reporting polish |
 
-The issue tracker holds the work breakdown; milestones mirror the charter. Readiness documents for the December release: [UAT plan](docs/UAT-PLAN.md), [opening-balance load](docs/OPENING-BALANCE-LOAD.md), [go-live checklist](docs/GO-LIVE-CHECKLIST.md), [user guide](docs/USER-GUIDE.md), [release notes](docs/RELEASE-NOTES-2026-12.md).
+The issue tracker holds the work breakdown; milestones mirror the charter. The app has an in-app **Help** page with the quick guide; the full guide is [docs/USER-GUIDE.md](docs/USER-GUIDE.md).
+
+Readiness documents for the December release: [UAT plan](docs/UAT-PLAN.md), [opening-balance load](docs/OPENING-BALANCE-LOAD.md), [go-live checklist](docs/GO-LIVE-CHECKLIST.md), [user guide](docs/USER-GUIDE.md), [release notes](docs/RELEASE-NOTES-2026-12.md).
 
 ## Images, versions and updates
 
