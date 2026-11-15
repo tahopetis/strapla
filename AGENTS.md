@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues and specs live as GitHub issues, driven by the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and specs live as GitHub issues — `gh` CLI, or `gh-api`/`gh-logs` on this Android device. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
