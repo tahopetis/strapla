@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { sessions, users } from '@/db/schema';
+import { loginRedirectPath } from './login-redirect';
 
 export const SESSION_COOKIE = 'strapla_session';
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -78,8 +79,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   return rows[0] ?? null;
 }
 
+/** True when the request carries a session cookie, whether or not it is still valid. */
+async function hasSessionCookie(): Promise<boolean> {
+  const store = await cookies();
+  return Boolean(store.get(SESSION_COOKIE)?.value);
+}
+
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
-  if (!user) redirect('/login');
+  if (!user) redirect(loginRedirectPath(await hasSessionCookie()));
   return user;
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { loginAction } from '@/server/auth/actions';
+import { SESSION_ENDED_REASON } from '@/server/auth/login-redirect';
 import { getCurrentUser } from '@/server/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -12,12 +13,12 @@ const inputClass =
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; reason?: string }>;
 }) {
   const user = await getCurrentUser();
   if (user) redirect('/dashboard');
 
-  const { error } = await searchParams;
+  const { error, reason } = await searchParams;
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
@@ -26,6 +27,15 @@ export default async function LoginPage({
           <h1 className="text-2xl font-semibold tracking-tight">Strapla</h1>
           <p className="mt-1 text-sm text-slate-600">IT portfolio management</p>
         </div>
+
+        {reason === SESSION_ENDED_REASON ? (
+          <p
+            role="status"
+            className="mb-4 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900"
+          >
+            Your session ended. Sign in again to continue.
+          </p>
+        ) : null}
 
         {error ? (
           <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
