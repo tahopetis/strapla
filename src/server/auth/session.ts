@@ -4,9 +4,16 @@ import { redirect } from 'next/navigation';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { sessions, users } from '@/db/schema';
+import { SESSION_COOKIE } from './cookie';
+import { loginRedirectUrl } from './login-redirect';
 
-export const SESSION_COOKIE = 'strapla_session';
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * The cookie outlives the database session. A session that expired leaves the
+ * stale cookie behind, which is how the app tells "your session ended" apart
+ * from "you were never signed in" — the cookie is never trusted for access.
+ */
+const SESSION_COOKIE_DURATION_MS = SESSION_DURATION_MS + 60 * 24 * 60 * 60 * 1000;
 
 export interface CurrentUser {
   id: string;
@@ -39,7 +46,7 @@ export async function createSession(userId: string): Promise<void> {
     sameSite: 'lax',
     secure: secureCookieEnabled(),
     path: '/',
-    expires: expiresAt,
+    expires: new Date(Date.now() + SESSION_COOKIE_DURATION_MS),
   });
 }
 
@@ -56,9 +63,13 @@ export async function destroyCurrentSession(): Promise<void> {
   store.delete(SESSION_COOKIE);
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/** The request's session token, whether or not it is still valid. */
+async function readSessionToken(): Promise<string | null> {
   const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
+  return store.get(SESSION_COOKIE)?.value ?? null;
+}
+
+async function getUserForToken(token: string | null): Promise<CurrentUser | null> {
   if (!token) return null;
 
   const rows = await getDb()
@@ -78,8 +89,13 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   return rows[0] ?? null;
 }
 
+export async function getCurrentUser(): Promise<CurrentUser | null> {
+  return getUserForToken(await readSessionToken());
+}
+
 export async function requireUser(): Promise<CurrentUser> {
-  const user = await getCurrentUser();
-  if (!user) redirect('/login');
+  const token = await readSessionToken();
+  const user = await getUserForToken(token);
+  if (!user) redirect(loginRedirectUrl(token !== null));
   return user;
 }
