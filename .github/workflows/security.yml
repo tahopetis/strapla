@@ -1,0 +1,135 @@
+name: security-gate
+
+# One job, one required check, one verdict. Every scanner reports; only
+# ci/normalize.mjs decides. See SKILL.md for the contract and REFERENCE.md for
+# how to add a scanner, publish SARIF, or change a tool version.
+#
+# Copy to .github/workflows/security.yml in the project repo, together with ci/.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      fail_on:
+        description: "Minimum severity that fails the gate: none | low | medium | high | critical (empty = repo variable or high)"
+        required: false
+        default: ""
+
+concurrency:
+  group: security-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+# contents: read   -> checkout only
+# statuses: write  -> publish the verdict where it is readable without a token
+# The only action used is actions/checkout, pinned. No scanner action, no
+# third-party action, nothing else to trust.
+permissions:
+  contents: read
+  statuses: write
+
+env:
+  # Shadow mode for adoption: every scanner runs and reports, but findings do
+  # not block a merge until the first report is triaged. Raise to 'high' (and
+  # make this check required) once the backlog is understood.
+  FAIL_ON: ${{ inputs.fail_on || vars.SECURITY_GATE_FAIL_ON || 'none' }}
+  SCANNERS: ${{ vars.SECURITY_GATE_SCANNERS || 'secrets,deps,sast' }}
+  # Optional: a committed rules file. Empty means the scanners' own defaults.
+  GITLEAKS_CONFIG: ${{ vars.SECURITY_GATE_GITLEAKS_CONFIG || '' }}
+  SEMGREP_CONFIG: ${{ vars.SECURITY_GATE_SEMGREP_CONFIG || 'p/default' }}
+
+jobs:
+  security-gate:
+    name: security-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Exit code is the verdict, so this step turns the check red on FAIL,
+      # ERROR and SETUP without any extra glue.
+      - name: Scan and decide
+        run: bash ci/run-security.sh
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [ -f findings/verdict.txt ]; then
+            {
+              echo '### security-gate'
+              echo '```'
+              cat findings/verdict.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f findings/summary.json ]; then
+            echo '<details><summary>counts</summary>' >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat findings/summary.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo '</details>' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Best-effort: a fork PR gets a read-only token, and that must not turn a
+      # correct verdict into a failed job.
+      - name: Publish the verdict as a commit status
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verdict=$(cat findings/verdict.txt 2>/dev/null || echo 'SECURITY: ERROR (no verdict produced)')
+          state=error
+          case "$verdict" in
+            "SECURITY: PASS"*) state=success ;;
+            "SECURITY: FAIL"*) state=failure ;;
+          esac
+          body=$(jq -n --arg s "$state" --arg c "security-gate" \
+            --arg d "$(printf '%s' "$verdict" | cut -c1-140)" \
+            '{state: $s, context: $c, description: $d}')
+          curl -sS --retry 2 -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d "$body"
+          echo "published: $verdict ($state)"
+
+      # Counts only: no paths, no versions, no rule text. Publishable, and it
+      # makes a red check diagnosable without reading the log.
+      - name: Publish the severity breakdown as a commit status
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f findings/summary.json ] || exit 0
+          msg=$(node -e '
+            const s = JSON.parse(require("node:fs").readFileSync("findings/summary.json", "utf8"));
+            const c = s.counts || {};
+            const scanners = Object.entries(s.scanners || {})
+              .map(([name, info]) => `${name}=${info.status}/${info.results}`)
+              .join(" ");
+            process.stdout.write(
+              `${s.state} c${c.critical || 0} h${c.high || 0} m${c.medium || 0} l${c.low || 0} | ${scanners}`
+            );
+          ' 2>/dev/null | cut -c1-140)
+          [ -n "$msg" ] || exit 0
+          verdict=$(cat findings/verdict.txt 2>/dev/null || echo "")
+          case "$verdict" in
+            "SECURITY: PASS"*) state=success ;;
+            "SECURITY: FAIL"*) state=failure ;;
+            *) state=error ;;
+          esac
+          body=$(jq -n --arg s "$state" --arg c "security-gate-summary" --arg d "$msg" \
+            '{state: $s, context: $c, description: $d}')
+          curl -sS --retry 2 -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d "$body"
+          echo "summary: $msg"
+

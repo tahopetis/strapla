@@ -1,0 +1,44 @@
+# .github/dependabot.yml — version updates only.
+#
+# Dependabot ALERTS and SECURITY UPDATES are NOT configured here. They are a
+# repository setting (Settings -> Code security -> Dependabot), they are free,
+# they need no workflow, and switching them on is the cheapest win available.
+# This file only keeps dependencies fresh on a schedule.
+#
+# Dependabot maintains dependencies; the security gate enforces them. A
+# Dependabot PR is an ordinary PR: it still has to pass the security-gate check.
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      development:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+      production-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Drop the ecosystems this project does not use; each costs a scheduled run.
+  # - package-ecosystem: "github-actions"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "monthly"
+  #
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+
+  # Keep the scanners themselves current. The security gate runs pinned
+  # versions (ci/run-security.sh), so this keeps them from going stale.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
