@@ -59,16 +59,36 @@ export default async function StrategicPlanPage({
 }
 
 function CreatePlanCard() {
+  const currentYear = new Date().getFullYear();
+  const horizonEnd = currentYear + 4;
   return (
     <Card
       title="Create the strategic plan"
-      description="One plan at a time in v1: the five-year horizon, for example 2026 to 2030."
+      description={`One plan at a time in v1: the five-year horizon, for example ${currentYear} to ${horizonEnd}.`}
     >
       <form action={createPlanAction} className="grid gap-4 sm:grid-cols-2">
-        <TextField label="Plan name" name="name" required placeholder="IT Strategic Plan 2026–2030" maxLength={160} />
+        <TextField
+          label="Plan name"
+          name="name"
+          required
+          placeholder={`IT Strategic Plan ${currentYear}–${horizonEnd}`}
+          maxLength={160}
+        />
         <div className="grid grid-cols-2 gap-4">
-          <TextField label="Start fiscal year" name="startFiscalYear" required defaultValue="2026" maxLength={4} />
-          <TextField label="End fiscal year" name="endFiscalYear" required defaultValue="2030" maxLength={4} />
+          <TextField
+            label="Start fiscal year"
+            name="startFiscalYear"
+            required
+            defaultValue={String(currentYear)}
+            maxLength={4}
+          />
+          <TextField
+            label="End fiscal year"
+            name="endFiscalYear"
+            required
+            defaultValue={String(horizonEnd)}
+            maxLength={4}
+          />
         </div>
         <div className="sm:col-span-2">
           <SubmitButton>Create plan</SubmitButton>
@@ -188,7 +208,7 @@ function InitiativesSection({
             <MoneyField
               label="Prior program budget consumed"
               name="priorProgramBudgetUsed"
-              hint="Opening balance before the first in-app fiscal year (FY2027)."
+              hint="Opening balance before the first in-app fiscal year."
             />
             <TextField label="Notes" name="notes" />
             <div className="sm:col-span-2 lg:col-span-3">

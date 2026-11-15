@@ -92,7 +92,7 @@ export default function HelpPage() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card title="The portfolio hierarchy" description="One project, many annual slices.">
-            <pre className="overflow-x-auto text-[11px] leading-5 text-slate-700">{`Strategic plan (2026–2030)
+            <pre className="overflow-x-auto text-[11px] leading-5 text-slate-700">{`Strategic plan (five-year horizon)
 └── Strategic initiative (SI) — five-year envelope
     └── Annual plan (one per fiscal year)
         └── Annual program (one SI; capex + opex budget; carry-in)
@@ -281,7 +281,7 @@ Unallocated program budget = budget + carry-in
               messages, annual-cycle checklist).
             </li>
             <li>
-              <span className={codeClass}>docs/OPENING-BALANCE-LOAD.md</span> — the FY2026 opening-balance
+              <span className={codeClass}>docs/OPENING-BALANCE-LOAD.md</span> — the opening-balance
               workplan.
             </li>
             <li>

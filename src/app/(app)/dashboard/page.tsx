@@ -9,7 +9,7 @@ import {
   projectYearAllocations,
   strategicInitiatives,
 } from '@/db/schema';
-import { formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { listAnnualPlans } from '@/server/plan/annual-queries';
 import { loadExecutionAggregates } from '@/server/plan/execution-aggregates';
 import { listProgramThreads } from '@/server/plan/program-queries';
@@ -278,7 +278,7 @@ export default async function DashboardPage() {
                       <p className="text-xs text-slate-500">
                         Closed with reference {row.annualPlan.closeReference}
                         {row.annualPlan.closedAt
-                          ? ` on ${row.annualPlan.closedAt.toISOString().slice(0, 10)}`
+                          ? ` on ${formatDate(row.annualPlan.closedAt)}`
                           : ''}
                       </p>
                     ) : null}

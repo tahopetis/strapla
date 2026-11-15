@@ -8,6 +8,7 @@ import {
 } from '@/components/execution/execution-sections';
 import { PlanNav } from '@/components/plan-nav';
 import { Flash, PageHeader } from '@/components/ui';
+import { toDateInputValue } from '@/lib/format';
 import {
   getAllocationFunding,
   listSpendCategoryOptions,
@@ -33,7 +34,7 @@ export default async function AllocationFundingPage({
     funding.strategicPlan.status !== 'archived' &&
     funding.annualPlan.status !== 'closed' &&
     funding.project.status !== 'cancelled';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toDateInputValue(new Date());
 
   return (
     <div>

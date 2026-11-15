@@ -8,6 +8,7 @@ import {
 } from '@/components/execution/execution-sections';
 import { PlanNav } from '@/components/plan-nav';
 import { Flash, PageHeader } from '@/components/ui';
+import { toDateInputValue } from '@/lib/format';
 import {
   getRecurringOpsFunding,
   listSpendCategoryOptions,
@@ -31,7 +32,7 @@ export default async function RecurringOpsFundingPage({
   const categories = await listSpendCategoryOptions();
   const editable =
     funding.strategicPlan.status !== 'archived' && funding.annualPlan.status !== 'closed';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toDateInputValue(new Date());
 
   return (
     <div>

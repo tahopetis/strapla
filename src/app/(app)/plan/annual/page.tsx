@@ -92,7 +92,7 @@ export default async function AnnualPlansPage({
         <Card title="Every fiscal year in the horizon already has an annual plan">
           <p className="text-sm text-slate-700">
             Annual plans exist for all {availableYears.length === 0 ? 'years' : ''} in the horizon. Close a year
-            through the year-close workflow (M4) or extend the plan horizon.
+            from the annual plan page, or extend the plan horizon.
           </p>
         </Card>
       )}

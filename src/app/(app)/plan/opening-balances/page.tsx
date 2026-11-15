@@ -36,12 +36,14 @@ export default async function OpeningBalancesPage() {
 
   const overview = await getOpeningBalancesOverview(plan.id);
   const { totals } = overview;
+  const priorYear = plan.startFiscalYear;
+  const firstInAppYear = priorYear + 1;
 
   return (
     <div>
       <PageHeader
         title="Opening balances"
-        description={`The signed-off bridge from the FY2026 spreadsheets into the app. FY2027 is the first in-app fiscal year; FY2026 is closed manually outside Strapla (charter §6.9).`}
+        description={`The signed-off bridge from the FY${priorYear} spreadsheets into the app. FY${firstInAppYear} is the first in-app fiscal year; FY${priorYear} is closed manually outside Strapla (charter §6.9).`}
         actions={
           <Link href="/plan/strategic" className="text-sm text-slate-600 hover:text-slate-900">
             Manage strategic plan
@@ -61,7 +63,7 @@ export default async function OpeningBalancesPage() {
               .
             </li>
             <li>
-              <strong>Per annual program</strong>: capex and opex carry-in from the manual FY2026 close — edit the
+              <strong>Per annual program</strong>: capex and opex carry-in from the manual prior-year close — edit the
               program on{' '}
               <Link href="/plan/annual" className={linkClass}>
                 the annual plan page
@@ -78,7 +80,7 @@ export default async function OpeningBalancesPage() {
             </li>
           </ul>
           <p className="mt-3 text-sm text-slate-600">
-            Project year allocation carry-in is entered when the annual allocations are created in M2 (#12).
+            Project year allocation carry-in is entered when the annual allocations are created.
             Reconciliation below shows the totals you can compare with the spreadsheets before go-live.
           </p>
         </Card>
@@ -138,7 +140,7 @@ export default async function OpeningBalancesPage() {
 
         <Card
           title="Annual programs — carry-in"
-          description="Budget plus carry-in per component. Project allocations against these budgets land in M2."
+          description="Budget plus carry-in per component. Project allocations against these budgets are made on the project page."
         >
           {overview.programs.length === 0 ? (
             <EmptyState>No annual programs yet.</EmptyState>
@@ -244,7 +246,7 @@ export default async function OpeningBalancesPage() {
 
         <Card
           title="Reconciliation totals"
-          description="Compare these totals with the FY2026 spreadsheets and the manual year-close figures; sign off once they match."
+          description="Compare these totals with the prior-year spreadsheets and the manual year-close figures; sign off once they match."
         >
           <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -287,7 +289,7 @@ export default async function OpeningBalancesPage() {
           </dl>
           <p className="mt-4 text-xs text-slate-500">
             Opening figures are audited edits. The reconciliation is a sign-off aid, not an automated check: the
-            spreadsheets remain the source for FY2026 and earlier.
+            spreadsheets remain the source for the prior year and earlier.
           </p>
         </Card>
       </div>

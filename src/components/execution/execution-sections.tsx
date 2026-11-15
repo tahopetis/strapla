@@ -8,6 +8,7 @@ import {
   TextField,
 } from '@/components/form';
 import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import { formatDate } from '@/lib/format';
 import type { CommitmentRow, SettlementOption, SpendRow } from '@/server/plan/execution-queries';
 import {
   createCommitmentAction,
@@ -210,7 +211,7 @@ export function CommitmentsSection({
                 {rows.map((row) => (
                   <tr key={row.commitment.id}>
                     <td className="py-3 pr-4 uppercase">{row.commitment.component}</td>
-                    <td className="py-3 pr-4 whitespace-nowrap">{row.commitment.commitmentDate}</td>
+                    <td className="py-3 pr-4 whitespace-nowrap">{formatDate(row.commitment.commitmentDate)}</td>
                     <td className="py-3 pr-4">
                       <p>{row.commitment.reference ?? '—'}</p>
                       {row.commitment.description ? (
@@ -329,7 +330,7 @@ export function SpendSection({
       <p className="text-sm text-slate-600">
         Actual spending (invoices recorded). A spend entry can settle open commitments; settling a
         commitment from an earlier fiscal year is a cross-year settlement and does not reduce this
-        year&apos;s remaining. Payments of pre-FY2027 commitments are marked as prior-year opening.
+        year&apos;s remaining. Payments of commitments made before Strapla are marked as prior-year opening.
       </p>
 
       {editable ? (
@@ -370,7 +371,7 @@ export function SpendSection({
                 { value: 'current', label: 'Current-year spend (may settle commitments)' },
                 {
                   value: 'prior_year_opening',
-                  label: 'Pays a pre-FY2027 commitment (opening balance)',
+                  label: 'Pays a commitment made before Strapla (opening balance)',
                 },
               ]}
             />
@@ -423,7 +424,7 @@ export function SpendSection({
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => (
                   <tr key={row.spend.id}>
-                    <td className="py-3 pr-4 whitespace-nowrap">{row.spend.spentOn}</td>
+                    <td className="py-3 pr-4 whitespace-nowrap">{formatDate(row.spend.spentOn)}</td>
                     <td className="py-3 pr-4 uppercase">{row.spend.component}</td>
                     <td className="py-3 pr-4">
                       <p>{row.spend.vendor ?? '—'}</p>

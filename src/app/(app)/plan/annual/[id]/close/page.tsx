@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
+import { formatDate } from '@/lib/format';
 import { getCloseState } from '@/server/plan/close-queries';
 import { closeFiscalYearAction } from '@/server/plan/close-actions';
 
@@ -63,7 +64,7 @@ export default async function CloseYearPage({
               <div>
                 <dt className="text-slate-500">Closed at</dt>
                 <dd className="mt-1 font-medium">
-                  {state.plan.closedAt ? state.plan.closedAt.toISOString().slice(0, 10) : '—'}
+                  {state.plan.closedAt ? formatDate(state.plan.closedAt) : '—'}
                 </dd>
               </div>
               <div>
