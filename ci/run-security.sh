@@ -19,7 +19,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-SCANNERS="${SCANNERS:-secrets,deps,sast}"
+SCANNERS="${SCANNERS:-secrets,deps,sast,misconfig}"
 REPORT_DIR="${REPORT_DIR:-findings}"
 # Scanners are downloaded outside the repo: they must never sit in the tree
 # that the secrets scanner walks, and a missing .gitignore entry must not leak
@@ -34,6 +34,7 @@ BASELINE="${BASELINE:-$SCRIPT_DIR/security-baseline.json}"
 GITLEAKS_VERSION="${GITLEAKS_VERSION:-8.30.1}"
 OSV_VERSION="${OSV_VERSION:-2.7.1}"
 SEMGREP_VERSION="${SEMGREP_VERSION:-1.185.0}"
+TRIVY_VERSION="${TRIVY_VERSION:-0.76.2}"
 
 SEMGREP_CONFIG="${SEMGREP_CONFIG:-p/default}"
 GITLEAKS_CONFIG="${GITLEAKS_CONFIG:-}"
@@ -46,10 +47,11 @@ log() { printf '%s\n' "$*" >&2; }
 # gitleaks names builds x64/arm64; osv-scanner names them amd64/arm64.
 ARCH_GL=""
 ARCH_OSV=""
+ARCH_TRIVY=""
 detect_arch() {
   case "$(uname -m)" in
-    x86_64 | amd64)   ARCH_GL=x64   ARCH_OSV=amd64 ;;
-    aarch64 | arm64)  ARCH_GL=arm64 ARCH_OSV=arm64 ;;
+    x86_64 | amd64)   ARCH_GL=x64   ARCH_OSV=amd64 ARCH_TRIVY=64bit ;;
+    aarch64 | arm64)  ARCH_GL=arm64 ARCH_OSV=arm64 ARCH_TRIVY=ARM64 ;;
     *) log "unsupported architecture $(uname -m)"; return 1 ;;
   esac
 }
@@ -151,6 +153,21 @@ ensure_semgrep() {
   printf '%s\n' "$bin"
 }
 
+ensure_trivy() {
+  local bin="$TOOL_DIR/trivy" asset
+  if [ -x "$bin" ]; then printf '%s\n' "$bin"; return 0; fi
+  detect_arch || return 1
+  asset="trivy_${TRIVY_VERSION}_Linux-${ARCH_TRIVY}.tar.gz"
+  fetch_verified \
+    "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${asset}" \
+    "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_checksums.txt" \
+    "$asset" "$TOOL_DIR/$asset" || return 1
+  tar -xzf "$TOOL_DIR/$asset" -C "$TOOL_DIR" trivy || { log "could not unpack $asset"; return 1; }
+  chmod +x "$bin"
+  [ -x "$bin" ] || return 1
+  printf '%s\n' "$bin"
+}
+
 # A scanner may exit 1 to mean "findings", so only a report-less or
 # badly-broken run counts as crashed. Anything not ok is an ERROR downstream.
 run_scanner() { # run_scanner <name> <cmd...>
@@ -237,6 +254,25 @@ scan_sast() {
   run_scanner sast "$bin" "${args[@]}"
 }
 
+scan_misconfig() {
+  local bin
+  if ! bin=$(ensure_trivy); then record misconfig crashed "trivy install failed"; return 0; fi
+  local -a args=(
+    fs
+    --scanners misconfig
+    --format sarif
+    --output "$REPORT_DIR/misconfig.sarif"
+    --exit-code 1
+    --quiet
+    --skip-db-update
+    --skip-dirs node_modules
+    --skip-dirs .next
+    --skip-dirs findings
+    .
+  )
+  run_scanner misconfig "$bin" "${args[@]}"
+}
+
 main() {
   mkdir -p "$REPORT_DIR" "$TOOL_DIR" || {
     log "cannot create $REPORT_DIR / $TOOL_DIR"
@@ -256,6 +292,7 @@ main() {
       secrets) scan_secrets ;;
       deps)    scan_deps ;;
       sast)    scan_sast ;;
+      misconfig) scan_misconfig ;;
       *)
         log "unknown scanner '$s' — recording it as crashed so the gate fails closed"
         record "$s" crashed "unknown scanner id"

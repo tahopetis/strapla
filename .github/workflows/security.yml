@@ -23,8 +23,8 @@ concurrency:
 
 # contents: read   -> checkout only
 # statuses: write  -> publish the verdict where it is readable without a token
-# The only action used is actions/checkout, pinned. No scanner action, no
-# third-party action, nothing else to trust.
+# The only actions used are actions/checkout and actions/upload-artifact, both
+# pinned by SHA. No scanner action, no third-party action, nothing else to trust.
 permissions:
   contents: read
   statuses: write
@@ -34,7 +34,7 @@ env:
   # not block a merge until the first report is triaged. Raise to 'high' (and
   # make this check required) once the backlog is understood.
   FAIL_ON: ${{ inputs.fail_on || vars.SECURITY_GATE_FAIL_ON || 'none' }}
-  SCANNERS: ${{ vars.SECURITY_GATE_SCANNERS || 'secrets,deps,sast' }}
+  SCANNERS: ${{ vars.SECURITY_GATE_SCANNERS || 'secrets,deps,sast,misconfig' }}
   # Optional: a committed rules file. Empty means the scanners' own defaults.
   GITLEAKS_CONFIG: ${{ vars.SECURITY_GATE_GITLEAKS_CONFIG || '' }}
   SEMGREP_CONFIG: ${{ vars.SECURITY_GATE_SEMGREP_CONFIG || 'p/default' }}
@@ -133,3 +133,12 @@ jobs:
             -d "$body"
           echo "summary: $msg"
 
+
+      # Triage channel: SARIF and per-scanner logs for repo writers, 14 days.
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-findings
+          path: findings/
+          retention-days: 14

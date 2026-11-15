@@ -11,6 +11,7 @@ scanners at all is red — the gate never goes green because nothing ran.
 | gitleaks | committed secrets | `findings/secrets.sarif` |
 | osv-scanner | dependency CVEs (lockfile) | `findings/deps.sarif` |
 | semgrep (`p/default`) | SAST | `findings/sast.sarif` |
+| trivy (`misconfig`) | Dockerfile / Compose misconfiguration | `findings/misconfig.sarif` |
 
 One decider, `ci/normalize.mjs`, reads the SARIF and prints exactly one line:
 
@@ -60,7 +61,7 @@ subset is `SCANNERS=secrets`.
 
 ## Triage a red check
 
-1. Read the **last line** of the job log; it is the verdict.
+1. Read the **last line** of the job log; it is the verdict. Download the `security-findings` artifact from the run (14 days) for the SARIF and per-scanner logs.
 2. `ERROR` / `SETUP` — fix what it names; the code is not on trial.
 3. `FAIL` — read `findings/summary.json` (counts, scanner, severity), then the SARIF for detail.
 4. Waive only what has been read: add `scanner:rule:path`, a reason and an expiry to
@@ -85,6 +86,6 @@ checks are green. Treat a red or missing check as a stop.
 
 ## Current state (November 2026)
 
-First full run: `SECURITY: PASS (shadow: FAIL_ON=none)` with
+First full run (before the Trivy scanner was added): `SECURITY: PASS (shadow: FAIL_ON=none)` with
 `secrets=ok/0 deps=ok/3 sast=ok/11` — 0 critical, 1 high, 13 medium. The one high finding and the
 mediums need triage before `FAIL_ON` moves to `high`.
