@@ -3,7 +3,7 @@
 **Prepared:** 15 November 2026
 **For:** the portfolio owner (product owner and UAT tester), the engineering lead
 **Based on:** [USER-JOURNEY-REVIEW.md](USER-JOURNEY-REVIEW.md) — the full journey audit of the December release
-**Decision needed by:** 18 November 2026 (scope and capacity for the pre-go-live phase)
+**Decisions recorded:** 15 November 2026 (D1–D3 answered; D4–D7 defaulted — see §13)
 **Release constraint:** M2.5 acceptance is **18 December 2026** ([CHARTER.md](CHARTER.md#L296)). Five working weeks remain.
 
 ---
@@ -15,13 +15,13 @@ money model, the audit trail and the no-delete rules are genuinely good. What is
 experience around those records — the path that takes a portfolio owner from a fresh installation to
 a reconciled FY2027 plan, and the daily loop that records a commitment or a payment without a hunt.
 
-This proposal does not redesign the product. It closes the journey gaps the review found, in three
+This proposal does not redesign the product. It closes the journey gaps the review found in three
 phases, with the first phase delivering the highest-trust fixes in **five working days** and every
 item in the December release measurable against the UAT plan already in the repository.
 
-**The ask, in one line:** approve **15 engineer-days before 18 December** to fix correctness, safety
-and the first-run path; approve **4–5 weeks in January** to finish the daily execution surface,
-opening-balance import and the mobile/accessibility pass.
+**The ask, in one line:** approve **17 engineer-days before 18 December** to fix correctness, add the
+opening-balance import the owner requires, and build the first-run path; approve **22 engineer-days in
+January** to finish the daily execution surface, the close review and the mobile/accessibility pass.
 
 | | Current | Proposed | Where |
 |---|---|---|---|
@@ -29,8 +29,8 @@ opening-balance import and the mobile/accessibility pass.
 | First-run guidance | A sentence and a link | Checklist with real progress | W1 |
 | Opening-balance load | 3 unrelated forms, no import | One wizard, import, control totals | W3 |
 | Failed form submit | Everything typed is lost | Values kept, errors on the field | W5 |
-| Close the fiscal year | One irreversible click | Review step, totals, typed confirmation | W4 |
-| Phone use (390 px) | ~126 px content column | Operable at every screen | W6 |
+| Close the fiscal year | One irreversible click | Typed confirmation now; review wizard in January | W4 |
+| Phone use (390 px) | ~126 px content column | Operable at every screen — January, per D1 | W6 |
 | Copy tells the truth | 5 stale milestone surfaces, hard-coded FY2027 | Generated years, no milestone names | W0 |
 
 ---
@@ -63,14 +63,15 @@ there is no second pair of eyes in the product, so the product itself has to be 
 3. **The cheapest fixes have the highest trust return.** Five stale-copy surfaces, hard-coded fiscal
    years and UTC date defaults are small edits that currently make a shipped product read as
    unfinished. They should not survive to the release candidate.
-4. **The expensive fixes need to start in January, not be discovered in January.** The execution
-   surface, the opening-balance import and the responsive pass are multi-day items that will not fit
-   before the freeze.
+4. **The import the owner requires changes the shape of the work.** D2 puts the opening-balance CSV
+   import inside Phase B, so it has to start in the first week (the parser and template) and land by
+   the release tag. The daily execution surface and the responsive pass move to January by consequence,
+   not by preference.
 
-**Cost of doing nothing:** the December release ships with a broken phone layout, an irreversible
-one-click year close, a data-entry loop that punishes every validation error, and copy that tells
-reviewers the product is incomplete. UAT may still pass; adoption will be slower and the first
-support conversations will be about the journey, not the finance model.
+**Cost of doing nothing:** the December release ships with a data-entry loop that punishes every
+validation error, a year close that is one irreversible click away, a first run with no guidance, and
+copy that tells reviewers the product is incomplete. UAT may still pass; adoption will be slower and
+the first support conversations will be about the journey, not the finance model.
 
 ---
 
@@ -85,9 +86,11 @@ These are the rules every workstream is judged against. They are deliberately fe
 3. **Money is one glance away.** The state of the portfolio — budget, committed, spent, remaining —
    is readable without opening a project, and every figure names the rule behind it.
 4. **Nothing irreversible happens in one click.** Close, archive and cancel show a review step and
-   require an explicit confirmation.
+   require an explicit confirmation. Where the full review is deferred, a typed confirmation holds
+   the line in the interim.
 5. **Every screen survives a phone.** Operable at 390 px, 44 px targets, tables that become records,
-   no horizontal page scroll.
+   no horizontal page scroll. Delivered in January by decision D1; the desktop journey does not
+   depend on it.
 6. **Say it in the user's words.** No ADR/BR/charter numbers, no milestone names, no route paths in
    user copy. One plain sentence on the screen; the rule behind a disclosure.
 7. **The product tells the truth about itself.** No stale copy, no hard-coded fiscal years, no date
@@ -101,16 +104,21 @@ These are the rules every workstream is judged against. They are deliberately fe
 
 | Phase | Dates | Working days | Scope | Outcome |
 |---|---|---|---|---|
-| **A. Trust and correctness** | 16–20 Nov 2026 | 5 | Copy hygiene, derived fiscal years, time-zone dates, visible activation, archive confirmation, loading/error/404 boundaries, session message | The release candidate stops contradicting itself |
-| **B. The go-live journey** | 23 Nov–4 Dec 2026 | 10 | Form feedback (keep values, inline errors, pending), first-run checklist on Home, close review wizard, opening-balance landing with control totals, fiscal-year switcher, funding nav hidden | UAT-01…UAT-15 have a guided path and safe high-stakes actions |
-| **C. The daily product** | 5–29 Jan 2027 | 20–22 | `/spending` register + quick add, actionable flags inbox, opening-balance CSV import, responsive shell and 390 px pass, accessibility pass, copy pass, journey tests | The product people use every week, not only at go-live |
+| **A. Trust, correctness and import foundation** | 16–20 Nov 2026 | 5 | Copy hygiene, derived fiscal years, time-zone dates, visible activation, typed close confirmation, loading/error/404 boundaries, session message, import template and parser (no UI) | The release candidate stops contradicting itself and the import is de-risked |
+| **B. The go-live journey and the load** | 23 Nov–8 Dec 2026 | 12 | Form feedback (keep values, inline errors, pending), first-run checklist on Home, opening-balance import wizard and control totals, archive confirmation, funding nav hidden, import e2e | UAT-01…UAT-15 have a guided path, a safe close and a one-day opening load |
+| **C. The daily product** | 5–29 Jan 2027 | 22 | `/spending` register + quick add, actionable flags, responsive/390 px pass, accessibility, close review wizard, fiscal-year switcher and filters, copy pass, journey tests | The product people use every week, not only at go-live |
 
-**Freeze:** 4 December. **UAT:** 7–11 December. **Go/no-go:** 16 December. **Ship:** 18 December.
+**Release tag:** 8 December. **UAT:** 9–15 December. **Go/no-go:** 16 December. **Ship:** 18 December.
 No delivery between 19 December and 4 January.
 
+**No development freeze (D3).** Development continues on `main`. UAT runs against an immutable release
+tag cut on 8 December; fixes that the release needs go on a short-lived `release/2026.12` branch and
+are cherry-picked onto the tag, while other work keeps landing on `main` and ships after 18 December.
+The trade-off is stated in §10: UAT must be pinned, or it drifts onto a moving target.
+
 Phase A is additive and low-risk: no schema change, no new flow, no dependency on the host decision.
-Phase B touches shared form behaviour and the close flow, so it needs the freeze respected. Phase C
-is a normal January iteration with its own demo and sign-off.
+Phase B is the risk centre because it rewrites shared form behaviour and adds the import; it needs the
+8 December tag respected. Phase C is a normal January iteration with its own demo and sign-off.
 
 ---
 
@@ -163,7 +171,7 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
   plan" button.
 - Activating a plan is reachable in one click from its page header.
 
-### W2 — The daily execution surface (Phase C, 6–8 days)
+### W2 — The daily execution surface (Phase C, 8 days)
 
 **Closes:** J2, J3, J8 (execution half), F7, V3, V4, V5.
 
@@ -176,7 +184,9 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
   with the parent chosen by search.
 - **Settlement inputs collapse** in the spend form behind "Settle commitments (N)"; the primary
   fields stay above the fold.
-- **`/funding` retires**: from Phase B the nav item is hidden (the URL still resolves, pointing at
+- **Actionable flags:** the Home flags tile links to a filtered view of over-allocated programs and
+  flagged projects.
+- **`/funding` retires**: the nav item is hidden in Phase B (the URL still resolves, pointing at
   Plan); once `/spending` ships it redirects there and the explainer moves to Help.
 - **Small shell polish:** one at-a-glance capex/opex bar on Home, sticky table headers and row hover in
   the registers, and a favicon plus wordmark and `theme-color` meta.
@@ -188,46 +198,52 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
 - A commitment can be found by project code or reference without opening the project.
 - The spend form's primary fields are visible without scrolling with 20 open commitments present.
 
-### W3 — Opening-balance load (Phase B: 1.5 days; Phase C: 5 days)
+### W3 — Opening-balance load (Phase A: 1 day; Phase B: 5.5 days)
 
 **Closes:** J4.
 
 **Changes**
 
-- **Phase B — landing and control:** `/plan/opening-balances` gains a load checklist (SI prior
-  consumption, program carry-in, project opening figures, allocations carry-in), a control-total
-  entry row per line, a computed difference, and a "signed off" state the owner can set with a
-  reason. It keeps its existing reconciliation tables.
-- **Phase C — import:** a four-step wizard (template → upload/validate → load → reconcile) for the
-  three opening data sets. Parse first, show row-level errors, write in one transaction, record one
-  audit entry per record with the documented reason convention, never partially apply.
+- **Phase A — foundation:** CSV template (columns, example rows, the documented reason convention),
+  a parser and validator that reads every opening data set, a dry-run harness, and unit tests. No UI
+  yet. This is what removes the import from the critical path in Phase B.
+- **Phase B — wizard and landing:** a four-step flow (template → upload/validate → load → reconcile)
+  for the three opening data sets. Parse first, show row-level errors by line, write in one
+  transaction, record one audit entry per record, never partially apply. `/plan/opening-balances`
+  becomes the landing: a load checklist per data set, control-total entry, computed difference, and
+  a "signed off" state set with a reason. The existing reconciliation tables stay as step four.
 
 **Done when**
 
 - The owner can compare every control total on one screen and see the difference without a
   spreadsheet.
-- A 25-project opening load completes in under one day, including reconciliation.
+- A 25-project opening load (import plus reconciliation) completes in under one day, and the import
+  itself takes under 15 minutes.
 - A malformed CSV writes nothing and reports every bad row by line number.
+- Every imported record carries one audit entry with the load reason.
 
-### W4 — Safe high-stakes actions (Phase A: 1 day; Phase B: 2 days)
+### W4 — Safe high-stakes actions (Phase A: 0.5 day; Phase C: 2 days)
 
 **Closes:** J5, F5, J5b (archive half).
 
 **Changes**
 
-- **Archive plan:** confirmation dialog stating that archiving is final, with the reason field inside
-  it.
-- **Close fiscal year (Phase B):** split into Review and Confirm. Review is read-only: carry-over
-  totals per component, target programs, allocations without a target, entered vs available. Confirm
-  requires the approval reference and a typed confirmation (`CLOSE FY2027`). Submit validates every
-  carry line against its available/remaining figure and refuses to close on a target-less carry.
-- After close: a receipt page with the carry-over snapshot and a link to the audit entry.
+- **Phase A — interim close guard:** on the existing close form, require the approval reference and a
+  typed confirmation (`CLOSE FY2027`) and show the computed carry totals above the button. Two hours
+  of work that removes the one-click irreversible close until the full wizard lands.
+- **Phase B — archive confirmation** (part of W5's dialog pattern): archiving states that it is final,
+  with the reason field inside the dialog.
+- **Phase C — full close wizard:** Review and Confirm as separate steps. Review is read-only:
+  carry-over totals per component, target programs, allocations without a target, entered vs
+  available. Confirm validates every carry line against its available/remaining figure and refuses to
+  close on a target-less carry. After close: a receipt page with the carry-over snapshot and a link
+  to the audit entry. Deferred to January because the **first in-app year close is January 2028**
+  (charter §6.7, `CHARTER.md:207`), so it needs to be right long before it needs to be early.
 
 **Done when**
 
-- Closing with an over-carry or a missing target is blocked with a field-level message.
-- The confirmation cannot be submitted without the typed phrase and produces exactly one audit entry
-  plus the carry-over records.
+- The interim guard blocks a close without the typed phrase and records exactly one audit entry.
+- The full wizard blocks an over-carry or a missing target with a field-level message.
 - The closed state is read-only as today and states that there is no reopen.
 
 ### W5 — Forms that do not punish (Phase A: 1 day; Phase B: 3 days)
@@ -244,7 +260,7 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
   stays for server errors only.
 - Success messages name the record ("Project PRJ-2027-014 created").
 - Destructive actions get a native `<dialog>` confirmation with the consequence in one sentence and
-  the reason inside.
+  the reason inside (archive, void, deactivate).
 - **Resilience:** `loading.tsx` skeletons for the app routes, `error.tsx` with "Try again" and a
   support line, `not-found.tsx`, and a "Your session ended — sign in again" message on the login
   redirect.
@@ -258,9 +274,12 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
 - A slow save visibly disables the button; a second click is impossible.
 - Killing the database during a save produces the styled error page, not the framework default.
 
-### W6 — Phone, touch, keyboard and long-page navigation (Phase C, 5 days; subset in Phase B if D1 says phone matters)
+### W6 — Phone, touch, keyboard and long-page navigation (Phase C, 5 days)
 
 **Closes:** V1, V2, A1–A7.
+
+**Deferred by decision D1:** not needed for the December release. Revisit before Phase C starts; if
+the owner begins using a tablet or phone in January, this is the first item of the phase.
 
 **Changes**
 
@@ -282,14 +301,18 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
   project, allocation and close; keyboard-only walkthrough of the plan build completes without a
   mouse.
 
-### W7 — Fiscal-year context and reporting (Phase B: 1 day; Phase C: 1 day)
+### W7 — Fiscal-year context and reporting (Phase C, 2 days)
 
 **Closes:** J7, J8 (registers), report filters.
+
+**Moved out of Phase B by D2:** the import took the capacity. Home keeps the active-year badges until
+the switcher lands in January.
 
 **Changes**
 
 - A **fiscal-year switcher** in the header, defaulting to the active year; Home and the four reports
-  respect it; the "whole horizon" view remains an option.
+  respect it; the "whole horizon" view remains an option. Per D5, several years may be active; the
+  switcher names the one on screen and the badge list shows every active year.
 - **Register filters:** search by code/name, filter by status/owner, sortable columns, pagination on
   projects and annual plans.
 - **Report filters** for the chosen year and strategic initiative; exports reflect the filtered view.
@@ -300,7 +323,7 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
   navigation.
 - A project can be found by code in under five seconds in a 50-project register.
 
-### W8 — Guardrails and measurement (Phase A: 1 day; ongoing)
+### W8 — Guardrails and measurement (Phase A: 0.5 day; Phase B: 1 day; ongoing)
 
 **Closes:** T6, C6, and protects the others from regressing.
 
@@ -309,18 +332,20 @@ how we know it is done, and the effort estimate (one full-time engineer; ±30%).
 - **Copy guard script** in the repo (`scripts/copy-guard.mjs`): fails CI when page or component copy
   contains milestone identifiers, ADR/BR references outside an allowed list, or hard-coded fiscal
   years. Cheap to write, and it makes W0 permanent.
-- **E2E journeys:** add spend → settle → report, year close, and member lifecycle to the existing
-  Playwright suite (today only the plan happy path exists, `../e2e/plan-happy-path.spec.ts`).
-- **axe-core in CI** on the five key routes.
-- **UAT timing protocol:** the owner times three tasks (first plan step, spend entry, opening-load
+- **E2E journeys:** add the import (good file and malformed file), the form-feedback pattern and the
+  first-run checklist to the existing Playwright suite (today only the plan happy path exists,
+  `../e2e/plan-happy-path.spec.ts`). Spend → settle → report, year close and member lifecycle arrive
+  with the January work.
+- **axe-core in CI** on the five key routes (from Phase C, when W6 changes the markup).
+- **UAT timing protocol:** the owner times four tasks (first plan step, spend entry, opening import,
   reconciliation) with a stopwatch; results go in the UAT sign-off table. No analytics, no tracking,
   no privacy question.
 
 **Done when**
 
 - CI fails if a milestone reference or `FY2027` is reintroduced into page copy.
-- The four journey tests run in CI on every pull request.
-- The three baseline timings are recorded before the freeze and again after Phase C.
+- The import and checklist journeys run in CI on every pull request before the release tag.
+- The four baseline timings are recorded before 8 December and again after Phase C.
 
 ---
 
@@ -350,21 +375,25 @@ Any item above that becomes a requirement is a change request with its own estim
 
 | Week | Dates | Delivery | Gate |
 |---|---|---|---|
-| 0 | 16–20 Nov | Phase A: W0, W4 (archive), W5 (resilience), W8 (copy guard + timing baseline) | Host decision recorded (charter R9); freeze scope agreed 20 Nov |
-| 1 | 23–27 Nov | W5 forms, W1 checklist and activation | Mid-phase demo to the owner |
-| 2 | 30 Nov–4 Dec | W4 close wizard, W3 opening landing, W7 year switcher, UAT script update | **Freeze 4 Dec**; release candidate built |
-| 3 | 7–11 Dec | UAT-01…UAT-15 with the owner; fixes inside the freeze rules | Defects triaged same day |
-| 4 | 14–16 Dec | Remaining fixes, opening balances signed off, go/no-go | **Go/no-go 16 Dec** |
+| 0 | 16–20 Nov | Phase A: W0, W5 (resilience), W3 (import foundation), W4 (close guard), W8 (copy guard) | Host decision recorded (charter R9); re-cut confirmed 20 Nov |
+| 1 | 23–27 Nov | W5 forms and dialogs, W1 checklist and activation, W3 wizard starts | Mid-phase demo to the owner |
+| 2 | 30 Nov–4 Dec | W3 wizard end-to-end, landing and control totals, import e2e | Demo: a real spreadsheet loaded end to end |
+| 3 | 7–8 Dec | Integration, dry run on the real opening data, UAT script update | **Release tag cut 8 Dec** |
+| 4 | 9–15 Dec | UAT-01…UAT-15 against the tag; release fixes on `release/2026.12` | Defects triaged same day |
+| 5 | 16 Dec | Opening balances signed off, go/no-go | **Go/no-go 16 Dec** |
 | — | 18 Dec | Release | |
-| 5–8 | 5–29 Jan | Phase C: `/spending`, import, responsive, accessibility, copy, tests | January demo and sign-off |
+| 6–9 | 5–29 Jan | Phase C: `/spending`, responsive, accessibility, close wizard, year switcher, copy, tests | January demo and sign-off |
 
-**Freeze rule:** after 4 December only release-blocking defects and the W0 copy/time-zone class of fix
-are accepted; everything else goes to Phase C. This protects UAT from a moving target.
+**Release discipline (no development freeze, per D3).** Development continues on `main`. UAT is pinned
+to the 8 December tag; release fixes are cherry-picked onto `release/2026.12`; anything that is not a
+release blocker lands after 18 December. The trade-off: UAT sees the tag, not the newest `main`, so a
+fix only counts when it is on the tag. The release manager (engineering lead) re-cuts the tag when a
+fix is approved.
 
-**Capacity assumption:** one engineer full-time. Phase A and B are 15 engineer-days against 15
-available (5 + 10). If capacity is lower, the cut line is, in order: the fiscal-year switcher (W7),
-register filters (W7), then the opening-balance landing (W3, keeping the existing reconciliation
-page). None of the cuts blocks UAT.
+**Capacity assumption:** one engineer full-time. Phase A and B are 17 engineer-days against 17
+available (5 + 12). If capacity is lower, the cut line is, in order: the import wizard's reconciliation
+step (load and control totals only), the first-run checklist, then the archive dialog. None of the
+cuts blocks UAT, but cutting the import itself would reverse D2 and force manual entry.
 
 ---
 
@@ -372,14 +401,14 @@ page). None of the cuts blocks UAT.
 
 | Phase | Workstreams | Person-days |
 |---|---|---|
-| A | W0 2 · W4 1 · W5 1 · W8 1 | **5** |
-| B | W1 2 · W4 2 · W5 3 · W3 1.5 · W7 1 · W8 0.5 | **10** |
-| C | W2 8 · W3 4 · W6 5 · W7 1 · W8 2 · copy pass 2 | **22** |
-| | **Total** | **37 person-days** |
+| A | W0 2 · W5 1 · W3 1 · W4 0.5 · W8 0.5 | **5** |
+| B | W5 3 · W1 2 · W3 5.5 · W8 1 · integration buffer 0.5 | **12** |
+| C | W2 8 · W6 5 · W7 2 · W4 2 · W8 1 · copy pass 2 · polish/e2e 2 | **22** |
+| | **Total** | **39 person-days** |
 
-Estimates assume one full-time engineer, the existing stack (Next.js server actions, Tailwind, no new
-dependencies except a CSV parser and axe-core as dev dependencies), and no schema change. Phase C's
-import may need one forward-only migration if batch tracing is wanted; that is included.
+Estimates assume one full-time engineer, the existing stack (Next.js server actions, Tailwind, a CSV
+parser as the only new runtime dependency, axe-core as a dev dependency). The import may add one
+forward-only migration if load-batch tracing is wanted; that is included.
 
 Commercial terms are not part of this document.
 
@@ -389,16 +418,17 @@ Commercial terms are not part of this document.
 
 | Metric | Baseline (today) | Target | Measured by |
 |---|---|---|---|
-| Spend entry from login | 6 screens, ~9 fields, untimed | ≤ 60 s, 3 consecutive runs | UAT stopwatch |
+| Spend entry from login | 6 screens, ~8 fields, untimed | ≤ 60 s, 3 consecutive runs | UAT stopwatch |
 | First plan built (fresh tenant, first program) | No guidance; unknown time | ≤ 45 min with checklist | UAT timing |
 | Fields lost on a validation error | All of them | 0 | Manual test + e2e |
-| Opening-balance load, 25 projects | Manual, multi-day | ≤ 1 day including reconciliation | UAT-08 |
+| Opening-balance load, 25 projects | Manual, multi-day | Import ≤ 15 min; reconcile ≤ 1 day | UAT-08 + stopwatch |
+| Malformed import writes data | n/a (no import) | Nothing written; every bad row reported | Import e2e |
 | UAT scenarios passing without workaround | Unknown | 15/15 | UAT sign-off |
-| Closed year reopened by mistake | No protection | Impossible without a DB restore | Manual test |
-| Serious axe violations on key routes | Unknown | 0 | CI |
+| Closed year protected from accident | One click | Typed confirmation (Phase A), review wizard (January) | Manual test |
+| Serious axe violations on key routes | Unknown | 0 | CI (from Phase C) |
 | Milestone / hard-coded year references in UI copy | 5 + 9 | 0 | Copy guard in CI |
-| Phone (390 px) usability | Unusable | Every screen operable | Mobile walkthrough |
-| Journey tests in CI | 1 | 4 | CI |
+| Phone (390 px) usability | Unusable | Every screen operable in January | Mobile walkthrough |
+| Journey tests in CI | 1 | 3 by the release tag; 6 by end of January | CI |
 
 ---
 
@@ -407,14 +437,15 @@ Commercial terms are not part of this document.
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Host decision slips (charter R9), compressing UAT | Medium | High | Decision requested 18 Nov; Phase A needs no host. Fallback tunnel documented in the charter |
-| Phase B overruns the 10-day capacity | High | Medium | Cut line defined in §7; freeze on 4 Dec protects UAT |
-| Form refactor (W5) regresses existing flows | Medium | High | One shared pattern, applied form by form; e2e happy path runs on every PR; UAT regression days 7–8 |
-| Close wizard changes break the carry-over logic | Low | High | Logic untouched; only the UI shell and validation change; unit tests already cover the domain (`../src/domain/close.test.ts`) |
-| CSV import writes bad data | Low | High | Validate-then-write in one transaction; dry-run report; import disabled after sign-off |
+| Phase B overruns the 12-day capacity | High | Medium | Import is the fixed commitment; cut line in §7; the release tag is the hard line, not a freeze |
+| **No freeze lets UAT drift onto newer commits** | **Medium** | **High** | UAT pinned to the 8 Dec tag; fixes only via `release/2026.12`; the re-cut is explicit and recorded |
+| Form refactor (W5) regresses existing flows | Medium | High | One shared pattern, form by form; the existing e2e happy path runs on every PR; UAT regression 9–10 Dec |
+| Import writes bad data | Low | High | Validate-then-write in one transaction; dry-run report; malformed-file e2e; import locked after sign-off |
+| Close wizard deferred, carry-over still guarded by a typed confirmation | Low | Medium | Phase A guard blocks one-click close; the full wizard lands in January, long before the January 2028 close |
 | Responsive pass destabilises desktop layout | Medium | Medium | Shell-only changes first; visual check at five widths; no page-level re-layout without a screenshot review |
 | Copy guard produces false positives | Low | Low | Allowed-list in the script; it fails with file:line, not a silent block |
 | Key-person risk (one engineer) | Medium | Medium | Small PRs, CI gate, decisions and design captured in these docs |
-| Scope creep from UAT feedback | High | Medium | Freeze rule; triage labels already exist (`needs-triage` → `ready-for-agent` / `ready-for-human`) |
+| Scope creep from UAT feedback | High | Medium | Release-branch rule; triage labels already exist (`needs-triage` → `ready-for-agent` / `ready-for-human`) |
 
 ---
 
@@ -427,16 +458,16 @@ decision.
 |---|---|
 | ADR-0003 money rules and remaining semantics | Unchanged; the UI states the formulas more plainly and never recomputes them in the client |
 | ADR-0004 audit and roles | Unchanged; every new flow writes actor, reason, before/after; no new roles |
-| Charter §6.7 no reopen after close | Reinforced by the review step and typed confirmation |
+| Charter §6.7 no reopen after close | Reinforced by the typed confirmation now and the review wizard in January |
 | Charter BR-17 flags never block entry | Kept; the close wizard blocks only an invalid carry-over, not a flag |
 | No hard deletes; void with a reason | Kept; confirmations add friction where it belongs |
 | FY2027 as the first in-app year | Kept as data; the proposal removes it from copy and makes it derived |
 | Documents as links, no uploads | Kept; CSV import is financial data, not attachments |
 | Export definitions shared with the screen | Kept; filters applied before both |
 
-**Schema impact:** none for Phases A and B. Phase C's import uses the existing tables; an optional
-forward-only migration adds a load batch reference. Migrations remain forward-only per the go-live
-checklist.
+**Schema impact:** none in Phase A. Phase B's import may add one forward-only migration (a load-batch
+reference) if batch tracing is wanted; no other schema change. Migrations remain forward-only per
+the go-live checklist.
 
 ---
 
@@ -446,6 +477,8 @@ checklist.
   the title. Labels: `needs-triage` on creation, then `ready-for-agent` or `ready-for-human`.
 - **One pull request per item**, small, with the acceptance criterion from this document quoted in the
   description. CI (typecheck, lint, unit, e2e, build) gates every merge.
+- **No freeze, but a hard tag:** `main` keeps moving; the release tag is cut 8 December and only
+  approved release fixes are cherry-picked onto it.
 - **A demo every Friday** to the owner: the acceptance criterion demonstrated on the built app, not a
   screenshot.
 - **Documentation is part of each item:** `USER-GUIDE.md` sections, the relevant UAT scenario, release
@@ -455,34 +488,43 @@ checklist.
 
 ---
 
-## 13. Decisions required
+## 13. Decisions
 
-| # | Decision | Why it blocks | Needed by |
-|---|---|---|---|
-| D1 | Is the app expected to be used on a phone (or a tablet in portrait)? | Sets whether W6 (5 days) is in Phase B or Phase C | 18 Nov |
-| D2 | Is the opening-balance CSV import in scope before go-live, or is manual entry acceptable for UAT? | Sets whether W3 grows from 1.5 to 6.5 days in Phase B | 20 Nov |
-| D3 | Confirm the freeze (4 Dec), UAT window (7–11 Dec) and go/no-go (16 Dec) | Everything is planned backwards from these | 18 Nov |
-| D4 | May ADR/BR references stay in the UI behind a disclosure, or must they leave the screen entirely? | Determines W0's copy mapping and the copy guard allow-list | 18 Nov |
-| D5 | Can two fiscal years be active at once? | Defines the year switcher default and the "active" badges | 20 Nov |
-| D6 | Is one engineer available full-time to 18 December? | The plan assumes it; otherwise the cut line applies | Immediate |
-| D7 | Is a second administrator available for the UAT-12 lifecycle test? | UAT sign-off item, not a build blocker | 1 Dec |
+**Answered on 15 November 2026 — recorded, not re-opened:**
+
+| # | Decision | Answer and consequence |
+|---|---|---|
+| D1 | Phone / tablet use | **Not now.** Desktop-first; W6 stays in Phase C (January). Revisit before Phase C starts; if phone use begins, it becomes the first item of that phase. |
+| D2 | Opening-balance CSV import before go-live | **Required.** The import moves into Phase B (1 day foundation in Phase A + 5.5 days wizard in Phase B). To make room, the full close wizard and the fiscal-year switcher move to Phase C; the close keeps a typed confirmation in Phase A. |
+| D3 | Development freeze | **No freeze.** Development continues on `main`; UAT is pinned to the release tag cut 8 December; release fixes go through `release/2026.12`. The risk and the discipline are in §7 and §10. |
+
+**Defaulted on 15 November 2026 — apply unless changed by 20 November:**
+
+| # | Decision | Default applied |
+|---|---|---|
+| D4 | ADR/BR references in the UI | Out of body copy; kept in one "Why this number?" disclosure per card and in Help. |
+| D5 | Several active fiscal years | Allowed. The dashboard and the year switcher name the year on screen; the "active" badge list shows every active year. No code constraint exists today (`../src/server/plan/annual-actions.ts:134-163`). |
+| D6 | Engineering capacity | One full-time engineer to 18 December and through January; otherwise the §7 cut line applies. |
+| D7 | Second administrator for UAT-12 | A temporary second account created for the test and deactivated afterwards. |
 
 ---
 
 ## 14. Deliverables
 
-**At the freeze (4 Dec)**
-- Phase A and B merged to `main`, CI green, release candidate image published.
-- Updated `USER-GUIDE.md`, `UAT-PLAN.md` (new scenarios for the checklist and close), `RELEASE-NOTES-2026-12.md`.
-- Copy guard and three new e2e journeys in CI.
-- Baseline timings recorded.
+**At the release tag (8 Dec)**
+- Phase A and B merged to `main`, CI green, release candidate image published and tagged.
+- Updated `USER-GUIDE.md`, `UAT-PLAN.md` (new scenarios for the checklist and the import),
+  `RELEASE-NOTES-2026-12.md`, `OPENING-BALANCE-LOAD.md` (import instructions).
+- Copy guard, import e2e, checklist e2e in CI.
+- Import dry run against the real FY2026 data, with the control totals reconciled.
 
 **At go-live (18 Dec)**
 - UAT-01…UAT-15 signed off, opening balances reconciled and signed, go/no-go recorded.
 - A one-page "what changed for you" note for the owner and finance.
 
 **End of January**
-- `/spending`, opening import, responsive and accessibility pass, copy pass, demo and sign-off.
+- `/spending`, responsive and accessibility pass, close review wizard, fiscal-year switcher, copy pass,
+  demo and sign-off.
 - An updated journey review delta: the same scorecard re-run against the built app.
 
 ---
@@ -494,12 +536,12 @@ checklist.
 | J1 no first-run path | W1 | B |
 | J2 `/funding` dead end | W2 (nav hidden in B) | B + C |
 | J3 execution has no home | W2 | C |
-| J4 opening balances fragmented | W3 | B + C |
-| J5 close has no review | W4 | B |
+| J4 opening balances fragmented | W3 | A + B |
+| J5 close has no review | W4 | A (guard) + C (wizard) |
 | J5b activation hidden | W1 | B |
 | J6 flags not actionable | W2 (Home polish) | C |
-| J7 no fiscal-year context | W7 | B |
-| J8 registers do not scale | W7 (reports), W2 (spending) | B + C |
+| J7 no fiscal-year context | W7 | C |
+| J8 registers do not scale | W7 (reports), W2 (spending) | C |
 | C1 stale milestone copy | W0 | A |
 | C2 ADR/BR jargon | W0 + copy pass | A + C |
 | C3 hard-coded fiscal years | W0 | A |
@@ -510,7 +552,7 @@ checklist.
 | F2 no pending state | W5 | B |
 | F3 no inline errors | W5 | B |
 | F4 generic success | W5 | B |
-| F5 destructive without confirm | W4 | A + B |
+| F5 destructive without confirm | W4 (close guard) + W5 (dialogs) | A + B |
 | F6 required reason every edit | W5 (presets) | B |
 | F7 settlement crowding | W2 | C |
 | F8 create does not open record | W5 | B |
@@ -518,10 +560,10 @@ checklist.
 | T3 UTC dates | W0 | A |
 | T4 mixed date formats | W0 | A |
 | T5 silent session expiry | W5 | A |
-| T6 one e2e journey | W8 | A + C |
+| T6 one e2e journey | W8 | A + B + C |
 | V1 no responsive shell | W6 | C |
 | V2 small type | W6 | C |
-| V6 no in-page nav | W6 (light) | C |
+| V6 no in-page nav | W6 | C |
 | A1–A7 accessibility gaps | W6 | C |
 | V3 flat tables | W2 (table polish) | C |
 | V4 no at-a-glance visual | W2 (Home bar) | C |
@@ -552,7 +594,25 @@ These are sketches for alignment, not visual designs. They use the existing Tail
 └────────────┴─────────────────────────────────────────────────────────┘
 ```
 
-**Spending register**
+**Opening-balance landing (Phase B) and import steps**
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ Opening balances — FY2026 → FY2027                    Not signed off │
+│ Checklist                                                           │
+│  ✓ SI prior consumption        control: Rp 12.400.000.000  diff Rp 0│
+│  ✓ Program carry-in            control: Rp  1.620.000.000  diff Rp 0│
+│  → Project opening figures     control: Rp  8.900.000.000  diff —   │
+│  → Allocation carry-in         control: Rp    760.000.000  diff —   │
+│                                        [Continue the load] [Import] │
+└──────────────────────────────────────────────────────────────────────┘
+
+Import: 1 Template → 2 Upload & validate → 3 Load → 4 Reconcile
+  Step 2 shows: 42 rows read · 41 valid · 1 error (line 17: capex is not a number)
+  Step 3 writes nothing until every row is valid; one audit entry per record.
+```
+
+**Spending register (Phase C)**
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -564,7 +624,7 @@ These are sketches for alignment, not visual designs. They use the existing Tail
 └──────┴──────────────┴────────────┴──────────┴──────────┴─────────────┘
 ```
 
-**Close review → confirm**
+**Close review → confirm (Phase C; typed confirmation ships in Phase A)**
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -580,20 +640,6 @@ These are sketches for alignment, not visual designs. They use the existing Tail
 Step 2: approval reference + type CLOSE FY2027 → [Close the year]
 ```
 
-**Opening-balance landing**
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Opening balances — FY2026 → FY2027                    Not signed off │
-│ Checklist                                                           │
-│  ✓ SI prior consumption        control: Rp 12.400.000.000  diff Rp 0│
-│  ✓ Program carry-in            control: Rp  1.620.000.000  diff Rp 0│
-│  → Project opening figures     control: Rp  8.900.000.000  diff —   │
-│  → Allocation carry-in         control: Rp    760.000.000  diff —   │
-│                                        [Continue the load] [Import] │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
 ## Appendix C — Assumptions
 
 - One full-time engineer is available from 16 November to 18 December and for January.
@@ -602,7 +648,8 @@ Step 2: approval reference + type CLOSE FY2027 → [Close the year]
 - No new role or permission model is introduced in this period.
 - The December release remains plan + funding + insight + execution (M1–M5), with the UAT plan as the
   acceptance gate.
-- The UAT owner is available for the two timing sessions and the Friday demos.
-- The host exists by 4 December so UAT runs on the release candidate (charter R9).
+- The UAT owner is available for the timing sessions and the Friday demos, and for 9–15 December.
+- The host exists by 8 December so UAT runs on the release tag (charter R9).
+- Development continues during UAT (no freeze); the tag is the reference, not the branch tip.
 - Estimates are engineer-days, not calendar days, and exclude reviews, demos and UAT support beyond
-  the 0.5 day/week already included in W8.
+  the 0.5 day already included in W8.
