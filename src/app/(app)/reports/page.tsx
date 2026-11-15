@@ -61,8 +61,8 @@ export default function ReportsPage() {
           <li>Print / PDF views that hide the application chrome and keep the tables intact.</li>
         </ul>
         <p className="mt-3 text-xs text-slate-500">
-          Commitments and actual spend arrive with the execution milestone (M3); those report columns are
-          present but empty until then. The audit-trail view arrives with M2.5.
+          Commitments and actual spend come from the execution module; cross-year settlements and prior-year
+          opening payments are reported separately. The audit trail is under Administration.
         </p>
       </Card>
     </div>

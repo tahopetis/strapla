@@ -4,6 +4,7 @@ import { MoneyField, SelectField, SubmitButton, TextField } from '@/components/f
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { ProjectListRow } from '@/server/plan/project-queries';
+import { listAnnualPlans } from '@/server/plan/annual-queries';
 import { listProgramOptions, listProjects } from '@/server/plan/project-queries';
 import { createProjectAction } from '@/server/plan/project-actions';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
@@ -36,7 +37,14 @@ export default async function ProjectsPage({
     );
   }
 
-  const [rows, programOptions] = await Promise.all([listProjects(plan.id), listProgramOptions(plan.id)]);
+  const [rows, programOptions, annualPlans] = await Promise.all([
+    listProjects(plan.id),
+    listProgramOptions(plan.id),
+    listAnnualPlans(plan.id),
+  ]);
+  const activeYear =
+    annualPlans.find((row) => row.annualPlan.status === 'active')?.annualPlan.fiscalYear ??
+    plan.startFiscalYear + 1;
   const canCreate = plan.status === 'active' && programOptions.length > 0;
 
   return (
@@ -70,7 +78,7 @@ export default async function ProjectsPage({
       ) : canCreate ? (
         <Card
           title="Create project"
-          description="The full-life figures are recorded now; the annual allocations to each active fiscal year land in M2."
+          description="The full-life figures are recorded now; annual allocations are added on the project page."
           className="mb-6"
         >
           <form action={createProjectAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -92,8 +100,20 @@ export default async function ProjectsPage({
             <TextField label="Owner" name="owner" maxLength={160} />
             <TextField label="External reference" name="externalReference" maxLength={120} />
             <div className="grid grid-cols-2 gap-4">
-              <TextField label="Start fiscal year" name="startFiscalYear" required defaultValue="2027" maxLength={4} />
-              <TextField label="End fiscal year" name="endFiscalYear" required defaultValue="2027" maxLength={4} />
+              <TextField
+                label="Start fiscal year"
+                name="startFiscalYear"
+                required
+                defaultValue={String(activeYear)}
+                maxLength={4}
+              />
+              <TextField
+                label="End fiscal year"
+                name="endFiscalYear"
+                required
+                defaultValue={String(activeYear)}
+                maxLength={4}
+              />
             </div>
             <MoneyField label="Full-life allocated budget" name="allocatedBudgetFullLife" defaultValue={0} required />
             <MoneyField label="Submitted price" name="submittedPrice" hint="Highest vendor quote." />

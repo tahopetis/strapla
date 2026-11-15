@@ -106,11 +106,6 @@ export default async function PlanOverviewPage() {
           </p>
         </Card>
 
-        <Card title="M1 plan module complete" description="The plan is the source of truth for the portfolio; funding allocations arrive with M2.">
-          <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
-            <li>Next: project year allocations, balances and over-budget flags (M2 funding)</li>
-          </ol>
-        </Card>
       </div>
     </div>
   );

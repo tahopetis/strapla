@@ -217,7 +217,7 @@ function AllocationCard({
             <summary className="cursor-pointer text-sm font-medium text-red-700">Void allocation</summary>
             <form action={voidAllocationAction} className="mt-4 space-y-3">
               <HiddenField name="id" value={allocation.id} />
-              <ReasonField hint="Voiding keeps the record and history; commitments and spend arrive in M3 and will block voiding." />
+              <ReasonField hint="Voiding keeps the record and history; commitments and spend block voiding once recorded." />
               <SubmitButton variant="danger">Void allocation</SubmitButton>
             </form>
           </details>
