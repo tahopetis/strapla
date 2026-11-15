@@ -12,6 +12,10 @@ Canonical names, unchanged. See `docs/agents/triage-labels.md`.
 
 Single-context layout: `GLOSSARY.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Security
+
+Every pull request runs `security-gate` (secrets, dependencies, SAST, IaC misconfiguration) beside `ci`. Never merge with a red gate; only `SECURITY: PASS` is green, and `ERROR`/`SETUP`/`OFF` are red too. Waivers live in `ci/security-baseline.json` with a reason and an expiry — never edit a scanner to go green. `FAIL_ON` is a repository variable, currently `none` (shadow mode) until the first report is triaged. Full contract: `docs/agents/security.md`.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know
