@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { loginAction } from '@/server/auth/actions';
-import { SESSION_ENDED_REASON } from '@/server/auth/login-redirect';
+import { isSessionEnded } from '@/server/auth/login-redirect';
 import { getCurrentUser } from '@/server/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,7 @@ export default async function LoginPage({
           <p className="mt-1 text-sm text-slate-600">IT portfolio management</p>
         </div>
 
-        {reason === SESSION_ENDED_REASON ? (
+        {isSessionEnded(reason) ? (
           <p
             role="status"
             className="mb-4 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900"
