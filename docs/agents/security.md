@@ -43,9 +43,9 @@ code is clean; `OFF` means nothing was scanned. Re-running the same commit does 
 `FAIL_ON` comes from the `SECURITY_GATE_FAIL_ON` repository variable (dispatch input overrides it;
 the workflow default is `none`).
 
-It is currently **`none` — shadow mode**: every scanner runs and reports, but findings do not block.
-Raise it to `high` once the first report has been triaged. From then on the gate blocks at `high` and
-`critical`.
+It is **`medium`**: findings at medium, high or critical block a merge. The first triage fixed the
+backlog rather than waiving it (Dependabot cooldown, SHA-pinned actions), so the gate is a real gate.
+Waivers exist for findings that have been read and time-boxed, never as a way to silence a scanner.
 
 ## Run it locally
 
@@ -86,6 +86,5 @@ checks are green. Treat a red or missing check as a stop.
 
 ## Current state (November 2026)
 
-First full run (before the Trivy scanner was added): `SECURITY: PASS (shadow: FAIL_ON=none)` with
-`secrets=ok/0 deps=ok/3 sast=ok/11` — 0 critical, 1 high, 13 medium. The one high finding and the
-mediums need triage before `FAIL_ON` moves to `high`.
+After the first triage: four scanners, **0 findings at any severity**, no waivers. The threshold is
+`medium`; the gate now passes on its own merits rather than shadow mode.
