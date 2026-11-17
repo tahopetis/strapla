@@ -1,0 +1,4 @@
+Code,Name,Strategic initiative code,Previous program code,Capex budget (Rp),Opex budget (Rp),Capex carry-in (Rp),Opex carry-in (Rp),Notes
+PRG-01,Platform modernisation,SI-01,PRG-01-2026,8000000000,2500000000,750000000,150000000,Continues the platform thread.
+PRG-02,Network refresh,SI-02,,5000000000,1200000000,,,First in-app program.
+PRG-03,Reporting layer,SI-03,PRG-03-2026,2000000000,800000000,200000000,50000000,

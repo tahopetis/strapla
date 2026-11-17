@@ -67,6 +67,8 @@ First visit: `/setup` creates the first administrator (only when no users exist)
 | `pnpm typecheck` | TypeScript, no emit |
 | `pnpm lint` | ESLint |
 | `pnpm test` | Vitest unit tests (domain and helpers) |
+| `pnpm opening:template <data-set> --closing-fiscal-year <year> [--format csv\|xlsx]` | Generate an opening-balance import template |
+| `pnpm opening:validate <data-set> <file>` | Dry-run an opening-balance import file (no writes) |
 | `pnpm db:generate` | Generate a migration from the Drizzle schema |
 | `pnpm db:migrate` | Apply pending migrations (`scripts/migrate.mjs`) |
 | `pnpm e2e` | Playwright end-to-end tests (needs a fresh database; see below) |
@@ -100,16 +102,18 @@ src/
 ├── app/              Next.js App Router routes (auth pages, protected shell, /healthz)
 ├── db/               Drizzle schema and client
 ├── domain/           Pure money and funding rules (framework-free, unit tested)
-├── lib/              Display formatting
+├── lib/              Display formatting and CSV/XLSX import/export adapters
 └── server/           Auth, sessions, audit trail, server actions
 docs/                 Charter, ADRs, data model, operations
 drizzle/              Generated SQL migrations (committed)
 scripts/migrate.mjs   Migration runner used at container start
+scripts/opening-import.ts  Opening-balance import CLI (template, dry run, field list)
 ```
 
 ## Conventions
 
 - Money is whole Rupiah integers; all money arithmetic lives in `src/domain` (ADR-0003).
+- File I/O and Excel/CSV adapters live in `src/lib`; `src/domain` stays framework-free.
 - Every mutation writes an audit entry in the same transaction (ADR-0004).
 - No hard deletes: cancellation is a void status with a reason.
 - Planning artifacts and issues are the source of truth; code follows them.
