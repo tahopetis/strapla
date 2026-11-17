@@ -418,7 +418,8 @@ Closing a fiscal year is a manual, audited, **irreversible** workflow (there is 
 
 - The annual plan must be **active**.
 - The **next fiscal year's annual plan must exist** and must not be closed — carry-over lands there.
-- Agree the carry-over amounts and the approval reference with the portfolio owner.
+- Agree the carry-over amounts, the approval reference and the typed confirmation phrase with the
+  portfolio owner. The phrase is exactly `CLOSE FY<year>` (for example `CLOSE FY2027`).
 - Remember: only **remaining budget** and **unallocated program budget** can be carried; open
   commitments are not carry-over.
 
@@ -427,13 +428,18 @@ Closing a fiscal year is a manual, audited, **irreversible** workflow (there is 
 1. Open the annual plan and click **Close fiscal year** (visible while the plan is active).
 2. Review the **Close review** card: target year, programs with unallocated budget, allocations with
    remaining, and the explanation of the formulas.
-3. **Program carry-over**: for each program, enter capex/opex amounts (up to unallocated) and choose
-   the target program in the next year (defaults to the continuation program).
-4. **Project allocation carry-over**: for each project, enter capex/opex amounts (up to remaining).
+3. **Program carry-over**: for each program, enter a capex/opex amount (up to unallocated) and
+   choose the target program in the next year (defaults to the continuation program). Every field
+   must be filled in explicitly: type `0` for a component with no carry-over.
+4. **Project allocation carry-over**: for each project, enter the amounts to carry (up to remaining),
+   again typing `0` for a component with no carry-over. A blank field blocks the close.
    If the target year's allocation does not exist yet it will be created with the carry-in; projects
    that end before the target year cannot carry.
-5. Enter the **approval reference** (board approval / memo number) and click **Close FY… and carry
-   over**.
+5. Check the **carry-over totals** preview above the button (program and allocation, capex and opex):
+   it shows the amounts entered; the close rejects any amount above what is available or remaining.
+   Enter the **approval reference** (board approval / memo number), type the confirmation phrase
+   **`CLOSE FY…`**, and click **Close FY… and carry over**. A wrong phrase or a cleared carry field
+   blocks the close.
 6. The year becomes `closed`: carry-in is added to the target programs/allocations, a snapshot is
    recorded, every carry-over and the close are audited, and the plan page shows the closed state.
    The **Close fiscal year** page then shows the snapshot (reference, closed date, all entries).

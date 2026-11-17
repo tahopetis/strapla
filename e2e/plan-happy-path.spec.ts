@@ -277,8 +277,24 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('link', { name: 'Close fiscal year' }).click();
   await expect(page.getByRole('heading', { name: 'Close FY2027' })).toBeVisible();
   const closeProgramRow = page.locator('tbody tr', { hasText: 'PRG-2027-001' }).first();
+  // every carry field must be filled in explicitly (0 for none), so zero carry-over is deliberate
+  const carryInputs = page.locator('input[name^="carry_"]');
+  for (let index = 0; index < (await carryInputs.count()); index += 1) {
+    await carryInputs.nth(index).fill('0');
+  }
   await closeProgramRow.locator('input[name$="_capex"]').fill('100000000');
+  await expect(
+    page.getByRole('region', { name: 'Carry-over totals preview' }),
+  ).toContainText('Rp 100.000.000');
   await page.locator('input[name="reference"]').fill('E2E-CLOSE-FY2027');
+
+  // a wrong typed confirmation is blocked by the form and nothing is submitted
+  await page.locator('input[name="confirmation"]').fill('CLOSE FY2026');
+  await page.getByRole('button', { name: /Close FY2027 and carry over/ }).click();
+  // The browser blocks the submit, so no server round trip resets the reference field.
+  await expect(page.locator('input[name="reference"]')).toHaveValue('E2E-CLOSE-FY2027');
+
+  await page.locator('input[name="confirmation"]').fill('CLOSE FY2027');
   await page.getByRole('button', { name: /Close FY2027 and carry over/ }).click();
   await expect(page.getByText('Fiscal year closed and carry-over recorded.')).toBeVisible();
   await page.goto('/plan/annual');
