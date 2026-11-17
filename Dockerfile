@@ -1,8 +1,14 @@
 # syntax=docker/dockerfile:1
-FROM node:24-alpine AS base
-RUN apk add --no-cache libc6-compat && corepack enable
+# Node 26 is the current Active LTS; Node 25 is EOL (2026-06-01) and its image
+# is frozen. Since Node 25 the official distribution no longer bundles
+# Corepack, so pnpm is installed directly at the version declared once in
+# package.json "packageManager".
+FROM node:26-alpine AS base
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+COPY package.json ./
+RUN npm install --global "pnpm@$(node -p 'require("./package.json").packageManager.slice(5)')"
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # Also build (without publishing) on pull requests, so a broken Dockerfile or
+  # base image is caught before merge instead of after the push to main.
+  # PR builds are amd64-only: the arm64 leg is QEMU-emulated and only needs to
+  # run for the images that are actually published.
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -17,11 +22,15 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # A hung network/QEMU step would otherwise sit until GitHub's 6-hour default.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        if: github.event_name != 'pull_request'
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -38,8 +47,9 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
+          # Published images are multi-arch; pull requests only need one arch.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |

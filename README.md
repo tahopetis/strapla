@@ -43,7 +43,7 @@ needs `read:packages`.
 
 ## Local development
 
-Requires Node 24, pnpm 11 and Docker.
+Requires Node 24 or later (CI and the container use Node 26 LTS), pnpm 11 and Docker.
 
 ```bash
 pnpm install

@@ -41,3 +41,12 @@
 - **Rails / Django:** neither runtime is available on the build box, and both add operational surface for an app this size.
 - **SPA + separate API:** two moving parts and more glue for no benefit; the app is form-heavy.
 - **SQLite:** simplest possible ops, but weaker concurrent-writer story for a shared team tool and no mature drop-in reporting/backup tooling comparable to `pg_dump`.
+
+## Amendments
+
+- **2026-11-17 — runtime:** the app and the container run **Node 26 LTS**, not Node 24.
+  The upgrade window rejected PR #60's `node:25-alpine` target: Node 25 reached end of
+  life on 2026-06-01 and its image is frozen. Node 25.0.0 also stopped distributing
+  Corepack, so the image now installs the pnpm version declared in `package.json`.
+  Decision 2 and the context line above remain the historical record; nothing else in
+  this ADR changed. The portfolio owner approved the Node 26 runtime on 2026-11-17.
