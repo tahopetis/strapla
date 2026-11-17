@@ -13,6 +13,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "opening:template": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/opening-import.ts template",
+    "opening:validate": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/opening-import.ts validate",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
     "e2e": "playwright test"
