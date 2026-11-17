@@ -60,3 +60,10 @@ Host, domain, TLS and SSH ownership are deferred (charter §11); images and comp
 - **Magic-link email:** requires an email service and deliverability work; overkill for a handful of accounts.
 - **`argon2` / `bcrypt` native modules:** strong algorithms but native build dependencies on arm64/musl; `scrypt` is a standard, memory-hard alternative in Node core.
 - **JWT sessions:** no server-side revocation without a deny-list; a database session table is simpler and auditable.
+
+## Amendments
+
+- **2026-11-17 — runtime image:** the image is `node:26-alpine` instead of
+  `node:24-alpine`, with pnpm installed at the version declared in
+  `package.json` because Node no longer bundles Corepack. The deployment shape
+  above is unchanged; see [ADR-0001](0001-stack.md) for why Node 25 was rejected.
