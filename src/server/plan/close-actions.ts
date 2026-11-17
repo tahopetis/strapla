@@ -9,8 +9,12 @@ import {
   projectYearAllocations,
 } from '@/db/schema';
 import { closeFiscalYearSchema } from '@/domain/inputs';
-import { parseRupiah } from '@/domain/money';
-import { validateCarryOverAmount } from '@/domain/close';
+import {
+  CloseError,
+  assertCloseConfirmation,
+  validateCarryOverAmount,
+} from '@/domain/close';
+import { carryOverFieldName, readCarryOverField } from '@/lib/close-form';
 import {
   FormError,
   actionUser,
@@ -30,16 +34,14 @@ interface CarryEntry {
   amount: number;
 }
 
-function parseAmount(formData: FormData, key: string): number {
-  const raw = formData.get(key);
-  if (typeof raw !== 'string' || raw.trim() === '') return 0;
-  try {
-    const amount = parseRupiah(raw);
-    if (amount < 0) throw new FormError('Carry-over amounts cannot be negative.');
-    return amount;
-  } catch {
-    throw new FormError('Carry-over amounts must be whole Rupiah numbers.');
-  }
+/**
+ * Reads one carry-over field through the shared form schema (W4a): blank is
+ * rejected, so a zero carry-over is an explicit "0".
+ */
+function parseAmount(formData: FormData, key: string, label: string): number {
+  const parsed = readCarryOverField(formData.get(key), label);
+  if (!parsed.ok) throw new FormError(parsed.message);
+  return parsed.value;
 }
 
 function requireTarget<T>(targets: T[], value: string | null, label: string): T {
@@ -48,9 +50,22 @@ function requireTarget<T>(targets: T[], value: string | null, label: string): T 
   return target;
 }
 
+/**
+ * The typed phrase is a form error (shown on the close page); other close-rule
+ * failures keep their existing handling.
+ */
+function requireConfirmation(confirmation: string, fiscalYear: number): void {
+  try {
+    assertCloseConfirmation(confirmation, fiscalYear);
+  } catch (error) {
+    if (error instanceof CloseError) throw new FormError(error.message);
+    throw error;
+  }
+}
+
 async function closeFiscalYear(
   userId: string,
-  input: { annualPlanId: string; reference: string },
+  input: { annualPlanId: string; reference: string; confirmation: string },
   formData: FormData,
 ): Promise<void> {
   const state = await getCloseState(input.annualPlanId);
@@ -74,12 +89,21 @@ async function closeFiscalYear(
   if (state.carryOvers.length > 0) {
     throw new FormError('Carry-over for this fiscal year is already recorded.');
   }
+  requireConfirmation(input.confirmation, state.plan.fiscalYear);
 
   const programCarries = new Map<string, { capex: number; opex: number }>();
   for (const row of state.programs) {
     programCarries.set(row.program.id, {
-      capex: parseAmount(formData, `carry_program_${row.program.id}_capex`),
-      opex: parseAmount(formData, `carry_program_${row.program.id}_opex`),
+      capex: parseAmount(
+        formData,
+        carryOverFieldName('program', row.program.id, 'capex'),
+        `${row.program.code} capex`,
+      ),
+      opex: parseAmount(
+        formData,
+        carryOverFieldName('program', row.program.id, 'opex'),
+        `${row.program.code} opex`,
+      ),
     });
   }
 
@@ -125,7 +149,11 @@ async function closeFiscalYear(
 
   for (const row of state.allocations) {
     for (const component of ['capex', 'opex'] as const) {
-      const amount = parseAmount(formData, `carry_allocation_${row.allocation.id}_${component}`);
+      const amount = parseAmount(
+        formData,
+        carryOverFieldName('allocation', row.allocation.id, component),
+        `${row.project.code} ${component}`,
+      );
       if (amount === 0) continue;
       validateCarryOverAmount({
         amount,

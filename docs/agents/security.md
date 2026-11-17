@@ -88,3 +88,8 @@ checks are green. Treat a red or missing check as a stop.
 
 After the first triage: four scanners, **0 findings at any severity**, no waivers. The threshold is
 `medium`; the gate now passes on its own merits rather than shadow mode.
+
+On 17 November 2026 a new upstream advisory (CVE-2026-112366, picomatch ReDoS) arrived with no patched
+release published (GHSA-fc5q-39xc-vjpf: `first_patched_version` null). It is waived in
+`ci/security-baseline.json` until 31 December 2026 for the transitive build tooling; remove the waiver
+as soon as picomatch publishes a fix.

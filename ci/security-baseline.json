@@ -1,4 +1,10 @@
 {
   "version": 1,
-  "waivers": []
+  "waivers": [
+    {
+      "id": "deps:CVE-2026-112366:pnpm-lock.yaml",
+      "reason": "picomatch (transitive build tooling) ReDoS CVE-2026-112366 has no patched release: GHSA-fc5q-39xc-vjpf reports first_patched_version null and npm has no 2.3.3/4.0.8. No untrusted glob patterns reach picomatch in this app. Remove the waiver as soon as upstream publishes a fix.",
+      "expires": "2026-12-31"
+    }
+  ]
 }

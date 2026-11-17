@@ -366,9 +366,23 @@ export type SpendUpdateInput = z.infer<typeof spendUpdateSchema>;
 
 // ---------------------------------------------------------------- year close (M4)
 
+/**
+ * A carry-over field on the close form. It must be filled in — a zero carry-over
+ * is typed as `0`, not left blank — and it follows the same whole-Rupiah parsing
+ * as every other money input (dots group thousands).
+ */
+export const carryOverAmountSchema = (label: string) => requiredRupiah(`${label} carry-over`);
+
+/** Closing is irreversible: the owner must type `CLOSE FY<year>` (W4a). */
+const closeConfirmationSchema = z
+  .string()
+  .min(1, 'Type the close confirmation phrase to confirm (for example CLOSE FY2027).')
+  .max(40, 'The confirmation phrase must be at most 40 characters.');
+
 export const closeFiscalYearSchema = z.object({
   annualPlanId: idSchema,
   reference: requiredText('Approval reference', 160),
+  confirmation: closeConfirmationSchema,
 });
 
 export type CloseFiscalYearInput = z.infer<typeof closeFiscalYearSchema>;
