@@ -298,6 +298,16 @@ main() {
         record "$s" crashed "unknown scanner id"
         ;;
     esac
+
+    # Quiet scanners (semgrep and trivy write to SARIF, not stdout) otherwise
+    # leave a gap in the job log. Report the final status and report size so the
+    # log shows that the scanner completed and produced output; the decider
+    # still owns the verdict.
+    local status detail size=0
+    status=$(cat "$REPORT_DIR/$s.status" 2>/dev/null || echo missing)
+    detail=$(cat "$REPORT_DIR/$s.detail" 2>/dev/null || true)
+    [ -f "$REPORT_DIR/$s.sarif" ] && size=$(wc -c <"$REPORT_DIR/$s.sarif")
+    log "scanner $s: $status, SARIF ${size} bytes${detail:+, $detail}"
   done
 
   EXPECTED_SCANNERS="$SCANNERS" \
