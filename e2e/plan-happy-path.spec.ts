@@ -286,7 +286,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
 
   // ------------------------------------------------------ custom fields (#46)
   await page.goto('/admin/custom-fields');
-  await expect(page.getByRole('heading', { name: 'Custom fields' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Custom fields', exact: true })).toBeVisible();
   // the December field list is seeded into the registry by the migration
   const projectFieldCard = page.locator('section').filter({ hasText: 'Procurement method' });
   await expect(projectFieldCard.getByText('Procurement method').first()).toBeVisible();
