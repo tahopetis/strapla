@@ -284,6 +284,96 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('Opening balances signed off.')).toBeVisible();
   await expect(page.getByText('signed off', { exact: true })).toBeVisible();
 
+  // ------------------------------------------------------ custom fields (#46)
+  await page.goto('/admin/custom-fields');
+  await expect(page.getByRole('heading', { name: 'Custom fields' })).toBeVisible();
+  // the December field list is seeded into the registry by the migration
+  const projectFieldCard = page.locator('section').filter({ hasText: 'Procurement method' });
+  await expect(projectFieldCard.getByText('Procurement method').first()).toBeVisible();
+
+  await projectFieldCard.getByText('Add a field').click();
+  const addFieldForm = projectFieldCard
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add field' }) });
+  await addFieldForm.locator('input[name="name"]').fill('Delivery note');
+  await addFieldForm.locator('select[name="type"]').selectOption('text');
+  await addFieldForm.locator('textarea[name="description"]').fill('How the delivery is staged.');
+  await addFieldForm.getByRole('button', { name: 'Add field' }).click();
+  await expect(page.getByText('Custom field added.')).toBeVisible();
+  await expect(page.getByText('Delivery note')).toBeVisible();
+
+  // the fields render on the create/edit form and the values show on the record
+  await page.goto('/plan/projects');
+  await page
+    .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'PRJ-2027-001 · Device Refresh 2027' })).toBeVisible();
+  const projectEditDetails = page.locator('details').filter({ hasText: 'Edit project' });
+  await projectEditDetails.locator('summary').click();
+  const projectEditForm = projectEditDetails.locator('form');
+  await projectEditForm.getByLabel('Procurement method').fill('Open tender');
+  await projectEditForm.getByLabel('Delivery note').fill('Phased rollout');
+  await projectEditForm.locator('textarea[name="reason"]').fill('Record the procurement detail.');
+  await projectEditForm.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Project updated.')).toBeVisible();
+  await expect(page.getByText('Additional fields')).toBeVisible();
+  await expect(page.getByText('Open tender')).toBeVisible();
+  await expect(page.getByText('Phased rollout')).toBeVisible();
+
+  // the values ride along in the audit snapshot for the update
+  const changeHistory = page.locator('section').filter({ hasText: 'Change history' });
+  await expect(changeHistory.getByText('customFields')).toBeVisible();
+  await expect(changeHistory.getByText('Phased rollout')).toBeVisible();
+
+  // the report shows the extra columns, filters by them, and the export selects columns
+  await page.goto('/reports/project-register');
+  await expect(page.getByText('Delivery note').first()).toBeVisible();
+  await page.locator('select[name="cf"]').selectOption({ label: 'Delivery note' });
+  await page.locator('input[name="cv"]').fill('phased');
+  await page.getByRole('button', { name: 'Apply filter' }).click();
+  await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
+  await expect(
+    page.getByText('Totals cover the whole report, not only the filtered rows.'),
+  ).toBeVisible();
+  await page.locator('select[name="cf"]').selectOption({ label: 'Delivery note' });
+  await page.locator('input[name="cv"]').fill('no such value');
+  await page.getByRole('button', { name: 'Apply filter' }).click();
+  await expect(page.getByText('PRJ-2027-001')).toHaveCount(0);
+
+  const reportOrigin = new URL(page.url()).origin;
+  const csvWithColumns = await page.request.get(
+    `${reportOrigin}/reports/export/project-register?format=csv`,
+  );
+  expect(await csvWithColumns.text()).toContain('Delivery note');
+  expect(await csvWithColumns.text()).toContain('Phased rollout');
+  const csvWithoutColumns = await page.request.get(
+    `${reportOrigin}/reports/export/project-register?format=csv&columns=`,
+  );
+  expect(await csvWithoutColumns.text()).not.toContain('Delivery note');
+
+  // removing the field archives it, frees the name and drops it from forms and reports
+  await page.goto('/admin/custom-fields');
+  const deliveryField = page.locator('li').filter({ hasText: 'Delivery note' });
+  await deliveryField.locator('summary').filter({ hasText: 'Remove field' }).click();
+  const removeFieldForm = deliveryField
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Remove field' }) });
+  await removeFieldForm.locator('textarea[name="reason"]').fill('No longer needed.');
+  await removeFieldForm.getByRole('button', { name: 'Remove field' }).click();
+  await expect(page.getByText('Custom field removed.')).toBeVisible();
+  await expect(page.getByText('Delivery note')).toHaveCount(0);
+
+  await page.goto('/plan/projects');
+  await page
+    .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'PRJ-2027-001 · Device Refresh 2027' })).toBeVisible();
+  await expect(projectEditForm.getByLabel('Delivery note')).toHaveCount(0);
+  await page.goto('/reports/project-register');
+  await expect(page.getByText('Delivery note')).toHaveCount(0);
+
   // ------------------------------------------------------ reports and exports
   await page.goto('/reports');
   await expect(page.getByText('SI five-year view', { exact: true }).first()).toBeVisible();

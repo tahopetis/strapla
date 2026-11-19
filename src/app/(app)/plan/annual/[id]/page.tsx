@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
   HiddenField,
   MoneyField,
@@ -13,8 +14,10 @@ import {
 import { RecurringOpsSection } from '@/components/plan/recurring-ops-section';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader, StatusBadge } from '@/components/ui';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { AnnualPlanDetail, ProgramRow } from '@/server/plan/annual-queries';
 import { getAnnualPlanDetail } from '@/server/plan/annual-queries';
+import { listCustomFieldDefinitions, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
   activateAnnualPlanAction,
   createProgramAction,
@@ -43,6 +46,19 @@ export default async function AnnualPlanPage({
   const editable = detail.annualPlan.status !== 'closed' && detail.strategicPlan.status !== 'archived';
   const canActivate =
     editable && detail.annualPlan.status === 'draft' && detail.strategicPlan.status === 'active';
+
+  const [programFields, programValues, recurringFields, recurringValues] = await Promise.all([
+    listCustomFieldDefinitions('annual_program'),
+    readCustomFieldValuesMap(
+      'annual_program',
+      detail.programs.map((row) => row.program.id),
+    ),
+    listCustomFieldDefinitions('recurring_ops_item'),
+    readCustomFieldValuesMap(
+      'recurring_ops_item',
+      detail.recurringOps.map((row) => row.item.id),
+    ),
+  ]);
 
   return (
     <div>
@@ -103,15 +119,35 @@ export default async function AnnualPlanPage({
           ) : null}
         </Card>
 
-        <ProgramsSection detail={detail} editable={editable} />
+        <ProgramsSection
+          detail={detail}
+          editable={editable}
+          customFields={programFields}
+          customValues={programValues}
+        />
 
-        <RecurringOpsSection detail={detail} editable={editable} />
+        <RecurringOpsSection
+          detail={detail}
+          editable={editable}
+          customFields={recurringFields}
+          customValues={recurringValues}
+        />
       </div>
     </div>
   );
 }
 
-function ProgramsSection({ detail, editable }: { detail: AnnualPlanDetail; editable: boolean }) {
+function ProgramsSection({
+  detail,
+  editable,
+  customFields,
+  customValues,
+}: {
+  detail: AnnualPlanDetail;
+  editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: Map<string, CustomFieldValues>;
+}) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -166,6 +202,7 @@ function ProgramsSection({ detail, editable }: { detail: AnnualPlanDetail; edita
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Notes" name="notes" rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add program</SubmitButton>
             </div>
@@ -178,7 +215,14 @@ function ProgramsSection({ detail, editable }: { detail: AnnualPlanDetail; edita
       ) : (
         <div className="space-y-4">
           {detail.programs.map((row) => (
-            <ProgramCard key={row.program.id} row={row} detail={detail} editable={editable} />
+            <ProgramCard
+              key={row.program.id}
+              row={row}
+              detail={detail}
+              editable={editable}
+              customFields={customFields}
+              customValues={customValues.get(row.program.id)}
+            />
           ))}
         </div>
       )}
@@ -190,10 +234,14 @@ function ProgramCard({
   row,
   detail,
   editable,
+  customFields,
+  customValues,
 }: {
   row: ProgramRow;
   detail: AnnualPlanDetail;
   editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
 }) {
   const { program, availability, allocatedCapex, allocatedOpex, position } = row;
   return (
@@ -266,6 +314,8 @@ function ProgramCard({
 
       {program.notes ? <p className="mt-3 text-sm text-slate-600">{program.notes}</p> : null}
 
+      <CustomFieldsPanel fields={customFields} values={customValues} />
+
       {editable ? (
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
@@ -295,6 +345,7 @@ function ProgramCard({
               <div className="sm:col-span-2">
                 <TextAreaField label="Notes" name="notes" defaultValue={program.notes} rows={2} />
               </div>
+              <CustomFieldInputs fields={customFields} values={customValues} />
               <div className="sm:col-span-2">
                 <ReasonField />
               </div>

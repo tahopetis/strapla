@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CUSTOM_FIELD_ENTITY_TYPES, CUSTOM_FIELD_TYPES } from './custom-fields';
 import { parseRupiah } from './money';
 
 /**
@@ -415,3 +416,31 @@ export type OpeningReconciliationSaveInput = z.infer<typeof openingReconciliatio
 export type OpeningReconciliationSignOffInput = z.infer<
   typeof openingReconciliationSignOffSchema
 >;
+
+// ---------------------------------------------------------------- custom fields (#46)
+
+export const customFieldEntityTypeSchema = z.enum(CUSTOM_FIELD_ENTITY_TYPES);
+
+export const customFieldTypeSchema = z.enum(CUSTOM_FIELD_TYPES);
+
+/** Hidden input + checkbox pair: 'off' when unchecked, 'on' when checked. */
+const customFieldRequiredSchema = z.enum(['on', 'off']).transform((value) => value === 'on');
+
+export const customFieldCreateSchema = z.object({
+  entityType: customFieldEntityTypeSchema,
+  name: requiredText('Field name', 80),
+  type: customFieldTypeSchema,
+  required: customFieldRequiredSchema,
+  description: requiredText('Description', 500),
+});
+
+export const customFieldUpdateSchema = customFieldCreateSchema.extend({
+  id: idSchema,
+  reason: reasonSchema,
+});
+
+export const customFieldRemoveSchema = z.object({ id: idSchema, reason: reasonSchema });
+
+export type CustomFieldCreateInput = z.infer<typeof customFieldCreateSchema>;
+export type CustomFieldUpdateInput = z.infer<typeof customFieldUpdateSchema>;
+export type CustomFieldRemoveInput = z.infer<typeof customFieldRemoveSchema>;

@@ -1,7 +1,14 @@
 import type { Metadata } from 'next';
+import {
+  CustomFieldCells,
+  CustomFieldFilterForm,
+  CustomFieldHeaderCells,
+} from '@/components/custom-fields';
 import { ReportNote, ReportShell } from '@/components/report-shell';
 import { Badge, Card, Money } from '@/components/ui';
+import { matchesCustomFieldFilter } from '@/domain/custom-fields';
 import { getProjectRegisterReport } from '@/server/plan/report-queries';
+import { loadReportCustomFieldGroups } from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -9,24 +16,67 @@ export const metadata: Metadata = { title: 'Project register report' };
 
 const th = 'py-2 pr-4 text-left text-xs uppercase tracking-wide text-slate-500';
 
-export default async function ProjectRegisterReportPage() {
+export default async function ProjectRegisterReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    cf?: string | string[];
+    cv?: string | string[];
+    columns?: string | string[];
+  }>;
+}) {
+  const { cf: cfParam, cv: cvParam, columns } = await searchParams;
+  const cf = Array.isArray(cfParam) ? cfParam[0] : cfParam;
+  const cv = Array.isArray(cvParam) ? cvParam[0] : cvParam;
   const plan = await getCurrentStrategicPlan();
   if (!plan) {
     return <p className="text-sm text-slate-600">Create the strategic plan to see this report.</p>;
   }
   const report = await getProjectRegisterReport(plan.id);
+  const groups = await loadReportCustomFieldGroups('project-register', columns);
+  const [group] = groups;
+  const fields = group?.fields ?? [];
+  const selectedIds = groups.flatMap((candidate) =>
+    candidate.selectedFields.map((field) => field.id),
+  );
+  const visibleFields = group?.selectedFields ?? [];
+  const filterField = cf ? fields.find((field) => field.id === cf) : undefined;
+  const filterQuery = cv?.trim() ?? '';
+  const filtering = filterField !== undefined && filterQuery.length > 0;
+  const rows =
+    filtering && filterField !== undefined
+      ? report.rows.filter((row) =>
+          matchesCustomFieldFilter(group?.values.get(row.project.id), filterField, filterQuery),
+        )
+      : report.rows;
 
   return (
     <ReportShell
       title="Project register"
-      description={`${plan.name} · ${report.rows.length} project${report.rows.length === 1 ? '' : 's'}`}
+      description={`${plan.name} · ${rows.length} project${rows.length === 1 ? '' : 's'}`}
       reportKey="project-register"
+      exportFields={groups.flatMap((candidate) => candidate.fields)}
+      selectedExportFieldIds={groups.flatMap((candidate) =>
+        candidate.selectedFields.map((field) => field.id),
+      )}
     >
       <ReportNote>
         Lifetime commitments = opening committed + in-app commitment entries; spent to date = opening spend +
         in-app spend entries (ADR-0003). Prior-year opening payments settle pre-app commitments and are shown
         separately. Flags are from the funding flag engine (ADR-0003 §6) and never block entry.
       </ReportNote>
+
+      {fields.length > 0 ? (
+        <div className="screen-only">
+          <CustomFieldFilterForm
+            fields={fields}
+            action="/reports/project-register"
+            fieldId={filterField?.id}
+            query={cv}
+            columnSelection={columns === undefined ? undefined : selectedIds}
+          />
+        </div>
+      ) : null}
 
       <Card title="Projects" description="Full-life figures, allocations and funding flags.">
         <div className="overflow-x-auto">
@@ -43,10 +93,11 @@ export default async function ProjectRegisterReportPage() {
                 <th className={th}>Lifetime commitments</th>
                 <th className={th}>Spent to date</th>
                 <th className={th}>Flags</th>
+                <CustomFieldHeaderCells fields={visibleFields} className={th} />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {report.rows.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.project.id}>
                   <td className="py-3 pr-4">
                     <p className="font-medium">{row.project.code}</p>
@@ -101,6 +152,11 @@ export default async function ProjectRegisterReportPage() {
                       </div>
                     )}
                   </td>
+                  <CustomFieldCells
+                    fields={visibleFields}
+                    values={group?.values.get(row.project.id)}
+                    className="py-3 pr-4"
+                  />
                 </tr>
               ))}
             </tbody>
@@ -128,16 +184,24 @@ export default async function ProjectRegisterReportPage() {
                   <Money value={report.totals.spentToDate} />
                 </td>
                 <td className="py-3" />
+                {visibleFields.map((field) => (
+                  <td key={field.id} className="py-3 pr-4" />
+                ))}
               </tr>
             </tfoot>
           </table>
         </div>
+        {filtering ? (
+          <p className="mt-3 text-xs text-slate-500">
+            Totals cover the whole report, not only the filtered rows.
+          </p>
+        ) : null}
         <p className="mt-3 text-xs text-slate-500">
-          Open commitments: <Money value={report.totals.openCommitments} /> · prior-year opening settlements:{' '}
-          <Money value={report.totals.priorOpeningSettlements} /> · in-app spend:{' '}
-          <Money value={report.totals.inAppSpend} />. The CSV/XLSX export also carries the capex/opex component
-          split, carry-in and submitted price per project.
-        </p>
+            Open commitments: <Money value={report.totals.openCommitments} /> · prior-year opening settlements:{' '}
+            <Money value={report.totals.priorOpeningSettlements} /> · in-app spend:{' '}
+            <Money value={report.totals.inAppSpend} />. The CSV/XLSX export also carries the capex/opex component
+            split, carry-in and submitted price per project.
+          </p>
       </Card>
     </ReportShell>
   );

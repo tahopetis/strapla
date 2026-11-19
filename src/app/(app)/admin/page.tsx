@@ -53,6 +53,22 @@ export default async function AdminPage() {
           </p>
         </Card>
 
+        <Card
+          title="Custom fields"
+          description="Define extra typed fields on plan records: shown on forms, record pages, reports and exports, and never used in money rules."
+          actions={<Badge>metadata</Badge>}
+        >
+          <p className="text-sm text-slate-700">
+            An administrator adds, edits and removes the fields here; every change is audited. Values are
+            metadata and never change budgets, remaining amounts or flags.
+          </p>
+          <p className="mt-4 text-sm">
+            <Link href="/admin/custom-fields" className={linkClass}>
+              Manage custom fields
+            </Link>
+          </p>
+        </Card>
+
         <Card title="Signed in as" description="Your session details.">
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
             <div>

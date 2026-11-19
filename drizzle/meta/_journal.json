@@ -43,6 +43,13 @@
       "when": 1795073627258,
       "tag": "0005_opening_balance_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795076975561,
+      "tag": "0006_chief_smasher",
+      "breakpoints": true
     }
   ]
 }

@@ -23,7 +23,11 @@
  *     example: 'Tender',
  *   }
  *
- * Storage of the values per record arrives with the Phase B load (W9).
+ * The December load (W9) seeds this list into the custom-field registry (migration 0006),
+ * keyed by each column's `name` (the registry's stable `key`), so imported values can be
+ * stored against the registry entry. From then on the registry defined under Administration
+ * is the runtime source of truth for record values; this file stays the headless import's
+ * declared-column list.
  */
 import type { OpeningDataSetId, OpeningField } from './field-list.ts';
 

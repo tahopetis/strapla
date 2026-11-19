@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
   HiddenField,
   MoneyField,
@@ -10,8 +11,10 @@ import {
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader, StatusBadge } from '@/components/ui';
 import type { StrategicPlan } from '@/db/schema';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { InitiativeEnvelopeRow } from '@/server/plan/queries';
 import { getCurrentStrategicPlan, listInitiativeEnvelopeRows } from '@/server/plan/queries';
+import { listCustomFieldDefinitions, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
   activatePlanAction,
   archivePlanAction,
@@ -36,6 +39,13 @@ export default async function StrategicPlanPage({
   const plan = await getCurrentStrategicPlan();
   const rows = plan ? await listInitiativeEnvelopeRows(plan.id) : [];
   const editable = plan !== null && plan.status !== 'archived';
+  const [initiativeFields, initiativeValues] = await Promise.all([
+    listCustomFieldDefinitions('strategic_initiative'),
+    readCustomFieldValuesMap(
+      'strategic_initiative',
+      rows.map((row) => row.initiative.id),
+    ),
+  ]);
 
   return (
     <div>
@@ -51,7 +61,13 @@ export default async function StrategicPlanPage({
       ) : (
         <div className="space-y-6">
           <PlanDetailsCard plan={plan} editable={editable} />
-          <InitiativesSection plan={plan} rows={rows} editable={editable} />
+          <InitiativesSection
+            plan={plan}
+            rows={rows}
+            editable={editable}
+            customFields={initiativeFields}
+            customValues={initiativeValues}
+          />
         </div>
       )}
     </div>
@@ -185,10 +201,14 @@ function InitiativesSection({
   plan,
   rows,
   editable,
+  customFields,
+  customValues,
 }: {
   plan: StrategicPlan;
   rows: InitiativeEnvelopeRow[];
   editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: Map<string, CustomFieldValues>;
 }) {
   return (
     <div className="space-y-4">
@@ -214,6 +234,7 @@ function InitiativesSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Objective" name="objective" rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add initiative</SubmitButton>
             </div>
@@ -226,7 +247,13 @@ function InitiativesSection({
       ) : (
         <div className="space-y-4">
           {rows.map((row) => (
-            <InitiativeCard key={row.initiative.id} row={row} editable={editable} />
+            <InitiativeCard
+              key={row.initiative.id}
+              row={row}
+              editable={editable}
+              customFields={customFields}
+              customValues={customValues.get(row.initiative.id)}
+            />
           ))}
         </div>
       )}
@@ -234,7 +261,17 @@ function InitiativesSection({
   );
 }
 
-function InitiativeCard({ row, editable }: { row: InitiativeEnvelopeRow; editable: boolean }) {
+function InitiativeCard({
+  row,
+  editable,
+  customFields,
+  customValues,
+}: {
+  row: InitiativeEnvelopeRow;
+  editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
+}) {
   const { initiative, programBudget, check } = row;
   return (
     <Card
@@ -273,6 +310,8 @@ function InitiativeCard({ row, editable }: { row: InitiativeEnvelopeRow; editabl
 
       {initiative.objective ? <p className="mt-3 text-sm text-slate-600">{initiative.objective}</p> : null}
 
+      <CustomFieldsPanel fields={customFields} values={customValues} />
+
       {editable ? (
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
@@ -292,6 +331,7 @@ function InitiativeCard({ row, editable }: { row: InitiativeEnvelopeRow; editabl
               <div className="sm:col-span-2">
                 <TextAreaField label="Objective" name="objective" defaultValue={initiative.objective} rows={2} />
               </div>
+              <CustomFieldInputs fields={customFields} values={customValues} />
               <div className="sm:col-span-2">
                 <ReasonField />
               </div>

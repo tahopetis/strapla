@@ -1,4 +1,5 @@
 import type { ExportColumn, ExportDocument, ExportTable } from '@/lib/report-export';
+import type { ReportCustomFieldGroup } from './report-custom-fields';
 import {
   getAnnualPlanReport,
   getBudgetVsActualReport,
@@ -24,10 +25,67 @@ function table(name: string, columns: ExportColumn[]): ExportTable {
   return { name, columns, rows: [] };
 }
 
+/** Export column key for a custom field, namespaced so it cannot clash with a report column. */
+function customColumnKey(fieldId: string): string {
+  return `custom:${fieldId}`;
+}
+
+/**
+ * Appends one group's selected custom-field columns to a report table (issue #46).
+ *
+ * A row is matched to its record id (`row.id`); a record without a value
+ * stays blank. Existing columns and rows are copied, never replaced, so
+ * the money columns and the totals tables are unaffected.
+ */
+export function applyCustomFieldGroup(
+  table: ExportTable,
+  group: ReportCustomFieldGroup,
+): ExportTable {
+  if (group.selectedFields.length === 0) return table;
+
+  const columns: ExportColumn[] = [
+    ...table.columns,
+    ...group.selectedFields.map(
+      (field): ExportColumn => ({
+        key: customColumnKey(field.id),
+        header: field.name,
+        kind: field.type === 'number' ? 'number' : 'text',
+      }),
+    ),
+  ];
+
+  const rows = table.rows.map((row) => {
+    const values = group.values.get(String(row.id));
+    const extra: Record<string, string | number | null> = {};
+    for (const field of group.selectedFields) {
+      extra[customColumnKey(field.id)] = values?.[field.id] ?? null;
+    }
+    return { ...row, ...extra };
+  });
+
+  return { ...table, columns, rows };
+}
+
+/** Applies every group to the table it names; a report table with no group is returned as-is. */
+function applyCustomFieldGroups(
+  tables: ExportTable[],
+  groups: readonly ReportCustomFieldGroup[],
+): ExportTable[] {
+  if (groups.length === 0) return tables;
+  return tables.map((base) => {
+    let result = base;
+    for (const group of groups) {
+      if (group.tableName === result.name) result = applyCustomFieldGroup(result, group);
+    }
+    return result;
+  });
+}
+
 export async function buildReportDocument(
   report: ReportKey,
   planId: string,
   planName: string,
+  groups: readonly ReportCustomFieldGroup[] = [],
 ): Promise<ExportDocument> {
   const generatedAt = new Date();
   const note = EXECUTION_NOTE;
@@ -53,6 +111,7 @@ export async function buildReportDocument(
       { key: 'status', header: 'Status' },
     ]);
     main.rows = data.rows.map((row) => ({
+      id: row.initiative.id,
       code: row.initiative.code,
       name: row.initiative.name,
       owner: row.initiative.owner,
@@ -92,7 +151,13 @@ export async function buildReportDocument(
         status: data.totals.over ? 'over envelope' : 'within envelope',
       },
     ];
-    return { title: REPORT_TITLES[report], subtitle: planName, generatedAt, note, tables: [main, total] };
+    return {
+      title: REPORT_TITLES[report],
+      subtitle: planName,
+      generatedAt,
+      note,
+      tables: applyCustomFieldGroups([main, total], groups),
+    };
   }
 
   if (report === 'annual-plan') {
@@ -120,6 +185,7 @@ export async function buildReportDocument(
       { key: 'status', header: 'Status' },
     ]);
     programs.rows = data.programs.map((row) => ({
+      id: row.programId,
       fiscalYear: row.fiscalYear,
       planStatus: row.planStatus,
       siCode: row.siCode,
@@ -154,6 +220,7 @@ export async function buildReportDocument(
       { key: 'remainingOpex', header: 'Remaining', kind: 'money' },
     ]);
     recurring.rows = data.recurringOps.map((row) => ({
+      id: row.itemId,
       fiscalYear: row.fiscalYear,
       name: row.name,
       category: row.categoryName,
@@ -170,7 +237,7 @@ export async function buildReportDocument(
       subtitle: planName,
       generatedAt,
       note,
-      tables: [programs, recurring],
+      tables: applyCustomFieldGroups([programs, recurring], groups),
     };
   }
 
@@ -200,6 +267,7 @@ export async function buildReportDocument(
       { key: 'flags', header: 'Flags' },
     ]);
     register.rows = data.rows.map((row) => ({
+      id: row.project.id,
       code: row.project.code,
       name: row.project.name,
       status: row.project.status,
@@ -246,7 +314,13 @@ export async function buildReportDocument(
         priorOpening: data.totals.priorOpeningSettlements,
       },
     ];
-    return { title: REPORT_TITLES[report], subtitle: planName, generatedAt, note, tables: [register, total] };
+    return {
+      title: REPORT_TITLES[report],
+      subtitle: planName,
+      generatedAt,
+      note,
+      tables: applyCustomFieldGroups([register, total], groups),
+    };
   }
 
   const data = await getBudgetVsActualReport(planId);
@@ -271,6 +345,7 @@ export async function buildReportDocument(
     { key: 'status', header: 'Status' },
   ]);
   main.rows = data.rows.map((row) => ({
+    id: row.programId,
     fiscalYear: row.fiscalYear,
     siCode: row.siCode,
     program: `${row.programCode} · ${row.programName}`,
@@ -290,5 +365,11 @@ export async function buildReportDocument(
     unallocatedOpex: row.unallocatedOpex,
     status: row.overCapex || row.overOpex ? 'over-allocated' : 'within budget',
   }));
-  return { title: REPORT_TITLES[report], subtitle: planName, generatedAt, note, tables: [main] };
+  return {
+    title: REPORT_TITLES[report],
+    subtitle: planName,
+    generatedAt,
+    note,
+    tables: applyCustomFieldGroups([main], groups),
+  };
 }

@@ -169,6 +169,8 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
 // ---------------------------------------------------------------- annual plan
 
 export interface AnnualPlanProgramRow {
+  /** Record id, used to attach custom-field values (#46). */
+  programId: string;
   fiscalYear: number;
   planStatus: AnnualPlan['status'];
   programCode: string;
@@ -198,6 +200,8 @@ export interface AnnualPlanProgramRow {
 }
 
 export interface AnnualPlanRecurringOpsRow {
+  /** Record id, used to attach custom-field values (#46). */
+  itemId: string;
   fiscalYear: number;
   name: string;
   categoryName: string | null;
@@ -276,6 +280,7 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       allocatedOpex,
     });
     return {
+      programId: row.programId,
       fiscalYear: row.fiscalYear,
       planStatus: row.planStatus,
       programCode: row.programCode,
@@ -324,6 +329,7 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
     const executionTotals = execution.byRecurringItem.get(row.itemId);
     const available = row.opexBudget + row.carryInOpex;
     return {
+      itemId: row.itemId,
       fiscalYear: row.fiscalYear,
       name: row.name,
       categoryName: row.categoryName,
@@ -539,6 +545,8 @@ export async function getProjectRegisterReport(
 // ---------------------------------------------------------------- budget vs actual
 
 export interface BudgetVsActualRow {
+  /** Record id of the annual program, used to attach custom-field values (#46). */
+  programId: string;
   fiscalYear: number;
   siCode: string;
   siName: string;
@@ -587,6 +595,7 @@ export async function getBudgetVsActualReport(
 ): Promise<BudgetVsActualReport> {
   const annual = await getAnnualPlanReport(planId);
   const rows: BudgetVsActualRow[] = annual.programs.map((row) => ({
+    programId: row.programId,
     fiscalYear: row.fiscalYear,
     siCode: row.siCode,
     siName: row.siName,

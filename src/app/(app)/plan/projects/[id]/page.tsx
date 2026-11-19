@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
   HiddenField,
   MoneyField,
@@ -13,11 +14,13 @@ import { EntityHistory } from '@/components/entity-history';
 import { PlanNav } from '@/components/plan-nav';
 import { ProjectAllocationsSection } from '@/components/plan/project-allocations';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 import type { ProjectDetail } from '@/server/plan/project-queries';
 import { getProjectDetail } from '@/server/plan/project-queries';
 import { listAllocationProgramOptions, listProjectAllocations } from '@/server/plan/allocation-queries';
 import { listEntityHistory } from '@/server/admin/queries';
+import { listCustomFieldDefinitions, readCustomFieldValues } from '@/server/custom-fields/data';
 import {
   cancelProjectAction,
   saveIjinPrinsipAction,
@@ -46,10 +49,12 @@ export default async function ProjectPage({
     detail.strategicPlan.status !== 'archived' &&
     detail.annualPlan.status !== 'closed';
 
-  const [allocations, allocationOptions, history] = await Promise.all([
+  const [allocations, allocationOptions, history, projectFields, projectValues] = await Promise.all([
     listProjectAllocations(detail.project.id),
     listAllocationProgramOptions(detail.project.id),
     listEntityHistory('project', detail.project.id, 10),
+    listCustomFieldDefinitions('project'),
+    readCustomFieldValues('project', detail.project.id),
   ]);
 
   return (
@@ -108,9 +113,15 @@ export default async function ProjectPage({
               Cancelled: {detail.project.cancelledReason}
             </p>
           ) : null}
+          <CustomFieldsPanel fields={projectFields} values={projectValues} />
         </Card>
 
-        <PricingCard detail={detail} editable={editable} />
+        <PricingCard
+          detail={detail}
+          editable={editable}
+          customFields={projectFields}
+          customValues={projectValues}
+        />
         <IjinPrinsipCard detail={detail} editable={editable} />
 
         <ProjectAllocationsSection
@@ -139,7 +150,17 @@ export default async function ProjectPage({
   );
 }
 
-function PricingCard({ detail, editable }: { detail: ProjectDetail; editable: boolean }) {
+function PricingCard({
+  detail,
+  editable,
+  customFields,
+  customValues,
+}: {
+  detail: ProjectDetail;
+  editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
+}) {
   const { project } = detail;
   const approved = detail.ijin?.approvedAmount ?? null;
   return (
@@ -273,6 +294,7 @@ function PricingCard({ detail, editable }: { detail: ProjectDetail; editable: bo
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Description" name="description" defaultValue={project.description} rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} values={customValues} />
             <div className="sm:col-span-2 lg:col-span-3">
               <ReasonField />
             </div>

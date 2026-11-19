@@ -23,6 +23,7 @@ import {
   type ProjectCreateInput,
   type ProjectUpdateInput,
 } from '@/domain/inputs';
+import { withCustomFields } from '@/domain/custom-fields';
 import { formatEntityCode, validateProjectYears } from '@/domain/plan';
 import {
   FormError,
@@ -32,6 +33,8 @@ import {
   finishWith,
   parseForm,
 } from '@/server/actions/common';
+import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
+import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 
 const PROJECTS_PAGE = '/plan/projects';
@@ -154,7 +157,11 @@ async function nextProjectCode(fiscalYear: number): Promise<string> {
   return formatEntityCode('project', fiscalYear, highest + 1);
 }
 
-async function createProject(userId: string, input: ProjectCreateInput): Promise<void> {
+async function createProject(
+  userId: string,
+  input: ProjectCreateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const context = await loadProgramContext(input.originatingProgramId);
   if (context.program.voidedAt) throw new FormError('The originating program is voided.');
   requireActiveStrategicPlan(context);
@@ -197,17 +204,28 @@ async function createProject(userId: string, input: ProjectCreateInput): Promise
       })
       .returning();
     if (!created) throw new Error('failed to create the project');
+    await saveCustomFieldValues(tx, {
+      entityType: 'project',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
       entityType: 'project',
       entityId: created.id,
-      after: projectSnapshot(created),
+      after: withCustomFields(projectSnapshot(created), custom.fields, custom.values),
     });
   });
 }
 
-async function updateProject(userId: string, input: ProjectUpdateInput): Promise<void> {
+async function updateProject(
+  userId: string,
+  input: ProjectUpdateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const context = await loadProjectContext(input.id);
   if (context.project.status === 'cancelled') {
     throw new FormError('This project is cancelled and read-only.');
@@ -221,6 +239,7 @@ async function updateProject(userId: string, input: ProjectUpdateInput): Promise
   });
 
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('project', input.id, tx);
     const duplicate = await tx
       .select({ id: projects.id })
       .from(projects)
@@ -250,13 +269,20 @@ async function updateProject(userId: string, input: ProjectUpdateInput): Promise
       .where(eq(projects.id, input.id))
       .returning();
     if (!updated) throw new FormError('Project not found.');
+    await saveCustomFieldValues(tx, {
+      entityType: 'project',
+      entityId: input.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'update',
       entityType: 'project',
       entityId: input.id,
-      before: projectSnapshot(context.project),
-      after: projectSnapshot(updated),
+      before: withCustomFields(projectSnapshot(context.project), custom.fields, beforeValues),
+      after: withCustomFields(projectSnapshot(updated), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -361,7 +387,8 @@ async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Pro
 export async function createProjectAction(formData: FormData): Promise<void> {
   const user = await actionUser();
   try {
-    await createProject(user.id, parseForm(projectCreateSchema, formData));
+    const custom = await readCustomFieldPayload('project', formData);
+    await createProject(user.id, parseForm(projectCreateSchema, formData), custom);
   } catch (error) {
     failWith(PROJECTS_PAGE, describeError(error));
   }
@@ -374,7 +401,8 @@ export async function updateProjectAction(formData: FormData): Promise<void> {
   try {
     const input = parseForm(projectUpdateSchema, formData);
     projectId = input.id;
-    await updateProject(user.id, input);
+    const custom = await readCustomFieldPayload('project', formData);
+    await updateProject(user.id, input, custom);
   } catch (error) {
     failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
   }
