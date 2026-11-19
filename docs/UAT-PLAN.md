@@ -95,6 +95,28 @@ entry/timestamp in the sign-off table below.
 | UAT-14 |  |  |  |
 | UAT-15 |  |  |  |
 
+### Task timing baselines (W8)
+
+Two kinds of baseline live here. The **stopwatch** protocol is the official measure: the owner times
+four tasks with a stopwatch, three consecutive runs each, on the release-candidate host, and records
+the median. No analytics or tracking: start the stopwatch at the first click after sign-in and stop it
+when the task's confirmation is on screen. Numeric targets are in
+`docs/UX-ENHANCEMENT-PROPOSAL.md` §9, and the baselines are measured again after the Phase C changes.
+The **automated** rows are the E2E journey logging its own segment timings on the CI runner
+(`[timing]` lines in the verify job); they were recorded on the owner's behalf on 2026-11-19 as
+regression baselines. They are machine time for one scripted run, not a human stopwatch median.
+
+| Task | What is timed | Baseline | Target | Recorded | Ref |
+| --- | --- | --- | --- | --- | --- |
+| First plan step | automated segment: strategic plan created and activated (first-run setup/sign-in excluded) | 557 ms | ≤ 45 min | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-02 |
+| Spend entry | automated segment: spend form filled and saved against the project allocation | 267 ms | ≤ 60 s | 2026-11-19 — automated E2E, CI run 44471319147 | Project allocation → Open commitments & spend |
+| Opening import | template download → the 25-project workbook validated and loaded | pending — Phase B (W3b) | ≤ 15 min | 2026-11-19 — pending, W3b not shipped | UAT-08 |
+| Reconciliation | automated segment: open `/plan/opening-balances` and load its control totals | 214 ms | ≤ 1 day | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-08 |
+
+The owner still runs the stopwatch protocol during the UAT window (9–15 December 2026); the automated
+rows are replaced or paired with the owner's medians then. The opening-import row stays pending until
+the Phase B wizard (W3b) ships.
+
 | Approval | Name | Date |
 | --- | --- | --- |
 | Portfolio owner (UAT sign-off) |  |  |
