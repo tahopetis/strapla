@@ -16,6 +16,24 @@ const ADMIN = {
   password: 'correct horse battery staple',
 };
 
+interface Timing {
+  name: string;
+  ms: number;
+}
+
+/**
+ * Task timings for the UAT sign-off (W8a). They are automated engineering
+ * baselines from this journey — machine time on the CI runner, not the owner's
+ * stopwatch — and are logged so the run log can be read and recorded.
+ */
+const timings: Timing[] = [];
+
+function endTiming(name: string, startedAt: number): void {
+  const ms = Math.round(performance.now() - startedAt);
+  timings.push({ name, ms });
+  console.log(`[timing] ${name}: ${ms} ms`);
+}
+
 test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // Generous cap so the suite also passes on slow development boxes; CI runs it in seconds.
   test.setTimeout(600_000);
@@ -29,7 +47,8 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Create administrator' }).click();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 
-  // ------------------------------------------------- strategic plan and SIs
+  // W8a timing: first plan step starts after first-run setup (UAT-01 is not timed).
+  const firstPlanStepStartedAt = performance.now();
   await page.goto('/plan/strategic');
   const planForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Create plan' }) });
   await planForm.locator('input[name="name"]').fill('IT Strategic Plan 2026–2030');
@@ -43,6 +62,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await activatePlan.locator('textarea[name="reason"]').fill('Approved by the directors.');
   await activatePlan.getByRole('button', { name: 'Activate plan' }).click();
   await expect(page.getByText('Strategic plan activated.')).toBeVisible();
+  endTiming('first-plan-step', firstPlanStepStartedAt);
 
   const initiativeForm = page
     .locator('form')
@@ -149,6 +169,8 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Add commitment' }).click();
   await expect(page.getByText('Commitment recorded.')).toBeVisible();
 
+  // W8a timing: one spend entry recorded against the allocation.
+  const spendEntryStartedAt = performance.now();
   const spendForm = page
     .locator('form')
     .filter({ has: page.getByRole('button', { name: 'Record spend' }) });
@@ -161,6 +183,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Record spend' }).click();
   await expect(page.getByText('Spend entry recorded.')).toBeVisible();
   await expect(page.getByText('partially settled')).toBeVisible();
+  endTiming('spend-entry', spendEntryStartedAt);
 
   // ---------------------------------------- program card reflects the allocation
   await page.goto('/plan/annual');
@@ -186,6 +209,8 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('Leased lines 2027')).toBeVisible();
 
   // -------------------------------------------------- opening balances view
+  // W8a timing: open the reconciliation view and load its control totals.
+  const reconciliationStartedAt = performance.now();
   await page.goto('/plan/opening-balances');
   await expect(page.getByRole('heading', { name: 'Opening balances', exact: true })).toBeVisible();
   await expect(page.getByText('Initiatives — envelope reconciliation')).toBeVisible();
@@ -194,6 +219,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('PRG-2027-001').first()).toBeVisible();
   await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
   await expect(page.getByText('Rp 750.000.000').first()).toBeVisible();
+  endTiming('reconciliation', reconciliationStartedAt);
 
   // ------------------------------------------------------ reports and exports
   await page.goto('/reports');
@@ -318,4 +344,6 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // ------------------------------------------------------ plan is persisted
   await page.goto('/plan/strategic');
   await expect(page.getByText('SI-01 · Digital Workplace')).toBeVisible();
+
+  console.log(`[timings] ${JSON.stringify(timings)}`);
 });
