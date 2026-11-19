@@ -28,6 +28,12 @@ export interface CustomFieldDefinition {
   entityType: CustomFieldEntityType;
   /** Display name shown on forms, record panels, reports and exports. */
   name: string;
+  /**
+   * Stable machine key derived once from the name. It links the registry entry
+   * to the committed W9 opening-import field list (which names its owner columns
+   * by key), so a rename never rewrites recorded values or the import mapping.
+   */
+  key: string;
   type: CustomFieldType;
   required: boolean;
   description: string;

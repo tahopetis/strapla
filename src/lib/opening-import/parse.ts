@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { parseCustomFieldValue } from '../../domain/custom-fields.ts';
 import { assertRupiah } from '../../domain/money.ts';
 import {
   openingFieldList,
@@ -306,7 +307,12 @@ function validateRecords(
   });
 
   for (const field of fields) {
-    if (field.required && !labelToIndex.has(field.label)) {
+    // App-owned columns are the fixed import schema: a required one must be in
+    // the file. A registry column sets `headerRequired: false`, so a missing
+    // required value fails each row in the load planner and the error carries
+    // that row's line instead of one file-level header error.
+    const headerRequired = field.required && (field.headerRequired ?? true);
+    if (headerRequired && !labelToIndex.has(field.label)) {
       errors.push({
         line: header.line,
         column: field.label,
@@ -374,6 +380,8 @@ function parseCell(field: DeclaredOpeningField, raw: RawCell): CellResult {
 }
 
 function parseNumberCell(field: DeclaredOpeningField, raw: RawCell): CellResult {
+  if (field.numberRule === 'integer') return parseIntegerCell(field, raw);
+
   if (raw.kind === 'number') {
     try {
       return { ok: true, value: assertRupiah(raw.value) };
@@ -390,6 +398,20 @@ function parseNumberCell(field: DeclaredOpeningField, raw: RawCell): CellResult 
     };
   }
   return { ok: false, message: `${field.label} must be a whole, non-negative number (got a date).` };
+}
+
+/**
+ * A custom-field number column is validated by the custom-field parser the
+ * record forms use: signed whole digits, no thousands separators and no `Rp`.
+ * The import must not apply money rules to a custom field (G1), and a value the
+ * form accepts has to remain importable.
+ */
+function parseIntegerCell(field: DeclaredOpeningField, raw: RawCell): CellResult {
+  const parsed = parseCustomFieldValue(
+    { name: field.label, type: 'number', required: field.required },
+    cellText(raw),
+  );
+  return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, message: parsed.message };
 }
 
 function parseDateCell(field: DeclaredOpeningField, raw: RawCell): CellResult {

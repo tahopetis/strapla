@@ -53,7 +53,7 @@ export default async function OpeningImportPage() {
       <div className="space-y-6">
         <Card
           title="Import wizard"
-          description="Template, upload/validate, load. Validation writes nothing; the load is one transaction."
+          description="Template, upload/validate, load. The template and parser include the active custom fields for the chosen data set; validation writes nothing and the load is one transaction."
         >
           {!annualPlan ? (
             <p className="text-sm text-slate-700">

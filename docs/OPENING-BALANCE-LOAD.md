@@ -80,17 +80,32 @@ therefore stop at the project columns above.
 
 ### Owner-added columns
 
-Extra columns live in `src/lib/opening-import/owner-columns.ts`, committed to the repo and
-reviewed like configuration (G1–G6 in the
-[`UX-ENHANCEMENT-PROPOSAL.md`](UX-ENHANCEMENT-PROPOSAL.md) §13.3 decision log). Each declares
-`name`, `label`, `type` (`text`, `number`, `date`), `required`, `description` and `example`;
-merging is validated (duplicate names or headers are rejected). Owner-added columns are validated
-exactly like app-owned columns, appear in both templates and in the parsed rows, and never
-participate in money, remaining or flags. One owner column is committed on `projects`
-(`Procurement method`, text, optional) as the working demonstration of the mechanism and for the
-import UAT (“one extra typed column proven end to end”); replace or extend it when the owner declares
-the real columns for this deployment. Storage of the values per record arrives with the Phase B load
-(W9).
+App-owned columns are fixed by the declared field list in
+`src/lib/opening-import/field-list.ts`. Owner-added columns are the administrator-defined
+**custom fields** (Administration → Custom fields, #46): the runtime template and parser read the
+registry's active fields for the data set's entity — strategic initiative, annual program or
+project — and append them after the app-owned columns. The administrator's display name is the
+column header (suffixed with ` (custom field)` when it repeats an app-owned header), the registry's
+stable `key` is the parsed value's identifier (suffixed only if it repeats an app-owned field name),
+and the registry id keys the stored value, so renaming a field later never detaches the values
+already recorded.
+
+The headless tooling has no database. `src/lib/opening-import/owner-columns.ts` is therefore kept as
+a committed list for the template/parser CLI and the dry run, and the W9 demonstration column
+(`projects` / `Procurement method`) was seeded into the registry by migration 0006. The server does
+not merge the two lists: the live registry is the runtime source of truth, so a field removed under
+Administration disappears from the server template and is no longer importable.
+
+Owner-added columns are validated by their declared type; a custom-field `number` column follows the
+record form's rule (whole digits with an optional minus, no thousands separators) rather than the
+Rupiah rule, because a custom field never enters money rules (G1). The load planner applies the
+registry's own rules as well (a required value must be present, text must fit the form's limit), so
+an imported record is always editable on its form. Owner-added columns never participate in money,
+remaining or flags (G1–G6). After a load, each created record's parsed values are stored against the
+new record id in `custom_field_values` in the **same transaction** as the record and its audit entry;
+the audit entry's `after` snapshot includes them under `customFields`. A required field with no value
+in a row fails that row with its line number and nothing is written. The values appear in the
+record's Additional fields panel and in the reports and exports like any other custom-field value.
 
 ### Templates
 
@@ -111,6 +126,8 @@ Type rules enforced by the parser:
 
 - `text` — any text; required columns must not be blank.
 - `number` — whole, non-negative number; dots may group thousands (`1.234.567`), `Rp` is tolerated.
+  A custom-field `number` column instead follows the record form's rule (see above): whole digits
+  with an optional minus, no thousands separators.
 - `date` — `YYYY-MM-DD`, or `DD/MM/YYYY` (day first); returned in ISO form. Impossible dates fail.
 
 ### Parser and dry run
@@ -141,11 +158,15 @@ rows as its CSV sibling; the tests keep them in agreement). The real FY2026 work
 The go-live load runs through **Plan → Opening balances → Opening import**, in the load order above.
 For each data set:
 
-1. Download the generated CSV/XLSX template (the field list in `src/lib/opening-import/field-list.ts`
-   is the schema; the reason convention is `Opening balance — FY<closing year> close / <reference>`).
-2. Upload and validate: row-level errors are reported by line and nothing is written.
+1. Download the generated CSV/XLSX template (the app-owned columns in
+   `src/lib/opening-import/field-list.ts` plus the entity's active custom fields from the registry;
+   the reason convention is `Opening balance — FY<closing year> close / <reference>`).
+2. Upload and validate: row-level errors are reported by line and nothing is written. An
+   administrator-added field is accepted because the registry supplies its column; a required field
+   with no value fails that row.
 3. Validate and load: one transaction, one audit entry per created record, duplicate/unknown
-   references rejected before any write. The import creates records; it does not update them.
+   references rejected before any write. Extra column values are stored against the new record and
+   included in its audit snapshot. The import creates records; it does not update them.
 
 After each load, the **Import** card on `/plan/opening-balances` shows the record counts per data set,
 and the control-total card compares the eight spreadsheet control totals with the in-app totals.

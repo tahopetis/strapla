@@ -22,6 +22,7 @@ function field(
 ): CustomFieldDefinition {
   return {
     entityType: 'annual_program',
+    key: overrides.id,
     required: false,
     description: 'Registered for the report tests.',
     ...overrides,

@@ -20,6 +20,7 @@ function field(
 ): CustomFieldDefinition {
   return {
     entityType: 'project',
+    key: 'fieldKey',
     required: false,
     description: '',
     ...overrides,

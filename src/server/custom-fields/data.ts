@@ -24,6 +24,7 @@ export function toCustomFieldDefinition(row: CustomField): CustomFieldDefinition
     id: row.id,
     entityType: row.entityType as CustomFieldEntityType,
     name: row.name,
+    key: row.key,
     type: row.type as CustomFieldType,
     required: row.required,
     description: row.description,

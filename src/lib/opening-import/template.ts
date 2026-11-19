@@ -3,6 +3,7 @@ import {
   openingFieldList,
   openingReasonConvention,
   OPENING_DATA_SETS,
+  type DeclaredOpeningField,
   type OpeningDataSetId,
   type OpeningField,
   type OpeningFieldType,
@@ -46,6 +47,7 @@ export function buildCsvTemplate(options: TemplateOptions): string {
     '#',
     '# Type rules:',
     ...entryOf(TYPE_RULES).map(([type, rule]) => `#   ${type} — ${rule}.`),
+    ...customNumberRuleLines(fields),
     '#',
     `# Load reason convention: ${openingReasonConvention(options.closingFiscalYear)}`,
     '#',
@@ -67,6 +69,18 @@ export function buildCsvTemplate(options: TemplateOptions): string {
   ];
 
   return `${lines.join('\r\n')}\r\n`;
+}
+
+/**
+ * A custom-field `number` column does not follow the Rupiah rule: it is parsed
+ * by the record form's typed parser (signed whole digits, no grouping), so the
+ * template says so whenever the registry contributes one.
+ */
+function customNumberRuleLines(fields: readonly DeclaredOpeningField[]): string[] {
+  if (!fields.some((field) => field.owner && field.type === 'number')) return [];
+  return [
+    '#   custom-field number — whole number, digits only, an optional minus (the record form rule)',
+  ];
 }
 
 export async function buildXlsxTemplate(options: TemplateOptions): Promise<Uint8Array> {
@@ -100,9 +114,9 @@ export async function buildXlsxTemplate(options: TemplateOptions): Promise<Uint8
     '2. Do not rename or add columns on the Data sheet: undeclared columns are rejected. Column order does not matter.',
     `3. Types: ${entryOf(TYPE_RULES)
       .map(([type, rule]) => `${type} = ${rule}`)
-      .join('; ')}.`,
+      .join('; ')}.${customNumberRuleLines(fields).length > 0 ? ' A custom-field number column uses the record form rule instead: whole digits with an optional minus, no thousands separators.' : ''}`,
     `4. Load reason convention: ${openingReasonConvention(options.closingFiscalYear)}`,
-    '5. Amounts are whole Rupiah. Extra owner-added columns come from the declared field list, not from this sheet.',
+    '5. Amounts are whole Rupiah. Extra custom-field columns come from the registry (Administration → Custom fields), not from this sheet.',
   ]) {
     instructions.addRow([line]);
   }

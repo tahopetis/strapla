@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { CustomFieldDefinition } from '@/domain/custom-fields';
 import type { ParsedRow } from '@/lib/opening-import/parse';
 import {
   planInitiativesLoad,
   planProgramsLoad,
   planProjectsLoad,
+  type OpeningCustomField,
   type OpeningLoadContext,
 } from './opening-load';
 
@@ -81,16 +83,35 @@ function projectRow(line: number, extra: Record<string, string | number | null> 
   });
 }
 
+function customField(
+  overrides: Partial<CustomFieldDefinition> = {},
+  column?: string,
+): OpeningCustomField {
+  const definition: CustomFieldDefinition = {
+    id: 'field-procurement',
+    entityType: 'project',
+    name: 'Procurement method',
+    key: 'procurementMethod',
+    type: 'text',
+    required: false,
+    description: 'How the project is procured.',
+    ...overrides,
+  };
+  return { column: column ?? definition.key, label: definition.name, definition };
+}
+
 describe('planInitiativesLoad', () => {
   it('maps rows to initiative insert values', () => {
     const { plan, errors } = planInitiativesLoad([initiativeRow(2, 'SI-90')], context());
     expect(errors).toEqual([]);
     expect(plan.initiatives).toEqual([
       expect.objectContaining({
-        planId: 'plan-1',
-        code: 'SI-90',
-        name: 'Initiative SI-90',
-        envelopeAmount: 1_000,
+        values: expect.objectContaining({
+          planId: 'plan-1',
+          code: 'SI-90',
+          name: 'Initiative SI-90',
+          envelopeAmount: 1_000,
+        }),
       }),
     ]);
   });
@@ -118,7 +139,7 @@ describe('planProgramsLoad', () => {
       context(),
     );
     expect(errors).toEqual([]);
-    expect(plan.programs[0]).toMatchObject({
+    expect(plan.programs[0]?.values).toMatchObject({
       annualPlanId: 'annual-1',
       siId: 'si-1',
       prevProgramId: 'program-1',
@@ -146,7 +167,7 @@ describe('planProjectsLoad', () => {
       context({ existingProjectCodes: new Set(['PRJ-2027-001']) }),
     );
     expect(errors).toEqual([]);
-    expect(plan.projects.map((project) => project.code)).toEqual([
+    expect(plan.projects.map((project) => project.values.code)).toEqual([
       'PRJ-2027-002',
       'PRJ-2027-003',
       'PRJ-2027-004',
@@ -207,6 +228,94 @@ describe('planProjectsLoad', () => {
     expect(missingAmount.errors[0]).toMatchObject({
       line: 2,
       column: 'Ijin prinsip approved amount (Rp)',
+    });
+  });
+});
+
+describe('planOpeningLoad — custom-field registry values (W9)', () => {
+  it('attaches an optional registry value to the planned record, keyed by field id', () => {
+    const { plan, errors } = planProjectsLoad(
+      [projectRow(2, { procurementMethod: 'Tender' })],
+      context(),
+      [customField()],
+    );
+    expect(errors).toEqual([]);
+    expect(plan.projects[0]?.customFieldValues).toEqual({ 'field-procurement': 'Tender' });
+  });
+
+  it('fails the row when a required registry value is missing, whether the column or the cell is absent', () => {
+    const required = customField({ required: true });
+
+    const missingColumn = planProjectsLoad([projectRow(2)], context(), [required]);
+    expect(missingColumn.errors).toEqual([
+      { line: 2, column: 'Procurement method', message: 'Procurement method is required.' },
+    ]);
+    expect(missingColumn.plan.projects).toEqual([]);
+
+    const blankCell = planProjectsLoad([projectRow(3, { procurementMethod: null })], context(), [
+      required,
+    ]);
+    expect(blankCell.errors).toEqual([
+      { line: 3, column: 'Procurement method', message: 'Procurement method is required.' },
+    ]);
+    expect(blankCell.plan.projects).toEqual([]);
+  });
+
+  it('reports the failing row only, attributing the error to its line', () => {
+    const required = customField({ required: true });
+    const { plan, errors } = planProjectsLoad(
+      [projectRow(2, { procurementMethod: 'Tender' }), projectRow(3)],
+      context(),
+      [required],
+    );
+    expect(errors).toEqual([
+      { line: 3, column: 'Procurement method', message: 'Procurement method is required.' },
+    ]);
+    expect(plan.projects.map((record) => record.values.code)).toEqual(['PRJ-2027-001']);
+  });
+
+  it('applies the form rules too, so an imported record stays editable', () => {
+    const { plan, errors } = planProjectsLoad(
+      [projectRow(2, { procurementMethod: 'x'.repeat(2001) })],
+      context(),
+      [customField()],
+    );
+    expect(errors[0]).toMatchObject({ line: 2, column: 'Procurement method' });
+    expect(errors[0]?.message).toContain('at most 2000');
+    expect(plan.projects).toEqual([]);
+  });
+
+  it('attaches registry values to initiatives and programs as well', () => {
+    const initiative = planInitiativesLoad(
+      [initiativeRow(2, 'SI-90', { portfolioNote: 'Watch' })],
+      context(),
+      [
+        customField({
+          id: 'field-si-note',
+          entityType: 'strategic_initiative',
+          name: 'Portfolio note',
+          key: 'portfolioNote',
+        }),
+      ],
+    );
+    expect(initiative.plan.initiatives[0]?.customFieldValues).toEqual({
+      'field-si-note': 'Watch',
+    });
+
+    const program = planProgramsLoad(
+      [programRow(2, 'PRG-90', { fundSource: 'APBN' })],
+      context(),
+      [
+        customField({
+          id: 'field-program-fund',
+          entityType: 'annual_program',
+          name: 'Funding source',
+          key: 'fundSource',
+        }),
+      ],
+    );
+    expect(program.plan.programs[0]?.customFieldValues).toEqual({
+      'field-program-fund': 'APBN',
     });
   });
 });

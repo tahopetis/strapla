@@ -221,9 +221,39 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('Rp 750.000.000').first()).toBeVisible();
   endTiming('reconciliation', reconciliationStartedAt);
 
+  // ------------------------------- W9: an administrator adds a project field
+  // The field is created before the opening load, so the registry supplies it as
+  // an importable column and the imported value can be checked end to end below.
+  await page.goto('/admin/custom-fields');
+  await expect(page.getByRole('heading', { name: 'Custom fields', exact: true })).toBeVisible();
+  const projectFieldCard = page.locator('section').filter({ hasText: 'Procurement method' });
+  // the December field list is seeded into the registry by the migration
+  await expect(projectFieldCard.getByText('Procurement method').first()).toBeVisible();
+
+  await projectFieldCard.getByText('Add a field').click();
+  const addFieldForm = projectFieldCard
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add field' }) });
+  await addFieldForm.locator('input[name="name"]').fill('Delivery note');
+  await addFieldForm.locator('select[name="type"]').selectOption('text');
+  await addFieldForm.locator('textarea[name="description"]').fill('How the delivery is staged.');
+  await addFieldForm.getByRole('button', { name: 'Add field' }).click();
+  await expect(page.getByText('Custom field added.')).toBeVisible();
+  await expect(page.getByText('Delivery note').first()).toBeVisible();
+
   // ---------------------------------------- opening-balance import (W3b)
   await page.goto('/plan/opening-balances/import');
   await expect(page.getByRole('heading', { name: 'Opening-balance import' })).toBeVisible();
+
+  // The generated template carries the app-owned columns and the registry fields.
+  const importOrigin = new URL(page.url()).origin;
+  const templateResponse = await page.request.get(
+    `${importOrigin}/plan/opening-balances/import/template?dataSet=projects&format=csv`,
+  );
+  expect(templateResponse.ok()).toBeTruthy();
+  const templateCsv = await templateResponse.text();
+  expect(templateCsv).toContain('Procurement method');
+  expect(templateCsv).toContain('Delivery note');
 
   // malformed file: row-level errors by line, nothing written
   await page.locator('select[name="dataSet"]').selectOption('projects');
@@ -255,6 +285,33 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await importDataSet('Projects', 'e2e/fixtures/opening-import/projects-25.csv');
   endTiming('opening-import', openingImportStartedAt);
 
+  // W9: the owner-added columns landed on the imported record, in its audit
+  // snapshot and in the panel that reads custom_field_values.
+  await page.goto('/plan/projects');
+  await Promise.all([
+    page.waitForURL(/\/plan\/projects\/[0-9a-f-]+$/),
+    page
+      .locator('tbody tr', { hasText: 'Imported project 01' })
+      .getByRole('link', { name: 'Open' })
+      .click(),
+  ]);
+  await expect(page.getByRole('heading', { name: /Imported project 01/ })).toBeVisible();
+  await expect(page.getByText('Additional fields')).toBeVisible();
+  await expect(page.locator('dd', { hasText: 'Staged delivery (imported)' })).toBeVisible();
+  await expect(page.locator('dd', { hasText: 'Open tender' })).toBeVisible();
+
+  const importedHistory = page.locator('section').filter({ hasText: 'Change history' });
+  const importedCreateEntry = importedHistory.locator('tbody tr').first();
+  await importedCreateEntry.locator('summary').click();
+  await expect(importedCreateEntry.locator('pre', { hasText: 'customFields' })).toBeVisible();
+  await expect(
+    importedCreateEntry.locator('pre', { hasText: 'Staged delivery (imported)' }),
+  ).toBeVisible();
+
+  // back to the reconciliation view for the control totals and the sign-off
+  await page.goto('/plan/opening-balances');
+  await expect(page.getByText('Control totals and sign-off')).toBeVisible();
+
   // control totals and the one-time sign-off
   const controlValues = {
     controlEnvelope: '0',
@@ -285,22 +342,12 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText('signed off', { exact: true })).toBeVisible();
 
   // ------------------------------------------------------ custom fields (#46)
+  // The registry now holds the seeded Procurement method and the Delivery note
+  // field created before the opening load (W9); the values below are edited on
+  // the manually created project.
   await page.goto('/admin/custom-fields');
   await expect(page.getByRole('heading', { name: 'Custom fields', exact: true })).toBeVisible();
-  // the December field list is seeded into the registry by the migration
-  const projectFieldCard = page.locator('section').filter({ hasText: 'Procurement method' });
-  await expect(projectFieldCard.getByText('Procurement method').first()).toBeVisible();
-
-  await projectFieldCard.getByText('Add a field').click();
-  const addFieldForm = projectFieldCard
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: 'Add field' }) });
-  await addFieldForm.locator('input[name="name"]').fill('Delivery note');
-  await addFieldForm.locator('select[name="type"]').selectOption('text');
-  await addFieldForm.locator('textarea[name="description"]').fill('How the delivery is staged.');
-  await addFieldForm.getByRole('button', { name: 'Add field' }).click();
-  await expect(page.getByText('Custom field added.')).toBeVisible();
-  await expect(page.getByText('Delivery note')).toBeVisible();
+  await expect(page.getByText('Delivery note').first()).toBeVisible();
 
   // the fields render on the create/edit form and the values show on the record
   await page.goto('/plan/projects');
@@ -334,6 +381,8 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(
     page.getByRole('columnheader', { name: 'Delivery note', exact: true }),
   ).toBeVisible();
+  // W9: the imported owner-column value is part of the report, not only the panel
+  await expect(page.getByRole('cell', { name: 'Staged delivery (imported)' })).toBeVisible();
   await page.locator('select[name="cf"]').selectOption({ label: 'Delivery note' });
   await page.locator('input[name="cv"]').fill('phased');
   await page.getByRole('button', { name: 'Apply filter' }).click();
