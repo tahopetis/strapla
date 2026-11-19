@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { CustomFieldInputs } from '@/components/custom-fields';
 import { MoneyField, SelectField, SubmitButton, TextField } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { ProjectListRow } from '@/server/plan/project-queries';
 import { listAnnualPlans } from '@/server/plan/annual-queries';
+import { listCustomFieldDefinitions } from '@/server/custom-fields/data';
 import { listProgramOptions, listProjects } from '@/server/plan/project-queries';
 import { createProjectAction } from '@/server/plan/project-actions';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
@@ -37,10 +39,11 @@ export default async function ProjectsPage({
     );
   }
 
-  const [rows, programOptions, annualPlans] = await Promise.all([
+  const [rows, programOptions, annualPlans, projectFields] = await Promise.all([
     listProjects(plan.id),
     listProgramOptions(plan.id),
     listAnnualPlans(plan.id),
+    listCustomFieldDefinitions('project'),
   ]);
   const activeYear =
     annualPlans.find((row) => row.annualPlan.status === 'active')?.annualPlan.fiscalYear ??
@@ -118,6 +121,7 @@ export default async function ProjectsPage({
             <MoneyField label="Full-life allocated budget" name="allocatedBudgetFullLife" defaultValue={0} required />
             <MoneyField label="Submitted price" name="submittedPrice" hint="Highest vendor quote." />
             <MoneyField label="Final deal price" name="finalDealPrice" hint="Contract value when known." />
+            <CustomFieldInputs fields={projectFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Create project</SubmitButton>
             </div>

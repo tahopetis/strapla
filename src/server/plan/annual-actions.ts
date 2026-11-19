@@ -22,6 +22,7 @@ import {
   type ProgramCreateInput,
   type ProgramUpdateInput,
 } from '@/domain/inputs';
+import { withCustomFields } from '@/domain/custom-fields';
 import { planContainsFiscalYear } from '@/domain/plan';
 import {
   FormError,
@@ -31,6 +32,8 @@ import {
   finishWith,
   parseForm,
 } from '@/server/actions/common';
+import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
+import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 import { getStrategicPlan } from './queries';
 
@@ -220,7 +223,11 @@ async function validateContinuation(input: {
   }
 }
 
-async function createProgram(userId: string, input: ProgramCreateInput): Promise<void> {
+async function createProgram(
+  userId: string,
+  input: ProgramCreateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const { annualPlan, strategicPlan } = await requireEditableAnnualPlan(input.annualPlanId);
   await validateInitiative(input.siId, strategicPlan.id);
   await validateContinuation({
@@ -263,12 +270,19 @@ async function createProgram(userId: string, input: ProgramCreateInput): Promise
       })
       .returning();
     if (!created) throw new Error('failed to create the annual program');
+    await saveCustomFieldValues(tx, {
+      entityType: 'annual_program',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
       entityType: 'annual_program',
       entityId: created.id,
-      after: programSnapshot(created),
+      after: withCustomFields(programSnapshot(created), custom.fields, custom.values),
     });
   });
 }
@@ -294,7 +308,11 @@ async function loadProgram(id: string): Promise<{
   return row;
 }
 
-async function updateProgram(userId: string, input: ProgramUpdateInput): Promise<void> {
+async function updateProgram(
+  userId: string,
+  input: ProgramUpdateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const loaded = await loadProgram(input.id);
   if (loaded.program.voidedAt) throw new FormError('This program is voided and read-only.');
   await requireEditableAnnualPlan(loaded.annualPlan.id);
@@ -308,6 +326,7 @@ async function updateProgram(userId: string, input: ProgramUpdateInput): Promise
   });
 
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('annual_program', input.id, tx);
     const [updated] = await tx
       .update(annualPrograms)
       .set({
@@ -326,13 +345,20 @@ async function updateProgram(userId: string, input: ProgramUpdateInput): Promise
       .where(eq(annualPrograms.id, input.id))
       .returning();
     if (!updated) throw new FormError('Annual program not found.');
+    await saveCustomFieldValues(tx, {
+      entityType: 'annual_program',
+      entityId: input.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'update',
       entityType: 'annual_program',
       entityId: input.id,
-      before: programSnapshot(loaded.program),
-      after: programSnapshot(updated),
+      before: withCustomFields(programSnapshot(loaded.program), custom.fields, beforeValues),
+      after: withCustomFields(programSnapshot(updated), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -410,7 +436,8 @@ export async function createProgramAction(formData: FormData): Promise<void> {
   try {
     const input = parseForm(programCreateSchema, formData);
     annualPlanId = input.annualPlanId;
-    await createProgram(user.id, input);
+    const custom = await readCustomFieldPayload('annual_program', formData);
+    await createProgram(user.id, input, custom);
   } catch (error) {
     failWith(annualPlanId ? `${ANNUAL_PAGE}/${annualPlanId}` : ANNUAL_PAGE, describeError(error));
   }
@@ -424,7 +451,8 @@ export async function updateProgramAction(formData: FormData): Promise<void> {
     const input = parseForm(programUpdateSchema, formData);
     const loaded = await loadProgram(input.id);
     annualPlanId = loaded.annualPlan.id;
-    await updateProgram(user.id, input);
+    const custom = await readCustomFieldPayload('annual_program', formData);
+    await updateProgram(user.id, input, custom);
   } catch (error) {
     failWith(annualPlanId ? `${ANNUAL_PAGE}/${annualPlanId}` : ANNUAL_PAGE, describeError(error));
   }

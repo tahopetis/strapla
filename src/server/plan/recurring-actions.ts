@@ -11,6 +11,7 @@ import {
   type RecurringOpsItem,
   type StrategicPlan,
 } from '@/db/schema';
+import { withCustomFields } from '@/domain/custom-fields';
 import {
   recurringOpsCreateSchema,
   recurringOpsUpdateSchema,
@@ -26,6 +27,8 @@ import {
   finishWith,
   parseForm,
 } from '@/server/actions/common';
+import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
+import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 
 const PAGE = '/plan/annual';
@@ -93,7 +96,11 @@ async function loadItem(id: string): Promise<{ item: RecurringOpsItem; context: 
   return { item: row.item, context: { annualPlan: row.annualPlan, strategicPlan: row.strategicPlan } };
 }
 
-async function createItem(userId: string, input: RecurringOpsCreateInput): Promise<void> {
+async function createItem(
+  userId: string,
+  input: RecurringOpsCreateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const context = await loadAnnualPlanContext(input.annualPlanId);
   requireEditable(context);
   await validateCategory(input.categoryId);
@@ -114,23 +121,35 @@ async function createItem(userId: string, input: RecurringOpsCreateInput): Promi
       })
       .returning();
     if (!created) throw new Error('failed to create the recurring ops item');
+    await saveCustomFieldValues(tx, {
+      entityType: 'recurring_ops_item',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
       entityType: 'recurring_ops_item',
       entityId: created.id,
-      after: snapshot(created),
+      after: withCustomFields(snapshot(created), custom.fields, custom.values),
     });
   });
 }
 
-async function updateItem(userId: string, input: RecurringOpsUpdateInput): Promise<void> {
+async function updateItem(
+  userId: string,
+  input: RecurringOpsUpdateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const loaded = await loadItem(input.id);
   if (loaded.item.voidedAt) throw new FormError('This item is voided and read-only.');
   requireEditable(loaded.context);
   await validateCategory(input.categoryId);
 
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('recurring_ops_item', input.id, tx);
     const [updated] = await tx
       .update(recurringOpsItems)
       .set({
@@ -146,13 +165,20 @@ async function updateItem(userId: string, input: RecurringOpsUpdateInput): Promi
       .where(eq(recurringOpsItems.id, input.id))
       .returning();
     if (!updated) throw new FormError('Recurring ops item not found.');
+    await saveCustomFieldValues(tx, {
+      entityType: 'recurring_ops_item',
+      entityId: input.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'update',
       entityType: 'recurring_ops_item',
       entityId: input.id,
-      before: snapshot(loaded.item),
-      after: snapshot(updated),
+      before: withCustomFields(snapshot(loaded.item), custom.fields, beforeValues),
+      after: withCustomFields(snapshot(updated), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -190,7 +216,8 @@ export async function createRecurringOpsAction(formData: FormData): Promise<void
   try {
     const input = parseForm(recurringOpsCreateSchema, formData);
     annualPlanId = input.annualPlanId;
-    await createItem(user.id, input);
+    const custom = await readCustomFieldPayload('recurring_ops_item', formData);
+    await createItem(user.id, input, custom);
   } catch (error) {
     failWith(annualPlanId ? `${PAGE}/${annualPlanId}` : PAGE, describeError(error));
   }
@@ -204,7 +231,8 @@ export async function updateRecurringOpsAction(formData: FormData): Promise<void
     const input = parseForm(recurringOpsUpdateSchema, formData);
     const loaded = await loadItem(input.id);
     annualPlanId = loaded.context.annualPlan.id;
-    await updateItem(user.id, input);
+    const custom = await readCustomFieldPayload('recurring_ops_item', formData);
+    await updateItem(user.id, input, custom);
   } catch (error) {
     failWith(annualPlanId ? `${PAGE}/${annualPlanId}` : PAGE, describeError(error));
   }

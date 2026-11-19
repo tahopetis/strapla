@@ -1,6 +1,7 @@
 import { getCurrentUser } from '@/server/auth/session';
 import { toCsv, toXlsx } from '@/lib/report-export';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
+import { loadReportCustomFieldGroups } from '@/server/plan/report-custom-fields';
 import {
   buildReportDocument,
   REPORT_TITLES,
@@ -26,8 +27,16 @@ export async function GET(
   const plan = await getCurrentStrategicPlan();
   if (!plan) return new Response('No strategic plan', { status: 404 });
 
-  const document = await buildReportDocument(report as ReportKey, plan.id, plan.name);
-  const format = new URL(request.url).searchParams.get('format');
+  const searchParams = new URL(request.url).searchParams;
+  // The export form posts one `columns` value per ticked field (plus a blank one).
+  // No `columns` parameter at all means "every active custom field".
+  const columns = searchParams.getAll('columns');
+  const groups = await loadReportCustomFieldGroups(
+    report as ReportKey,
+    columns.length === 0 ? undefined : columns,
+  );
+  const document = await buildReportDocument(report as ReportKey, plan.id, plan.name, groups);
+  const format = searchParams.get('format');
   const base = `${report}-${plan.startFiscalYear}-${plan.endFiscalYear}`;
 
   if (format === 'xlsx') {

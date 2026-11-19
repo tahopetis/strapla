@@ -21,6 +21,7 @@ import {
   type PlanCreateInput,
   type PlanUpdateInput,
 } from '@/domain/inputs';
+import { withCustomFields } from '@/domain/custom-fields';
 import { validatePlanYears } from '@/domain/plan';
 import {
   FormError,
@@ -30,6 +31,8 @@ import {
   finishWith,
   parseForm,
 } from '@/server/actions/common';
+import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
+import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 import { getStrategicPlan } from './queries';
 
@@ -173,7 +176,11 @@ async function setPlanStatus(
 
 // ---------------------------------------------------------------- strategic initiative
 
-async function createInitiative(userId: string, input: InitiativeCreateInput): Promise<void> {
+async function createInitiative(
+  userId: string,
+  input: InitiativeCreateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   await requireEditablePlan(input.planId);
   await getDb().transaction(async (tx) => {
     const [created] = await tx
@@ -192,21 +199,33 @@ async function createInitiative(userId: string, input: InitiativeCreateInput): P
       })
       .returning();
     if (!created) throw new Error('failed to create the strategic initiative');
+    await saveCustomFieldValues(tx, {
+      entityType: 'strategic_initiative',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
       entityType: 'strategic_initiative',
       entityId: created.id,
-      after: initiativeSnapshot(created),
+      after: withCustomFields(initiativeSnapshot(created), custom.fields, custom.values),
     });
   });
 }
 
-async function updateInitiative(userId: string, input: InitiativeUpdateInput): Promise<void> {
+async function updateInitiative(
+  userId: string,
+  input: InitiativeUpdateInput,
+  custom: CustomFieldPayload,
+): Promise<void> {
   const current = await requireInitiative(input.id);
   await requireEditablePlan(current.planId);
 
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('strategic_initiative', input.id, tx);
     const [updated] = await tx
       .update(strategicInitiatives)
       .set({
@@ -223,13 +242,20 @@ async function updateInitiative(userId: string, input: InitiativeUpdateInput): P
       .where(eq(strategicInitiatives.id, input.id))
       .returning();
     if (!updated) throw new FormError('Strategic initiative not found.');
+    await saveCustomFieldValues(tx, {
+      entityType: 'strategic_initiative',
+      entityId: input.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'update',
       entityType: 'strategic_initiative',
       entityId: input.id,
-      before: initiativeSnapshot(current),
-      after: initiativeSnapshot(updated),
+      before: withCustomFields(initiativeSnapshot(current), custom.fields, beforeValues),
+      after: withCustomFields(initiativeSnapshot(updated), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -319,7 +345,8 @@ export async function archivePlanAction(formData: FormData): Promise<void> {
 export async function createInitiativeAction(formData: FormData): Promise<void> {
   const user = await actionUser();
   try {
-    await createInitiative(user.id, parseForm(initiativeCreateSchema, formData));
+    const custom = await readCustomFieldPayload('strategic_initiative', formData);
+    await createInitiative(user.id, parseForm(initiativeCreateSchema, formData), custom);
   } catch (error) {
     failWith(PAGE, describeError(error));
   }
@@ -329,7 +356,8 @@ export async function createInitiativeAction(formData: FormData): Promise<void> 
 export async function updateInitiativeAction(formData: FormData): Promise<void> {
   const user = await actionUser();
   try {
-    await updateInitiative(user.id, parseForm(initiativeUpdateSchema, formData));
+    const custom = await readCustomFieldPayload('strategic_initiative', formData);
+    await updateInitiative(user.id, parseForm(initiativeUpdateSchema, formData), custom);
   } catch (error) {
     failWith(PAGE, describeError(error));
   }

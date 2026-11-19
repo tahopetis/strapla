@@ -21,7 +21,10 @@ export type AuditAction =
   | 'member_deactivate'
   | 'member_activate'
   | 'password_reset'
-  | 'session_revoke';
+  | 'session_revoke'
+  | 'custom_field_create'
+  | 'custom_field_update'
+  | 'custom_field_remove';
 
 export interface AuditInput {
   actorUserId: string | null;

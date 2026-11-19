@@ -544,3 +544,72 @@ export type NewStrategicInitiative = typeof strategicInitiatives.$inferInsert;
 export type NewAnnualProgram = typeof annualPrograms.$inferInsert;
 export type NewProject = typeof projects.$inferInsert;
 export type NewIjinPrinsipRecord = typeof ijinPrinsipRecords.$inferInsert;
+
+// ---------------------------------------------------------------- custom fields (#46)
+
+/**
+ * The admin-defined field registry: typed extra fields per entity, one
+ * deployment per organisation (G5). Values live in `custom_field_values`,
+ * keyed by field id so renaming a field never rewrites recorded data. A custom
+ * field never touches `remaining`, flags, allocations or an existing report
+ * total (G1); the four plan-record entities are the supported surface.
+ *
+ * Removal follows the app's no-delete convention: the definition is archived
+ * (`archived_at` + reason) and its recorded values are kept. The unique index
+ * is partial, so archiving a field frees its name for a new definition.
+ */
+export const customFields = pgTable(
+  'custom_fields',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entityType: text('entity_type').notNull(),
+    name: text('name').notNull(),
+    /** Stable machine key, derived once from the name; the W9 field list keys on it. */
+    key: text('key').notNull(),
+    type: text('type').notNull(),
+    required: boolean('required').notNull().default(false),
+    description: text('description').notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    archivedReason: text('archived_reason'),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('custom_fields_entity_name_idx')
+      .on(table.entityType, table.name)
+      .where(sql`${table.archivedAt} IS NULL`),
+    uniqueIndex('custom_fields_entity_key_idx')
+      .on(table.entityType, table.key)
+      .where(sql`${table.archivedAt} IS NULL`),
+    index('custom_fields_entity_idx').on(table.entityType),
+    check(
+      'custom_fields_entity_type_check',
+      sql`${table.entityType} IN ('strategic_initiative', 'annual_program', 'project', 'recurring_ops_item')`,
+    ),
+    check('custom_fields_type_check', sql`${table.type} IN ('text', 'number', 'date')`),
+  ],
+);
+
+/** One row per record that has extra values; the JSON object is keyed by field id. */
+export const customFieldValues = pgTable(
+  'custom_field_values',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    values: jsonb('values').$type<Record<string, string | number>>().notNull().default({}),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('custom_field_values_entity_idx').on(table.entityType, table.entityId),
+    check(
+      'custom_field_values_entity_type_check',
+      sql`${table.entityType} IN ('strategic_initiative', 'annual_program', 'project', 'recurring_ops_item')`,
+    ),
+  ],
+);
+
+export type CustomField = typeof customFields.$inferSelect;

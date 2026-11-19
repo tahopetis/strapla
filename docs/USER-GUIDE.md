@@ -515,10 +515,32 @@ detailed exportable sources.
 - **Search and filter**: free-text search across actor, entity id, action and reason; filters for
   entity type, action and actor. The screen shows the latest 200 matching entries.
 - **Export CSV** downloads the filtered trail (up to 5000 entries) for directors/finance.
+- **Custom fields**: when an administrator defines extra fields on a record type, they appear here in
+  the before/after values under `customFields`.
 - **Values** expands before/after JSON in place.
 - Most record pages (e.g. projects) also have a **Change history** card.
 
-### 8.3 Corrections policy (v1)
+### 8.3 Custom fields
+
+**Administration → Custom fields**
+
+- An administrator can add, edit and remove extra typed fields on four record types: **strategic
+  initiatives, annual programs, projects** and **recurring ops items**.
+- A field has a **name**, a **type** (text, number or date), an optional **required** flag and a
+  **description**. Every change is audited; a reason is required when editing or removing.
+- Values appear on the create/edit form and in an **Additional fields** panel on the record. Text is
+  free text, numbers are whole numbers (digits, with an optional minus) and dates are real calendar
+  dates.
+- Reports show the fields of the record type they list as extra columns, offer a **custom-field
+  filter**, and the export lets you choose which extra columns to include. The filter narrows the
+  rows on screen; the totals and the export always cover the whole report.
+- Custom fields are metadata: they never change budgets, remaining amounts, flags, allocations or
+  report totals. Removing a field archives it, so it disappears from forms, record pages, reports
+  and exports and its name can be reused; the values already recorded are kept but no longer shown,
+  and the audit trail records what was recorded.
+- The field list is per deployment (one deployment belongs to one organisation).
+
+### 8.4 Corrections policy (v1)
 
 - Nothing is hard-deleted. Wrong data is corrected with an audited edit (reason required), or the
   record is voided/cancelled with a reason.

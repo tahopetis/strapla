@@ -1,7 +1,14 @@
 import type { Metadata } from 'next';
+import {
+  CustomFieldCells,
+  CustomFieldFilterForm,
+  CustomFieldHeaderCells,
+} from '@/components/custom-fields';
 import { ReportNote, ReportShell } from '@/components/report-shell';
 import { Badge, Card, Money } from '@/components/ui';
+import { matchesCustomFieldFilter } from '@/domain/custom-fields';
 import { getBudgetVsActualReport } from '@/server/plan/report-queries';
+import { loadReportCustomFieldGroups } from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -9,18 +16,49 @@ export const metadata: Metadata = { title: 'Budget versus actual' };
 
 const th = 'py-2 pr-4 text-left text-xs uppercase tracking-wide text-slate-500';
 
-export default async function BudgetVsActualPage() {
+export default async function BudgetVsActualPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    cf?: string | string[];
+    cv?: string | string[];
+    columns?: string | string[];
+  }>;
+}) {
+  const { cf: cfParam, cv: cvParam, columns } = await searchParams;
+  const cf = Array.isArray(cfParam) ? cfParam[0] : cfParam;
+  const cv = Array.isArray(cvParam) ? cvParam[0] : cvParam;
   const plan = await getCurrentStrategicPlan();
   if (!plan) {
     return <p className="text-sm text-slate-600">Create the strategic plan to see this report.</p>;
   }
   const report = await getBudgetVsActualReport(plan.id);
+  const groups = await loadReportCustomFieldGroups('budget-vs-actual', columns);
+  const [group] = groups;
+  const fields = group?.fields ?? [];
+  const selectedIds = groups.flatMap((candidate) =>
+    candidate.selectedFields.map((field) => field.id),
+  );
+  const visibleFields = group?.selectedFields ?? [];
+  const filterField = cf ? fields.find((field) => field.id === cf) : undefined;
+  const filterQuery = cv?.trim() ?? '';
+  const filtering = filterField !== undefined && filterQuery.length > 0;
+  const rows =
+    filtering && filterField !== undefined
+      ? report.rows.filter((row) =>
+          matchesCustomFieldFilter(group?.values.get(row.programId), filterField, filterQuery),
+        )
+      : report.rows;
 
   return (
     <ReportShell
       title="Budget versus actual"
       description={`${plan.name} · program level, per fiscal year`}
       reportKey="budget-vs-actual"
+      exportFields={groups.flatMap((candidate) => candidate.fields)}
+      selectedExportFieldIds={groups.flatMap((candidate) =>
+        candidate.selectedFields.map((field) => field.id),
+      )}
     >
       <ReportNote>
         Available = budget + carry-in; unallocated = available − allocations. Committed and spent are the
@@ -28,6 +66,18 @@ export default async function BudgetVsActualPage() {
         from the current year, ADR-0003 §4); prior-year opening payments settle pre-app commitments. Capex and
         opex are shown per component.
       </ReportNote>
+
+      {fields.length > 0 ? (
+        <div className="screen-only">
+          <CustomFieldFilterForm
+            fields={fields}
+            action="/reports/budget-vs-actual"
+            fieldId={filterField?.id}
+            query={cv}
+            columnSelection={columns === undefined ? undefined : selectedIds}
+          />
+        </div>
+      ) : null}
 
       <Card title="Programs" description="Budget availability versus allocation, commitment and spend.">
         <div className="overflow-x-auto">
@@ -47,10 +97,11 @@ export default async function BudgetVsActualPage() {
                 <th className={th}>Prior-year settlements</th>
                 <th className={th}>Prior-year openings</th>
                 <th className={th}>Status</th>
+                <CustomFieldHeaderCells fields={visibleFields} className={th} />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {report.rows.map((row) => (
+              {rows.map((row) => (
                 <tr key={`${row.fiscalYear}-${row.programCode}`}>
                   <td className="py-3 pr-4 whitespace-nowrap">{row.fiscalYear}</td>
                   <td className="py-3 pr-4">
@@ -96,6 +147,11 @@ export default async function BudgetVsActualPage() {
                       <Badge tone="success">within</Badge>
                     )}
                   </td>
+                  <CustomFieldCells
+                    fields={visibleFields}
+                    values={group?.values.get(row.programId)}
+                    className="py-3 pr-4"
+                  />
                 </tr>
               ))}
             </tbody>
@@ -135,10 +191,18 @@ export default async function BudgetVsActualPage() {
                   <Money value={report.totals.priorOpeningCapex + report.totals.priorOpeningOpex} />
                 </td>
                 <td className="py-3" />
+                {visibleFields.map((field) => (
+                  <td key={field.id} className="py-3 pr-4" />
+                ))}
               </tr>
             </tfoot>
           </table>
         </div>
+        {filtering ? (
+          <p className="mt-3 text-xs text-slate-500">
+            Totals cover the whole report, not only the filtered rows.
+          </p>
+        ) : null}
       </Card>
     </ReportShell>
   );

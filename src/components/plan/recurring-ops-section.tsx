@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
   HiddenField,
   MoneyField,
@@ -9,6 +10,7 @@ import {
   TextField,
 } from '@/components/form';
 import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { AnnualPlanDetail, RecurringOpsRow } from '@/server/plan/annual-queries';
 import {
   createRecurringOpsAction,
@@ -21,9 +23,13 @@ const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
 export function RecurringOpsSection({
   detail,
   editable,
+  customFields,
+  customValues,
 }: {
   detail: AnnualPlanDetail;
   editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: Map<string, CustomFieldValues>;
 }) {
   return (
     <div className="space-y-4">
@@ -56,6 +62,7 @@ export function RecurringOpsSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Notes" name="notes" rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add recurring ops item</SubmitButton>
             </div>
@@ -68,7 +75,14 @@ export function RecurringOpsSection({
       ) : (
         <div className="space-y-4">
           {detail.recurringOps.map((row) => (
-            <RecurringOpsCard key={row.item.id} row={row} detail={detail} editable={editable} />
+            <RecurringOpsCard
+              key={row.item.id}
+              row={row}
+              detail={detail}
+              editable={editable}
+              customFields={customFields}
+              customValues={customValues.get(row.item.id)}
+            />
           ))}
         </div>
       )}
@@ -80,10 +94,14 @@ function RecurringOpsCard({
   row,
   detail,
   editable,
+  customFields,
+  customValues,
 }: {
   row: RecurringOpsRow;
   detail: AnnualPlanDetail;
   editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
 }) {
   const { item } = row;
   return (
@@ -125,6 +143,8 @@ function RecurringOpsCard({
       {item.owner ? <p className="mt-3 text-sm text-slate-600">Owner: {item.owner}</p> : null}
       {item.notes ? <p className="mt-1 text-sm text-slate-600">{item.notes}</p> : null}
 
+      <CustomFieldsPanel fields={customFields} values={customValues} />
+
       {editable ? (
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
@@ -145,6 +165,7 @@ function RecurringOpsCard({
               <div className="sm:col-span-2">
                 <TextAreaField label="Notes" name="notes" defaultValue={item.notes} rows={2} />
               </div>
+              <CustomFieldInputs fields={customFields} values={customValues} />
               <div className="sm:col-span-2">
                 <ReasonField />
               </div>

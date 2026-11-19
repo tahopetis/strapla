@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { carryOverAmountSchema, closeFiscalYearSchema } from './inputs';
+import {
+  carryOverAmountSchema,
+  closeFiscalYearSchema,
+  customFieldCreateSchema,
+  customFieldUpdateSchema,
+} from './inputs';
 
 const base = {
   annualPlanId: '00000000-0000-4000-8000-000000000000',
@@ -40,5 +45,40 @@ describe('closeFiscalYearSchema', () => {
       closeFiscalYearSchema.safeParse({ ...base, reference: '  ', confirmation: 'CLOSE FY2027' })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('custom field administration schemas', () => {
+  const definition = {
+    entityType: 'project',
+    name: '  Procurement method  ',
+    type: 'text',
+    required: 'off',
+    description: 'How the project is procured.',
+  };
+
+  it('trims the name and turns the checkbox pair into a boolean', () => {
+    expect(customFieldCreateSchema.parse(definition)).toMatchObject({
+      name: 'Procurement method',
+      required: false,
+    });
+    expect(customFieldCreateSchema.parse({ ...definition, required: 'on' })).toMatchObject({
+      required: true,
+    });
+  });
+
+  it('rejects an unknown entity type or field type', () => {
+    expect(
+      customFieldCreateSchema.safeParse({ ...definition, entityType: 'commitment_entry' }).success,
+    ).toBe(false);
+    expect(customFieldCreateSchema.safeParse({ ...definition, type: 'money' }).success).toBe(false);
+  });
+
+  it('requires a reason when an existing field changes', () => {
+    const id = '00000000-0000-4000-8000-000000000000';
+    expect(customFieldUpdateSchema.safeParse({ ...definition, id, reason: '' }).success).toBe(false);
+    expect(
+      customFieldUpdateSchema.safeParse({ ...definition, id, reason: 'Tidy the registry' }).success,
+    ).toBe(true);
   });
 });

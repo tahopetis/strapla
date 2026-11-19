@@ -96,6 +96,36 @@ The app's first in-app fiscal year is FY2027; FY2026 is closed manually outside 
 
 Only projects with an allocation in an in-app fiscal year can receive in-app spend and commitments; legacy projects that ended before FY2027 are not modelled inside the app.
 
+## Custom fields (issue #46)
+
+One deployment is one organisation (G5), so the field registry is a deployment-level configuration, not
+a tenant dimension.
+
+| Table | Holds |
+| --- | --- |
+| `custom_fields` | The administrator-defined registry: entity type, name, stable machine `key` (derived once from the name; the W9 field list's identifier), type (`text`, `number`, `date`), required flag, description, archive state and the audit references. Active names and keys are unique per entity; archiving frees both. |
+| `custom_field_values` | One row per record that has extra values, keyed by entity type and record id, holding one JSON object keyed by **field id** (so renaming a field never rewrites recorded data). |
+
+- Supported entities: `strategic_initiative`, `annual_program`, `project`, `recurring_ops_item`.
+- Values are parsed and validated by type in `src/domain/custom-fields.ts`; the forms, record panels,
+  reports and exports all use that module, so the four surfaces cannot drift.
+- Create, edit and remove are audited (`custom_field_create`, `custom_field_update`,
+  `custom_field_remove`). Removal follows the no-delete convention: the definition is archived
+  (`archived_at` + `archived_reason`), the field leaves every surface, and its recorded values are
+  kept (values for an archived field are preserved when the record is edited). The audit `before`
+  snapshot records the values that were held.
+- The `required` flag is enforced when a record is saved through the app forms. The one-time opening
+  import does not carry custom values, so a record it creates can lack a required value until the
+  record is next edited.
+- A record update audits the extra values together with the record (`customFields` in the
+  before/after snapshot).
+- Custom fields never change `remaining`, flags, allocations or any existing report total (G1).
+  Reports add them as extra columns, with a custom-field filter and per-export column selection.
+- **Forward-only migration:** `0006` adds the two tables and seeds the W9 owner column
+  (`project` / `Procurement method`, key `procurementMethod`) from the December field list. Existing financial tables are
+  untouched. From then on the registry is the runtime source of truth for record forms, record
+  panels, reports and exports; the headless opening-import tooling keeps its committed field list.
+
 ## Invariants
 
 Domain functions in `src/domain` implement these; database constraints block the ones that can be structural. Tests reference the `INV` ids.
@@ -127,4 +157,6 @@ Domain functions in `src/domain` implement these; database constraints block the
 | Budget versus actual | portfolio/SI/program/project/year | Budget, commitments, spend, cross-year settlements line, remaining, per component + combined |
 | Over-budget flags | all levels | The seven flags in ADR-0003 §6 |
 
-All reports export as CSV/XLSX and have a print-friendly route.
+All reports export as CSV/XLSX and have a print-friendly route. Custom fields appear as extra
+columns on screen and in the export when selected. A custom-field filter narrows the rows on screen;
+the totals and the export always cover the whole report.
