@@ -3,11 +3,17 @@ import { getDb } from '@/db/client';
 import {
   annualPlans,
   annualPrograms,
+  openingBalanceReconciliations,
+  projects,
   strategicInitiatives,
   type AnnualProgram,
+  type AnnualPlan,
+  type OpeningBalanceReconciliation,
+  type StrategicPlan,
 } from '@/db/schema';
 import type { EnvelopeCheck } from '@/domain/plan';
 import { listInitiativeEnvelopeRows } from './queries';
+import type { OpeningLoadContext } from './opening-load';
 import { listProjects, type ProjectListRow } from './project-queries';
 
 /**
@@ -103,4 +109,88 @@ export async function getOpeningBalancesOverview(planId: string): Promise<Openin
   };
 
   return { initiatives, programs, projects, totals };
+}
+
+// ---------------------------------------------------------------- W3b load scene
+
+export interface OpeningLoadScene {
+  annualPlan: AnnualPlan | null;
+  context: OpeningLoadContext | null;
+  counts: {
+    initiatives: number;
+    programs: number;
+    projects: number;
+  };
+}
+
+/**
+ * The current state the opening-import wizard loads into: the first in-app
+ * annual plan, the code maps the planner resolves against, and the record counts
+ * shown on the checklist.
+ */
+export async function getOpeningLoadScene(plan: StrategicPlan): Promise<OpeningLoadScene> {
+  const db = getDb();
+  const targetFiscalYear = plan.startFiscalYear + 1;
+
+  const annualPlanRows = await db
+    .select()
+    .from(annualPlans)
+    .where(and(eq(annualPlans.planId, plan.id), eq(annualPlans.fiscalYear, targetFiscalYear)))
+    .limit(1);
+  const annualPlan = annualPlanRows[0] ?? null;
+
+  const initiativeRows = await db
+    .select({ id: strategicInitiatives.id, code: strategicInitiatives.code })
+    .from(strategicInitiatives)
+    .where(and(eq(strategicInitiatives.planId, plan.id), isNull(strategicInitiatives.voidedAt)));
+
+  const programRows = annualPlan
+    ? await db
+        .select({ id: annualPrograms.id, code: annualPrograms.code })
+        .from(annualPrograms)
+        .where(and(eq(annualPrograms.annualPlanId, annualPlan.id), isNull(annualPrograms.voidedAt)))
+    : [];
+
+  const projectRows = await db
+    .select({ code: projects.code })
+    .from(projects)
+    .innerJoin(annualPrograms, eq(projects.originatingProgramId, annualPrograms.id))
+    .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
+    .where(eq(annualPlans.planId, plan.id));
+
+  const context = annualPlan
+    ? {
+        planId: plan.id,
+        annualPlanId: annualPlan.id,
+        annualPlanFiscalYear: annualPlan.fiscalYear,
+        planStartFiscalYear: plan.startFiscalYear,
+        planEndFiscalYear: plan.endFiscalYear,
+        initiativeIdByCode: new Map(initiativeRows.map((row) => [row.code, row.id])),
+        programIdByCode: new Map(programRows.map((row) => [row.code, row.id])),
+        existingInitiativeCodes: new Set(initiativeRows.map((row) => row.code)),
+        existingProgramCodes: new Set(programRows.map((row) => row.code)),
+        existingProjectCodes: new Set(projectRows.map((row) => row.code)),
+      }
+    : null;
+
+  return {
+    annualPlan,
+    context,
+    counts: {
+      initiatives: initiativeRows.length,
+      programs: programRows.length,
+      projects: projectRows.length,
+    },
+  };
+}
+
+export async function getOpeningReconciliation(
+  planId: string,
+): Promise<OpeningBalanceReconciliation | null> {
+  const rows = await getDb()
+    .select()
+    .from(openingBalanceReconciliations)
+    .where(eq(openingBalanceReconciliations.planId, planId))
+    .limit(1);
+  return rows[0] ?? null;
 }

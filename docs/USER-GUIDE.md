@@ -287,15 +287,24 @@ enters as **opening figures**, never as reconstructed records:
 | Opening allocated / committed / spent (whole life) | Project form |
 | Recurring ops carry-in | Recurring ops item form |
 
-After entering the figures, open **Plan → Opening balances** and reconcile:
+**Bulk load (the wizard).** Open **Plan → Opening balances → Opening import**, then for each data set
+in this order:
 
-- SI envelope reconciliation (envelope, prior consumed, in-app program budgets, headroom);
-- program carry-in (budget + carry-in available per component);
-- project opening position (opening allocated / open commitments / spent);
-- reconciliation totals against your spreadsheet control totals.
+1. Download the generated **CSV/XLSX template** — headers, type rules, an example row and the load
+   reason convention come from the declared field list.
+2. Upload the file and choose **Validate file**. Every bad value and unknown column is reported by
+   line, and nothing is written.
+3. Choose **Validate and load**. The file is re-validated and the records are written in one
+   transaction, with one audit entry per record and the reason
+   `Opening balance — FY<year> close / <reference>`. Duplicate codes and unknown references fail the
+   whole file; the import creates records and never updates existing ones.
 
-Use the reason convention `Opening balance — FY2026 close / <reference>` on opening edits. After
-go-live these are corrected only through audited edits. The detailed workplan is in
+Then reconcile on **Plan → Opening balances**: enter the eight spreadsheet control totals, save, and
+compare every difference against the in-app totals on one screen. Sign off with a reason when you
+accept the figures. Sign-off is a one-time, audited action; later corrections are audited edits.
+
+The manual path stays available: use the forms in the table above and the per-view reconciliation
+tables. Use the reason convention on those edits too. The detailed workplan is in
 `docs/OPENING-BALANCE-LOAD.md`.
 
 ### 3.7 Annual allocations (the project's slice per year)

@@ -1,8 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PlanNav } from '@/components/plan-nav';
-import { Badge, Card, EmptyState, Money, PageHeader } from '@/components/ui';
-import { getOpeningBalancesOverview } from '@/server/plan/opening-queries';
+import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
+import { formatDate } from '@/lib/format';
+import {
+  signOffOpeningBalancesAction,
+  saveOpeningReconciliationAction,
+} from '@/server/plan/opening-reconciliation-actions';
+import {
+  getOpeningBalancesOverview,
+  getOpeningLoadScene,
+  getOpeningReconciliation,
+} from '@/server/plan/opening-queries';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +19,12 @@ export const metadata: Metadata = { title: 'Opening balances' };
 
 const linkClass = 'text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900';
 
-export default async function OpeningBalancesPage() {
+export default async function OpeningBalancesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; message?: string }>;
+}) {
+  const { error, message } = await searchParams;
   const plan = await getCurrentStrategicPlan();
 
   if (!plan) {
@@ -21,6 +35,7 @@ export default async function OpeningBalancesPage() {
           description="The signed-off bridge from the spreadsheets into Strapla."
         />
         <PlanNav />
+        <Flash error={error} message={message} />
         <EmptyState>
           No strategic plan yet. Opening balances are recorded against the plan, its initiatives, annual
           programs and projects.
@@ -34,10 +49,53 @@ export default async function OpeningBalancesPage() {
     );
   }
 
-  const overview = await getOpeningBalancesOverview(plan.id);
+  const [overview, scene, reconciliation] = await Promise.all([
+    getOpeningBalancesOverview(plan.id),
+    getOpeningLoadScene(plan),
+    getOpeningReconciliation(plan.id),
+  ]);
   const { totals } = overview;
   const priorYear = plan.startFiscalYear;
   const firstInAppYear = priorYear + 1;
+  const signedOffAt = reconciliation?.signedOffAt ?? null;
+
+  const controlFields = [
+    { name: 'controlEnvelope', label: 'Total envelope', app: totals.envelope },
+    {
+      name: 'controlPriorProgramBudgetUsed',
+      label: 'Prior program budget consumed',
+      app: totals.priorProgramBudgetUsed,
+    },
+    {
+      name: 'controlProgramBudgets',
+      label: `FY${firstInAppYear} program budgets (capex + opex)`,
+      app: totals.inAppProgramBudgets,
+    },
+    {
+      name: 'controlProgramCarryIn',
+      label: 'Program carry-in (capex + opex)',
+      app: totals.programCarryInCapex + totals.programCarryInOpex,
+    },
+    {
+      name: 'controlProjectOpeningAllocated',
+      label: 'Project opening allocated',
+      app: totals.projectOpeningAllocated,
+    },
+    {
+      name: 'controlProjectOpeningCommitted',
+      label: 'Project opening open commitments',
+      app: totals.projectOpeningCommitted,
+    },
+    { name: 'controlProjectOpeningSpent', label: 'Project opening spent', app: totals.projectOpeningSpent },
+    {
+      name: 'controlProjectFullLifeAllocated',
+      label: 'Project full-life allocated',
+      app: totals.projectFullLifeAllocated,
+    },
+  ] as const;
+
+  const controlInputClass =
+    'block w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
 
   return (
     <div>
@@ -51,8 +109,76 @@ export default async function OpeningBalancesPage() {
         }
       />
       <PlanNav />
+      <Flash error={error} message={message} />
 
       <div className="space-y-6">
+
+        <Card
+          title="Opening import"
+          description={`Load the FY${priorYear} close figures from the generated CSV/XLSX templates. The wizard validates first and writes in one transaction.`}
+        >
+          {!scene.annualPlan ? (
+            <p className="text-sm text-slate-700">
+              Create the FY{firstInAppYear} annual plan before importing.{' '}
+              <Link href="/plan/annual" className={linkClass}>
+                Go to the annual plans
+              </Link>
+              .
+            </p>
+          ) : scene.annualPlan.status === 'closed' ? (
+            <p className="text-sm text-slate-700">
+              FY{scene.annualPlan.fiscalYear} is closed and cannot receive an import.
+            </p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="py-2 pr-4">Data set</th>
+                      <th className="py-2 pr-4">Records in app</th>
+                      <th className="py-2">Template</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[
+                      { dataSet: 'strategic-initiatives', label: 'Strategic initiatives', count: scene.counts.initiatives },
+                      { dataSet: 'annual-programs', label: 'Annual programs', count: scene.counts.programs },
+                      { dataSet: 'projects', label: 'Projects', count: scene.counts.projects },
+                    ].map((row) => (
+                      <tr key={row.dataSet}>
+                        <td className="py-2 pr-4">{row.label}</td>
+                        <td className="py-2 pr-4 tabular-nums">{row.count}</td>
+                        <td className="py-2">
+                          <a
+                            className={linkClass}
+                            href={`/plan/opening-balances/import/template?dataSet=${row.dataSet}&format=csv`}
+                          >
+                            CSV
+                          </a>{' '}
+                          ·{' '}
+                          <a
+                            className={linkClass}
+                            href={`/plan/opening-balances/import/template?dataSet=${row.dataSet}&format=xlsx`}
+                          >
+                            XLSX
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-4 text-sm">
+                <Link href="/plan/opening-balances/import" className={linkClass}>
+                  Open the import wizard
+                </Link>{' '}
+                — template, upload/validate, load. A validation writes nothing.
+              </p>
+            </>
+          )}
+        </Card>
+
         <Card title="Where opening figures are entered" description="One-time data, audited like any other financial change.">
           <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
             <li>
@@ -245,51 +371,153 @@ export default async function OpeningBalancesPage() {
         </Card>
 
         <Card
-          title="Reconciliation totals"
-          description="Compare these totals with the prior-year spreadsheets and the manual year-close figures; sign off once they match."
+          title="Control totals and sign-off"
+          description="Enter the spreadsheets' control totals; the difference is against the in-app records shown below. All eight totals are compared before sign-off."
+          actions={signedOffAt ? <Badge tone="success">signed off</Badge> : undefined}
         >
-          <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <dt className="text-slate-500">Total envelope</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={totals.envelope} />
-              </dd>
+          {signedOffAt ? (
+            <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+              Signed off {formatDate(signedOffAt)}
+              {reconciliation?.signOffReason ? ` — ${reconciliation.signOffReason}` : ''}. The control
+              totals are read-only.
             </div>
-            <div>
-              <dt className="text-slate-500">Prior program budget consumed</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={totals.priorProgramBudgetUsed} />
-              </dd>
+          ) : null}
+
+          {reconciliation ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="py-2 pr-4">Control total</th>
+                    <th className="py-2 pr-4">Spreadsheet</th>
+                    <th className="py-2 pr-4">Strapla</th>
+                    <th className="py-2 pr-4">Difference</th>
+                    <th className="py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {controlFields.map((field) => {
+                    const control = reconciliation[field.name];
+                    const difference = control - field.app;
+                    return (
+                      <tr key={field.name}>
+                        <td className="py-2 pr-4">{field.label}</td>
+                        <td className="py-2 pr-4 whitespace-nowrap">
+                          <Money value={control} />
+                        </td>
+                        <td className="py-2 pr-4 whitespace-nowrap">
+                          <Money value={field.app} />
+                        </td>
+                        <td className="py-2 pr-4 whitespace-nowrap">
+                          <Money value={difference} />
+                        </td>
+                        <td className="py-2">
+                          {difference === 0 ? (
+                            <Badge tone="success">match</Badge>
+                          ) : (
+                            <Badge tone="danger">difference</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <dt className="text-slate-500">In-app program budgets</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={totals.inAppProgramBudgets} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Program carry-in (capex / opex)</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={totals.programCarryInCapex} /> / <Money value={totals.programCarryInOpex} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Project opening allocated / committed / spent</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={totals.projectOpeningAllocated} /> / <Money value={totals.projectOpeningCommitted} /> /{' '}
-                <Money value={totals.projectOpeningSpent} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Project full-life allocated</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={totals.projectFullLifeAllocated} />
-              </dd>
-            </div>
-          </dl>
+          ) : (
+            <p className="text-sm text-slate-600">
+              No control totals saved yet. Enter the spreadsheet figures below and save.
+            </p>
+          )}
+
+          {signedOffAt ? null : (
+            <>
+              <form action={saveOpeningReconciliationAction} className="mt-5 space-y-4">
+                <input type="hidden" name="planId" value={plan.id} />
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="py-2 pr-4">Control total</th>
+                        <th className="py-2 pr-4">Spreadsheet total (Rp)</th>
+                        <th className="py-2">Strapla</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {controlFields.map((field) => (
+                        <tr key={field.name}>
+                          <td className="py-2 pr-4">{field.label}</td>
+                          <td className="py-2 pr-4">
+                            <input
+                              name={field.name}
+                              inputMode="numeric"
+                              required
+                              defaultValue={reconciliation ? String(reconciliation[field.name]) : ''}
+                              placeholder="0"
+                              className={controlInputClass}
+                            />
+                          </td>
+                          <td className="py-2 whitespace-nowrap">
+                            <Money value={field.app} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Reason for change
+                  <input
+                    name="reason"
+                    required
+                    maxLength={1000}
+                    placeholder="Why the control totals changed"
+                    className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  Save control totals
+                </button>
+              </form>
+
+              {reconciliation ? (
+                <form
+                  action={signOffOpeningBalancesAction}
+                  className="mt-5 space-y-3 rounded border border-slate-200 bg-slate-50 p-4"
+                >
+                  <input type="hidden" name="planId" value={plan.id} />
+                  <p className="text-sm font-medium text-slate-800">Sign off the opening balances</p>
+                  <p className="text-xs text-slate-600">
+                    Signing off is final; later corrections on records are audited edits. A non-zero
+                    difference is allowed but its reason is recorded.
+                  </p>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Sign-off reason
+                    <input
+                      name="reason"
+                      required
+                      maxLength={1000}
+                      placeholder={`Reconciled to the FY${priorYear} control totals`}
+                      className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  >
+                    Sign off opening balances
+                  </button>
+                </form>
+              ) : null}
+            </>
+          )}
+
           <p className="mt-4 text-xs text-slate-500">
-            Opening figures are audited edits. The reconciliation is a sign-off aid, not an automated check: the
-            spreadsheets remain the source for the prior year and earlier.
+            Opening figures are audited edits. The spreadsheets remain the source for the prior year and
+            earlier; this comparison is the sign-off aid.
           </p>
         </Card>
       </div>

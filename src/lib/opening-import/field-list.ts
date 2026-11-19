@@ -452,3 +452,8 @@ export function openingReasonConvention(closingFiscalYear: number): string {
   }
   return `Opening balance — FY${closingFiscalYear} close / <reference>`;
 }
+
+/** The stored reason for one import record: the documented convention with the reference filled in. */
+export function openingLoadReason(closingFiscalYear: number, reference: string): string {
+  return openingReasonConvention(closingFiscalYear).replace('<reference>', reference.trim());
+}
