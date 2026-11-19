@@ -323,12 +323,17 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
 
   // the values ride along in the audit snapshot for the update
   const changeHistory = page.locator('section').filter({ hasText: 'Change history' });
-  await expect(changeHistory.locator('pre', { hasText: 'customFields' }).first()).toBeVisible();
-  await expect(changeHistory.locator('pre', { hasText: 'Phased rollout' }).first()).toBeVisible();
+  // the before/after JSON sits behind a per-row disclosure; the newest row is the update
+  const latestHistory = changeHistory.locator('tbody tr').first();
+  await latestHistory.locator('summary').click();
+  await expect(latestHistory.locator('pre', { hasText: 'customFields' })).toBeVisible();
+  await expect(latestHistory.locator('pre', { hasText: 'Phased rollout' })).toBeVisible();
 
   // the report shows the extra columns, filters by them, and the export selects columns
   await page.goto('/reports/project-register');
-  await expect(page.getByText('Delivery note').first()).toBeVisible();
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note', exact: true }),
+  ).toBeVisible();
   await page.locator('select[name="cf"]').selectOption({ label: 'Delivery note' });
   await page.locator('input[name="cv"]').fill('phased');
   await page.getByRole('button', { name: 'Apply filter' }).click();
