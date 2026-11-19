@@ -370,6 +370,19 @@ describe('parseOpeningImport — owner-added columns, template round trip', () =
     expect(errors[0]).toMatchObject({ line: headerLine, column: 'Procurement method' });
   });
 
+  it('leaves a missing required registry-column value to the planner instead of rejecting the file', async () => {
+    const header =
+      'Name,Originating program code,Start fiscal year,End fiscal year,Full-life allocated budget (Rp)';
+    const result = await parseOpeningImport({
+      dataSet: 'projects',
+      bytes: `${header}\r\nCore network,PRG-01,2027,2028,1000`,
+      // The registry adapter marks its columns as row-checked.
+      ownerColumns: [{ ...ownerColumn, headerRequired: false }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.rows[0]?.values.procurementMethod).toBeNull();
+  });
+
   it('validates the owner-added column by its declared type', async () => {
     const riskScore: OpeningField = {
       ...ownerColumn,
@@ -390,6 +403,40 @@ describe('parseOpeningImport — owner-added columns, template round trip', () =
       column: 'Risk score',
       message: 'Risk score must be a whole, non-negative number (got "high").',
     });
+  });
+
+  it('parses a custom-field number column with the form rule: signed digits, no grouping', async () => {
+    const riskScore: OpeningField = {
+      ...ownerColumn,
+      name: 'riskScore',
+      label: 'Risk score',
+      type: 'number',
+      required: false,
+      headerRequired: false,
+      numberRule: 'integer',
+      example: '10',
+    };
+    const header = `${SI_HEADER},Risk score`;
+
+    const accepted = await parseOpeningImport({
+      dataSet: 'strategic-initiatives',
+      bytes: `${header}\r\nSI-01,Digital,,,1000,0,,-42`,
+      ownerColumns: [riskScore],
+    });
+    expect(accepted.ok).toBe(true);
+    if (accepted.ok) expect(accepted.rows[0]?.values.riskScore).toBe(-42);
+
+    for (const value of ['1.234', 'Rp 100', '1.5']) {
+      const errors = errorsOf(
+        await parseOpeningImport({
+          dataSet: 'strategic-initiatives',
+          bytes: `${header}\r\nSI-01,Digital,,,1000,0,,${value}`,
+          ownerColumns: [riskScore],
+        }),
+      );
+      expect(errors[0]).toMatchObject({ line: 2, column: 'Risk score' });
+      expect(errors[0]?.message).toContain('whole number');
+    }
   });
 
   it('returns no rows when any row fails', async () => {

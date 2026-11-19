@@ -17,11 +17,21 @@ import {
   type OpeningDataSetId,
 } from '@/lib/opening-import/field-list';
 import { parseOpeningImport, type ParsedRow } from '@/lib/opening-import/parse';
+import { withCustomFields, type CustomFieldDefinition, type CustomFieldEntityType, type CustomFieldValues } from '@/domain/custom-fields';
 import { actionUser, describeError, finishWith } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
+import {
+  saveCustomFieldValues,
+  type CustomFieldExecutor,
+} from '@/server/custom-fields/data';
+import { listOpeningRegistryFields } from './opening-import-fields';
 import { getOpeningLoadScene } from './opening-queries';
 import { getCurrentStrategicPlan } from './queries';
-import { planOpeningLoad, type OpeningLoadPlan } from './opening-load';
+import {
+  planOpeningLoad,
+  type OpeningCustomField,
+  type OpeningLoadPlan,
+} from './opening-load';
 import type { OpeningImportState } from './opening-import-types';
 
 const LANDING = '/plan/opening-balances';
@@ -98,30 +108,61 @@ function ijinAfter(row: IjinPrinsipRecord): Record<string, unknown> {
 }
 
 /**
+ * Stores one imported record's registry values in the load's transaction. The
+ * planner already validated them and keyed them by field id; nothing is written
+ * when the entity has no active field.
+ */
+async function storeCustomFieldValues(
+  executor: CustomFieldExecutor,
+  entityType: CustomFieldEntityType,
+  entityId: string,
+  fields: readonly CustomFieldDefinition[],
+  values: CustomFieldValues,
+  userId: string,
+): Promise<void> {
+  if (fields.length === 0) return;
+  await saveCustomFieldValues(executor, { entityType, entityId, fields, values, userId });
+}
+
+/**
  * Writes the planned load in one transaction. Every created record gets exactly
- * one audit entry carrying the load reason; any failure rolls the whole load back.
+ * one audit entry carrying the load reason and, when the registry declares extra
+ * fields, its imported values in the snapshot; the values themselves are stored
+ * in the same transaction, so a record can never exist without them. Any
+ * failure rolls the whole load back.
  */
 async function writeOpeningLoad(
   plan: OpeningLoadPlan,
   userId: string,
   reason: string,
+  customFields: readonly OpeningCustomField[],
 ): Promise<number> {
+  const definitions = customFields.map((entry) => entry.definition);
+
   return getDb().transaction(async (tx) => {
     let created = 0;
 
     if (plan.dataSet === 'strategic-initiatives') {
-      for (const values of plan.initiatives) {
+      for (const planned of plan.initiatives) {
         const [row] = await tx
           .insert(strategicInitiatives)
-          .values({ ...values, createdBy: userId, updatedBy: userId })
+          .values({ ...planned.values, createdBy: userId, updatedBy: userId })
           .returning();
         if (!row) throw new Error('failed to create the strategic initiative');
+        await storeCustomFieldValues(
+          tx,
+          'strategic_initiative',
+          row.id,
+          definitions,
+          planned.customFieldValues,
+          userId,
+        );
         await recordAudit(tx, {
           actorUserId: userId,
           action: 'create',
           entityType: 'strategic_initiative',
           entityId: row.id,
-          after: initiativeAfter(row),
+          after: withCustomFields(initiativeAfter(row), definitions, planned.customFieldValues),
           reason,
         });
         created += 1;
@@ -130,18 +171,26 @@ async function writeOpeningLoad(
     }
 
     if (plan.dataSet === 'annual-programs') {
-      for (const values of plan.programs) {
+      for (const planned of plan.programs) {
         const [row] = await tx
           .insert(annualPrograms)
-          .values({ ...values, createdBy: userId, updatedBy: userId })
+          .values({ ...planned.values, createdBy: userId, updatedBy: userId })
           .returning();
         if (!row) throw new Error('failed to create the annual program');
+        await storeCustomFieldValues(
+          tx,
+          'annual_program',
+          row.id,
+          definitions,
+          planned.customFieldValues,
+          userId,
+        );
         await recordAudit(tx, {
           actorUserId: userId,
           action: 'create',
           entityType: 'annual_program',
           entityId: row.id,
-          after: programAfter(row),
+          after: withCustomFields(programAfter(row), definitions, planned.customFieldValues),
           reason,
         });
         created += 1;
@@ -150,22 +199,30 @@ async function writeOpeningLoad(
     }
 
     const ijinByProjectCode = new Map(plan.ijins.map((entry) => [entry.projectCode, entry.ijin]));
-    for (const values of plan.projects) {
+    for (const planned of plan.projects) {
       const [row] = await tx
         .insert(projects)
-        .values({ ...values, createdBy: userId, updatedBy: userId })
+        .values({ ...planned.values, createdBy: userId, updatedBy: userId })
         .returning();
       if (!row) throw new Error('failed to create the project');
+      await storeCustomFieldValues(
+        tx,
+        'project',
+        row.id,
+        definitions,
+        planned.customFieldValues,
+        userId,
+      );
       await recordAudit(tx, {
         actorUserId: userId,
         action: 'create',
         entityType: 'project',
         entityId: row.id,
-        after: projectAfter(row),
+        after: withCustomFields(projectAfter(row), definitions, planned.customFieldValues),
         reason,
       });
 
-      const ijin = ijinByProjectCode.get(values.code);
+      const ijin = ijinByProjectCode.get(planned.values.code);
       if (ijin) {
         const [ijinRow] = await tx
           .insert(ijinPrinsipRecords)
@@ -226,11 +283,17 @@ export async function openingImportAction(
   }
   if (!scene.context) return errorState('The import context could not be loaded.');
 
+  // The custom-field registry is the runtime owner-column source (W9): every
+  // active field for the data set's entity is an importable column, while the
+  // committed list stays the headless parser's fallback.
+  const registry = await listOpeningRegistryFields(dataSet, plan.startFiscalYear);
+
   let parsed;
   try {
     parsed = await parseOpeningImport({
       dataSet,
       bytes: new Uint8Array(await file.arrayBuffer()),
+      ownerColumns: registry.columns,
     });
   } catch (error) {
     return errorState(describeError(error));
@@ -239,7 +302,7 @@ export async function openingImportAction(
     return { status: 'invalid', dataSet, reference, errors: parsed.errors };
   }
 
-  const planned = planOpeningLoad(dataSet, parsed.rows, scene.context);
+  const planned = planOpeningLoad(dataSet, parsed.rows, scene.context, registry.fields);
   if (planned.errors.length > 0 || !planned.plan) {
     return { status: 'invalid', dataSet, reference, errors: planned.errors };
   }
@@ -257,7 +320,7 @@ export async function openingImportAction(
   const reason = openingLoadReason(plan.startFiscalYear, reference);
   let created: number;
   try {
-    created = await writeOpeningLoad(planned.plan, user.id, reason);
+    created = await writeOpeningLoad(planned.plan, user.id, reason, registry.fields);
   } catch (error) {
     return errorState(describeError(error));
   }

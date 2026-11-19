@@ -13,8 +13,11 @@
  * import data sets; the Phase B wizard adds that level.
  *
  * Owner-added columns are declared in `owner-columns.ts`, committed to the repo and
- * reviewed like configuration. They are typed and validated exactly like app-owned
- * columns and never participate in money, remaining or flags (G1/G2/G5/G6).
+ * reviewed like configuration. That committed list is what the headless CLI uses; the
+ * server template and load read the live custom-field registry instead (see
+ * `src/server/plan/opening-import-fields.ts`), so an administrator-added field is
+ * importable without a deployment. Both sources are typed and validated exactly like
+ * app-owned columns and never participate in money, remaining or flags (G1/G2/G5/G6).
  */
 
 import { OWNER_COLUMNS } from './owner-columns.ts';
@@ -25,12 +28,32 @@ export type OpeningFieldType = 'text' | 'number' | 'date';
 
 /** One declared column of an opening data set. */
 export interface OpeningField {
-  /** Stable key used in parsed rows and in code. */
+  /**
+   * Key used in parsed rows and in code. The committed owner column uses its
+   * stable name; the server's registry columns use the registry id (also the
+   * `custom_field_values` key), so an administrator rename never changes it.
+   */
   name: string;
   /** Column header shown in the generated CSV/XLSX template. */
   label: string;
   type: OpeningFieldType;
   required: boolean;
+  /**
+   * Whether a missing column header fails the whole file when `required` is set.
+   * Defaults to true. The live custom-field registry sets it to false: a file may
+   * predate the field, and the load planner then fails each row that has no value
+   * with that row's line (the error belongs to the row, not to the file).
+   */
+  headerRequired?: boolean;
+  /**
+   * How a `number` column is validated. `money` (the default) requires whole,
+   * non-negative Rupiah and tolerates thousands separators; `integer` uses the
+   * custom-field form rule instead (digits with an optional minus, no grouping),
+   * so a value the record form accepts is importable. Only meaningful with
+   * `type: 'number'`; the live registry sets it to `integer` (G1: custom fields
+   * never enter money rules).
+   */
+  numberRule?: 'money' | 'integer';
   /** Shown in the template instructions; use the domain vocabulary. */
   description: string;
   /** Example value rendered into the template example row (always a string). */
@@ -387,6 +410,10 @@ export function isOpeningDataSetId(value: string): value is OpeningDataSetId {
 /**
  * The declared field list for one data set: app-owned columns followed by the
  * owner-added columns, validated and flagged with their origin.
+ *
+ * `ownerColumns` defaults to the committed headless list. The server passes the
+ * live custom-field registry mapped by `openingColumnFromRegistry`, so the admin
+ * screen is the runtime source of truth for owner columns (W9).
  */
 export function openingFieldList(
   dataSet: OpeningDataSetId,

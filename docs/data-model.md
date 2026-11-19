@@ -108,23 +108,27 @@ a tenant dimension.
 
 - Supported entities: `strategic_initiative`, `annual_program`, `project`, `recurring_ops_item`.
 - Values are parsed and validated by type in `src/domain/custom-fields.ts`; the forms, record panels,
-  reports and exports all use that module, so the four surfaces cannot drift.
+  reports, exports and the opening-import parser (for registry columns) all use that module, so the
+  surfaces cannot drift.
 - Create, edit and remove are audited (`custom_field_create`, `custom_field_update`,
   `custom_field_remove`). Removal follows the no-delete convention: the definition is archived
   (`archived_at` + `archived_reason`), the field leaves every surface, and its recorded values are
   kept (values for an archived field are preserved when the record is edited). The audit `before`
   snapshot records the values that were held.
-- The `required` flag is enforced when a record is saved through the app forms. The one-time opening
-  import does not carry custom values, so a record it creates can lack a required value until the
-  record is next edited.
-- A record update audits the extra values together with the record (`customFields` in the
-  before/after snapshot).
+- The `required` flag is enforced when a record is saved through the app forms. The opening import
+  reads the registry too: a row that does not supply a required field fails with its line number,
+  and nothing is written, so every imported record stays editable. The parsed row keeps the field's
+  stable key and the value is stored under the field id in the same transaction; a display name that
+  repeats an app-owned column header gets ` (custom field)` appended for that import column.
+- A created or updated record audits the extra values together with the record (`customFields` in the
+  before/after snapshot), including the records created by the opening import.
 - Custom fields never change `remaining`, flags, allocations or any existing report total (G1).
   Reports add them as extra columns, with a custom-field filter and per-export column selection.
 - **Forward-only migration:** `0006` adds the two tables and seeds the W9 owner column
   (`project` / `Procurement method`, key `procurementMethod`) from the December field list. Existing financial tables are
   untouched. From then on the registry is the runtime source of truth for record forms, record
-  panels, reports and exports; the headless opening-import tooling keeps its committed field list.
+  panels, reports, exports and the opening import; the headless opening-import tooling keeps its
+  committed field list.
 
 ## Invariants
 

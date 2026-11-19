@@ -98,6 +98,7 @@ export function OpeningImportWizard({ closingFiscalYear }: { closingFiscalYear: 
         <p className="text-sm font-medium text-slate-800">1. Template</p>
         <p className="mt-1 text-sm text-slate-600">
           Download the current template: headers, type rules, example row and the load reason convention.
+          Custom fields defined under Administration are included as columns.
         </p>
         <p className="mt-2 flex gap-4 text-sm font-medium">
           <a
@@ -132,7 +133,7 @@ export function OpeningImportWizard({ closingFiscalYear }: { closingFiscalYear: 
           ) : null}
           <span className="mt-1 block text-xs text-slate-500">
             The file is parsed first. Unknown columns and every bad row are reported by line; nothing is
-            written by a validation.
+            written by a validation. Custom fields defined under Administration are accepted as columns.
           </span>
         </label>
       </div>

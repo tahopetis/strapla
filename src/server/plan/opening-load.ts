@@ -4,13 +4,22 @@ import type {
   NewProject,
   NewStrategicInitiative,
 } from '@/db/schema';
+import {
+  parseCustomFieldValues,
+  type CustomFieldDefinition,
+  type CustomFieldValues,
+} from '@/domain/custom-fields';
 import { formatEntityCode } from '@/domain/plan';
 import type { ParseError, ParsedRow } from '@/lib/opening-import/parse';
 
 /**
- * Pure planning for the opening-balance load (W3b). It turns validated parser
+ * Pure planning for the opening-balance load (W3b/W9). It turns validated parser
  * rows into insert values, resolving codes against the existing plan and
- * rejecting duplicates/unknown references with row-level errors. The caller
+ * rejecting duplicates/unknown references with row-level errors. When the load
+ * runs from the server the caller also passes the active custom-field registry:
+ * the owner-column values are validated against it (a required field missing
+ * from a row is a line-level error) and attached to the planned record, keyed by
+ * field id, so the transaction can store them beside the new record. The caller
  * writes only when `errors` is empty, so a failed validation can never write.
  */
 
@@ -27,14 +36,36 @@ export interface OpeningLoadContext {
   existingProjectCodes: ReadonlySet<string>;
 }
 
+/** One record the load will create, with its registry values keyed by field id. */
+export interface PlannedOpeningRecord<T> {
+  values: T;
+  customFieldValues: CustomFieldValues;
+}
+
+/**
+ * One registry-backed import column. `column` is the parser's row key (the
+ * registry key, disambiguated only when it would collide with an app-owned
+ * field); `definition` is the registry entry whose id keys the stored value.
+ * The pair is built in one place, so the key used to read a row and the id used
+ * to store it can never drift apart.
+ */
+export interface OpeningCustomField {
+  /** Key of the column in the parsed row (the registry key, disambiguated only on collision). */
+  column: string;
+  /** Header the file actually shows, used when naming the failing column. */
+  label: string;
+  /** The registry definition; its id keys the stored value. */
+  definition: CustomFieldDefinition;
+}
+
 export interface StrategicInitiativesLoad {
   dataSet: 'strategic-initiatives';
-  initiatives: NewStrategicInitiative[];
+  initiatives: PlannedOpeningRecord<NewStrategicInitiative>[];
 }
 
 export interface AnnualProgramsLoad {
   dataSet: 'annual-programs';
-  programs: NewAnnualProgram[];
+  programs: PlannedOpeningRecord<NewAnnualProgram>[];
 }
 
 export interface PlannedIjin {
@@ -45,7 +76,7 @@ export interface PlannedIjin {
 
 export interface ProjectsLoad {
   dataSet: 'projects';
-  projects: NewProject[];
+  projects: PlannedOpeningRecord<NewProject>[];
   ijins: PlannedIjin[];
 }
 
@@ -75,6 +106,42 @@ function pushError(
   message: string,
 ): void {
   errors.push({ line: row.line, column, message });
+}
+
+/**
+ * Validates one row's custom-field values against the registry and returns them
+ * keyed by field id. The parser keys a registry column by the same (stable)
+ * registry key, so the lookup never depends on a display name an administrator
+ * can change. The parser has already type-checked the declared columns against
+ * the import's rules; this pass applies the registry's own rules (a required
+ * value must be present, text must fit the form's limit) so an imported record
+ * can always be saved from its form later. A failure is attributed to the row's
+ * line, and the row must not load.
+ */
+function planCustomFields(
+  fields: readonly OpeningCustomField[],
+  row: ParsedRow,
+  errors: ParseError[],
+): CustomFieldValues | null {
+  if (fields.length === 0) return {};
+
+  const raw: Record<string, string> = {};
+  for (const field of fields) {
+    const value = row.values[field.column];
+    raw[field.definition.id] = value === null || value === undefined ? '' : String(value);
+  }
+
+  const parsed = parseCustomFieldValues(
+    fields.map((field) => field.definition),
+    raw,
+  );
+  if (parsed.ok) return parsed.values;
+
+  for (const error of parsed.errors) {
+    const field = fields.find((candidate) => candidate.definition.id === error.fieldId);
+    pushError(errors, row, field?.label ?? 'Custom field', error.message);
+  }
+  return null;
 }
 
 function validCode(
@@ -115,10 +182,11 @@ function validName(name: string | null, row: ParsedRow, errors: ParseError[]): n
 export function planInitiativesLoad(
   rows: readonly ParsedRow[],
   context: OpeningLoadContext,
+  customFields: readonly OpeningCustomField[] = [],
 ): { plan: StrategicInitiativesLoad; errors: ParseError[] } {
   const errors: ParseError[] = [];
   const seen = new Set(context.existingInitiativeCodes);
-  const initiatives: NewStrategicInitiative[] = [];
+  const initiatives: PlannedOpeningRecord<NewStrategicInitiative>[] = [];
 
   for (const row of rows) {
     const code = text(row, 'code');
@@ -129,18 +197,22 @@ export function planInitiativesLoad(
       valid = false;
     }
     if (!validName(name, row, errors)) valid = false;
-    if (!valid || !code || !name) continue;
+    const custom = planCustomFields(customFields, row, errors);
+    if (!valid || !code || !name || custom === null) continue;
 
     seen.add(code);
     initiatives.push({
-      planId: context.planId,
-      code,
-      name,
-      owner: text(row, 'owner'),
-      objective: text(row, 'objective'),
-      envelopeAmount: number(row, 'envelopeAmount') ?? 0,
-      priorProgramBudgetUsed: number(row, 'priorProgramBudgetUsed') ?? 0,
-      notes: text(row, 'notes'),
+      values: {
+        planId: context.planId,
+        code,
+        name,
+        owner: text(row, 'owner'),
+        objective: text(row, 'objective'),
+        envelopeAmount: number(row, 'envelopeAmount') ?? 0,
+        priorProgramBudgetUsed: number(row, 'priorProgramBudgetUsed') ?? 0,
+        notes: text(row, 'notes'),
+      },
+      customFieldValues: custom,
     });
   }
 
@@ -150,10 +222,11 @@ export function planInitiativesLoad(
 export function planProgramsLoad(
   rows: readonly ParsedRow[],
   context: OpeningLoadContext,
+  customFields: readonly OpeningCustomField[] = [],
 ): { plan: AnnualProgramsLoad; errors: ParseError[] } {
   const errors: ParseError[] = [];
   const seen = new Set(context.existingProgramCodes);
-  const programs: NewAnnualProgram[] = [];
+  const programs: PlannedOpeningRecord<NewAnnualProgram>[] = [];
 
   for (const row of rows) {
     const code = text(row, 'code');
@@ -179,21 +252,25 @@ export function planProgramsLoad(
       );
       valid = false;
     }
-    if (!valid || !code || !name || !siId) continue;
+    const custom = planCustomFields(customFields, row, errors);
+    if (!valid || !code || !name || !siId || custom === null) continue;
 
     seen.add(code);
     const prevCode = text(row, 'prevProgramCode');
     programs.push({
-      annualPlanId: context.annualPlanId,
-      siId,
-      prevProgramId: prevCode ? (context.programIdByCode.get(prevCode) ?? null) : null,
-      code,
-      name,
-      capexBudget: number(row, 'capexBudget') ?? 0,
-      opexBudget: number(row, 'opexBudget') ?? 0,
-      carryInCapex: number(row, 'carryInCapex') ?? 0,
-      carryInOpex: number(row, 'carryInOpex') ?? 0,
-      notes: text(row, 'notes'),
+      values: {
+        annualPlanId: context.annualPlanId,
+        siId,
+        prevProgramId: prevCode ? (context.programIdByCode.get(prevCode) ?? null) : null,
+        code,
+        name,
+        capexBudget: number(row, 'capexBudget') ?? 0,
+        opexBudget: number(row, 'opexBudget') ?? 0,
+        carryInCapex: number(row, 'carryInCapex') ?? 0,
+        carryInOpex: number(row, 'carryInOpex') ?? 0,
+        notes: text(row, 'notes'),
+      },
+      customFieldValues: custom,
     });
   }
 
@@ -203,11 +280,12 @@ export function planProgramsLoad(
 export function planProjectsLoad(
   rows: readonly ParsedRow[],
   context: OpeningLoadContext,
+  customFields: readonly OpeningCustomField[] = [],
 ): { plan: ProjectsLoad; errors: ParseError[] } {
   const errors: ParseError[] = [];
   const usedCodes = new Set(context.existingProjectCodes);
   const nextSequence = new Map<number, number>();
-  const projects: NewProject[] = [];
+  const projects: PlannedOpeningRecord<NewProject>[] = [];
   const ijins: PlannedIjin[] = [];
 
   const nextCodeFor = (fiscalYear: number): string => {
@@ -228,6 +306,8 @@ export function planProjectsLoad(
     const startYear = number(row, 'startFiscalYear');
     const endYear = number(row, 'endFiscalYear');
     let valid = validName(name, row, errors);
+    const custom = planCustomFields(customFields, row, errors);
+    if (custom === null) valid = false;
 
     const programId = programCode ? context.programIdByCode.get(programCode) : undefined;
     if (!programCode) {
@@ -287,25 +367,36 @@ export function planProjectsLoad(
       code = nextCodeFor(startYear);
     }
 
-    if (!valid || !code || startYear === null || endYear === null || !programId || !name) {
+    if (
+      !valid ||
+      !code ||
+      startYear === null ||
+      endYear === null ||
+      !programId ||
+      !name ||
+      custom === null
+    ) {
       continue;
     }
 
     projects.push({
-      originatingProgramId: programId,
-      code,
-      externalReference: text(row, 'externalReference'),
-      name,
-      description: text(row, 'description'),
-      owner: text(row, 'owner'),
-      startFiscalYear: startYear,
-      endFiscalYear: endYear,
-      allocatedBudgetFullLife: number(row, 'allocatedBudgetFullLife') ?? 0,
-      submittedPrice: number(row, 'submittedPrice'),
-      finalDealPrice: number(row, 'finalDealPrice'),
-      openingAllocated: number(row, 'openingAllocated') ?? 0,
-      openingCommitted: number(row, 'openingCommitted') ?? 0,
-      openingSpent: number(row, 'openingSpent') ?? 0,
+      values: {
+        originatingProgramId: programId,
+        code,
+        externalReference: text(row, 'externalReference'),
+        name,
+        description: text(row, 'description'),
+        owner: text(row, 'owner'),
+        startFiscalYear: startYear,
+        endFiscalYear: endYear,
+        allocatedBudgetFullLife: number(row, 'allocatedBudgetFullLife') ?? 0,
+        submittedPrice: number(row, 'submittedPrice'),
+        finalDealPrice: number(row, 'finalDealPrice'),
+        openingAllocated: number(row, 'openingAllocated') ?? 0,
+        openingCommitted: number(row, 'openingCommitted') ?? 0,
+        openingSpent: number(row, 'openingSpent') ?? 0,
+      },
+      customFieldValues: custom,
     });
 
     const ijinFields = [
@@ -351,12 +442,13 @@ export function planOpeningLoad(
   dataSet: 'strategic-initiatives' | 'annual-programs' | 'projects',
   rows: readonly ParsedRow[],
   context: OpeningLoadContext,
+  customFields: readonly OpeningCustomField[] = [],
 ): OpeningLoadPlanResult {
   if (dataSet === 'strategic-initiatives') {
-    return planInitiativesLoad(rows, context);
+    return planInitiativesLoad(rows, context, customFields);
   }
   if (dataSet === 'annual-programs') {
-    return planProgramsLoad(rows, context);
+    return planProgramsLoad(rows, context, customFields);
   }
-  return planProjectsLoad(rows, context);
+  return planProjectsLoad(rows, context, customFields);
 }

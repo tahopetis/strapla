@@ -291,13 +291,15 @@ enters as **opening figures**, never as reconstructed records:
 in this order:
 
 1. Download the generated **CSV/XLSX template** — headers, type rules, an example row and the load
-   reason convention come from the declared field list.
+   reason convention come from the committed field list plus the custom fields defined under
+   **Administration → Custom fields** (they appear as extra columns).
 2. Upload the file and choose **Validate file**. Every bad value and unknown column is reported by
-   line, and nothing is written.
+   line, and nothing is written. A required custom field with no value fails that row.
 3. Choose **Validate and load**. The file is re-validated and the records are written in one
    transaction, with one audit entry per record and the reason
-   `Opening balance — FY<year> close / <reference>`. Duplicate codes and unknown references fail the
-   whole file; the import creates records and never updates existing ones.
+   `Opening balance — FY<year> close / <reference>`. Any custom-field values are stored on the new
+   record and recorded in its audit entry. Duplicate codes and unknown references fail the whole
+   file; the import creates records and never updates existing ones.
 
 Then reconcile on **Plan → Opening balances**: enter the eight spreadsheet control totals, save, and
 compare every difference against the in-app totals on one screen. Sign off with a reason when you
@@ -538,6 +540,10 @@ detailed exportable sources.
   report totals. Removing a field archives it, so it disappears from forms, record pages, reports
   and exports and its name can be reused; the values already recorded are kept but no longer shown,
   and the audit trail records what was recorded.
+- The opening-balance import includes the entity's custom fields as extra template columns and
+  stores their values on the imported records. A required field missing from a row fails that row
+  with its line number; a number field follows the form rule (whole digits, optional minus), not the
+  Rupiah rule.
 - The field list is per deployment (one deployment belongs to one organisation).
 
 ### 8.4 Corrections policy (v1)
@@ -661,8 +667,8 @@ No. Accounts are deactivated; plan records are voided/cancelled with a reason an
 No. Closing is irreversible; corrections on closed years are audited administrator edits only.
 
 **Can I import a spreadsheet?**
-Not in v1. Data is entered through the forms (opening balances included). Reports/exports are CSV and
-XLSX.
+Only the opening balances: **Plan → Opening balances → Opening import** takes the generated CSV/XLSX
+templates (they include the active custom fields). All other plan data is entered through the forms.
 
 **Can I attach documents?**
 No file uploads: ijin prinsip and other documents are referenced by number and link.
