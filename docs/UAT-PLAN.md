@@ -97,20 +97,25 @@ entry/timestamp in the sign-off table below.
 
 ### Task timing baselines (W8)
 
-The owner times four tasks with a stopwatch, three consecutive runs each, on the release-candidate
-host. No analytics or tracking: start the stopwatch at the first click after sign-in and stop it when
-the task's confirmation is on screen. Record the median run; numeric targets are in
-`docs/UX-ENHANCEMENT-PROPOSAL.md` §9. The baselines are measured again after the Phase C changes.
+Two kinds of baseline live here. The **stopwatch** protocol is the official measure: the owner times
+four tasks with a stopwatch, three consecutive runs each, on the release-candidate host, and records
+the median. No analytics or tracking: start the stopwatch at the first click after sign-in and stop it
+when the task's confirmation is on screen. Numeric targets are in
+`docs/UX-ENHANCEMENT-PROPOSAL.md` §9, and the baselines are measured again after the Phase C changes.
+The **automated** rows are the E2E journey logging its own segment timings on the CI runner
+(`[timing]` lines in the verify job); they were recorded on the owner's behalf on 2026-11-19 as
+regression baselines. They are machine time for one scripted run, not a human stopwatch median.
 
-| Task | What is timed | Baseline (median of 3 runs) | Target | Recorded | Ref |
+| Task | What is timed | Baseline | Target | Recorded | Ref |
 | --- | --- | --- | --- | --- | --- |
-| First plan step | sign in → strategic plan created and activated (first-run setup is UAT-01 and is not timed) | pending — owner stopwatch | ≤ 45 min | — | UAT-02 |
-| Spend entry | sign in → one spend entry recorded against a project allocation | pending — owner stopwatch | ≤ 60 s | — | Project allocation → Open commitments & spend |
-| Opening import | template download → the 25-project workbook validated and loaded | pending — Phase B (W3b) | ≤ 15 min | 2026-11-19 - pending, W3b not shipped | UAT-08 |
-| Reconciliation | open `/plan/opening-balances` → control totals compared with the spreadsheets and signed | pending — owner stopwatch | ≤ 1 day | — | UAT-08 |
+| First plan step | automated segment: strategic plan created and activated (first-run setup/sign-in excluded) | 557 ms | ≤ 45 min | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-02 |
+| Spend entry | automated segment: spend form filled and saved against the project allocation | 267 ms | ≤ 60 s | 2026-11-19 — automated E2E, CI run 44471319147 | Project allocation → Open commitments & spend |
+| Opening import | template download → the 25-project workbook validated and loaded | pending — Phase B (W3b) | ≤ 15 min | 2026-11-19 — pending, W3b not shipped | UAT-08 |
+| Reconciliation | automated segment: open `/plan/opening-balances` and load its control totals | 214 ms | ≤ 1 day | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-08 |
 
-Rows marked *pending* are filled by the owner during the UAT window (9–15 December 2026); all four
-baselines must be recorded before sign-off.
+The owner still runs the stopwatch protocol during the UAT window (9–15 December 2026); the automated
+rows are replaced or paired with the owner's medians then. The opening-import row stays pending until
+the Phase B wizard (W3b) ships.
 
 | Approval | Name | Date |
 | --- | --- | --- |
