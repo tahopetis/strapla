@@ -95,6 +95,23 @@ entry/timestamp in the sign-off table below.
 | UAT-14 |  |  |  |
 | UAT-15 |  |  |  |
 
+### Task timing baselines (W8)
+
+The owner times four tasks with a stopwatch, three consecutive runs each, on the release-candidate
+host. No analytics or tracking: start the stopwatch at the first click after sign-in and stop it when
+the task's confirmation is on screen. Record the median run; numeric targets are in
+`docs/UX-ENHANCEMENT-PROPOSAL.md` §9. The baselines are measured again after the Phase C changes.
+
+| Task | What is timed | Baseline (median of 3 runs) | Target | Recorded | Ref |
+| --- | --- | --- | --- | --- | --- |
+| First plan step | sign in → strategic plan created and activated (first-run setup is UAT-01 and is not timed) | pending — owner stopwatch | ≤ 45 min | — | UAT-02 |
+| Spend entry | sign in → one spend entry recorded against a project allocation | pending — owner stopwatch | ≤ 60 s | — | Project allocation → Open commitments & spend |
+| Opening import | template download → the 25-project workbook validated and loaded | pending — Phase B (W3b) | ≤ 15 min | 2026-11-19 - pending, W3b not shipped | UAT-08 |
+| Reconciliation | open `/plan/opening-balances` → control totals compared with the spreadsheets and signed | pending — owner stopwatch | ≤ 1 day | — | UAT-08 |
+
+Rows marked *pending* are filled by the owner during the UAT window (9–15 December 2026); all four
+baselines must be recorded before sign-off.
+
 | Approval | Name | Date |
 | --- | --- | --- |
 | Portfolio owner (UAT sign-off) |  |  |

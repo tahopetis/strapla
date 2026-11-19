@@ -66,6 +66,7 @@ First visit: `/setup` creates the first administrator (only when no users exist)
 | `pnpm start` | Start the production build |
 | `pnpm typecheck` | TypeScript, no emit |
 | `pnpm lint` | ESLint |
+| `pnpm copy:guard` | Copy guard: fails on milestone IDs, hard-coded fiscal years and unlisted ADR/BR references in page/component copy |
 | `pnpm test` | Vitest unit tests (domain and helpers) |
 | `pnpm opening:template <data-set> --closing-fiscal-year <year> [--format csv\|xlsx]` | Generate an opening-balance import template |
 | `pnpm opening:validate <data-set> <file>` | Dry-run an opening-balance import file (no writes) |

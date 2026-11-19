@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "reason": "W0 removed milestone identifiers and hard-coded fiscal years from copy. These ADR/BR references remain in user-visible copy until the Phase C copy pass (W8/C2); the list is exact (file + token + count), so a new reference must be added here deliberately.",
+  "references": [
+    {
+      "file": "src/app/(app)/admin/audit/page.tsx",
+      "token": "ADR-0004",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/admin/page.tsx",
+      "token": "ADR-0004",
+      "count": 3
+    },
+    {
+      "file": "src/app/(app)/dashboard/page.tsx",
+      "token": "ADR-0003",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "ADR-0003",
+      "count": 2
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-11",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-17",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-18",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-2",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-6",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-7",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-8",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/funding/page.tsx",
+      "token": "BR-9",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/help/page.tsx",
+      "token": "BR-11",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/annual/[id]/page.tsx",
+      "token": "BR-17",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/annual/[id]/page.tsx",
+      "token": "BR-4",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/annual/[id]/page.tsx",
+      "token": "BR-7",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/opening-balances/page.tsx",
+      "token": "BR-2",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/page.tsx",
+      "token": "BR-2",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/[id]/allocations/[allocationId]/page.tsx",
+      "token": "ADR-0003",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/[id]/page.tsx",
+      "token": "BR-14",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/[id]/page.tsx",
+      "token": "BR-18",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/[id]/page.tsx",
+      "token": "BR-8",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/[id]/page.tsx",
+      "token": "BR-9",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/page.tsx",
+      "token": "BR-5",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/plan/projects/page.tsx",
+      "token": "BR-6",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/reports/annual-plan/page.tsx",
+      "token": "BR-7",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/reports/budget-vs-actual/page.tsx",
+      "token": "ADR-0003",
+      "count": 1
+    },
+    {
+      "file": "src/app/(app)/reports/project-register/page.tsx",
+      "token": "ADR-0003",
+      "count": 2
+    },
+    {
+      "file": "src/app/(app)/reports/si-five-year/page.tsx",
+      "token": "BR-2",
+      "count": 1
+    },
+    {
+      "file": "src/components/entity-history.tsx",
+      "token": "ADR-0004",
+      "count": 1
+    },
+    {
+      "file": "src/components/execution/execution-sections.tsx",
+      "token": "ADR-0003",
+      "count": 1
+    },
+    {
+      "file": "src/components/execution/execution-sections.tsx",
+      "token": "BR-11",
+      "count": 3
+    },
+    {
+      "file": "src/components/form.tsx",
+      "token": "ADR-0004",
+      "count": 1
+    },
+    {
+      "file": "src/components/plan/project-allocations.tsx",
+      "token": "ADR-0003",
+      "count": 1
+    },
+    {
+      "file": "src/components/plan/project-allocations.tsx",
+      "token": "BR-17",
+      "count": 1
+    },
+    {
+      "file": "src/components/plan/project-allocations.tsx",
+      "token": "BR-6",
+      "count": 1
+    },
+    {
+      "file": "src/components/plan/project-allocations.tsx",
+      "token": "BR-7",
+      "count": 1
+    },
+    {
+      "file": "src/components/plan/recurring-ops-section.tsx",
+      "token": "BR-12",
+      "count": 1
+    }
+  ]
+}
