@@ -23,6 +23,11 @@ SECURITY: SETUP (<reason>)
 SECURITY: OFF
 ```
 
+A quiet scanner (`semgrep` and `trivy` write to SARIF, not stdout) prints nothing
+while it runs. To keep that from reading as "did not run", the runner logs one
+line per scanner as it completes — `scanner <name>: <status>, SARIF <bytes> bytes`
+— before the decider produces the verdict.
+
 Only `PASS` is green. `ERROR` and `SETUP` mean the environment or the config is wrong, not that the
 code is clean; `OFF` means nothing was scanned. Re-running the same commit does not fix `ERROR`/`SETUP`.
 
