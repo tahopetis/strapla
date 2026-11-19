@@ -215,11 +215,74 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Opening balances', exact: true })).toBeVisible();
   await expect(page.getByText('Initiatives — envelope reconciliation')).toBeVisible();
   await expect(page.getByText('Annual programs — carry-in')).toBeVisible();
-  await expect(page.getByText('Reconciliation totals')).toBeVisible();
+  await expect(page.getByText('Control totals and sign-off')).toBeVisible();
   await expect(page.getByText('PRG-2027-001').first()).toBeVisible();
   await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
   await expect(page.getByText('Rp 750.000.000').first()).toBeVisible();
   endTiming('reconciliation', reconciliationStartedAt);
+
+  // ---------------------------------------- opening-balance import (W3b)
+  await page.goto('/plan/opening-balances/import');
+  await expect(page.getByRole('heading', { name: 'Opening-balance import' })).toBeVisible();
+
+  // malformed file: row-level errors by line, nothing written
+  await page.locator('select[name="dataSet"]').selectOption('projects');
+  await page.locator('input[name="file"]').setInputFiles('e2e/fixtures/opening-import/projects-invalid.csv');
+  await page.locator('input[name="reference"]').fill('E2E-OPENING-IMPORT');
+  await page.getByRole('button', { name: 'Validate file' }).click();
+  await expect(page.getByText(/problem\(s\); nothing was written/)).toBeVisible();
+  await expect(page.getByText(/line 2 · /).first()).toBeVisible();
+
+  const importDataSet = async (label: string, file: string) => {
+    await page.goto('/plan/opening-balances/import');
+    await page.locator('select[name="dataSet"]').selectOption({ label });
+    await page.locator('input[name="file"]').setInputFiles(file);
+    await page.locator('input[name="reference"]').fill('E2E-OPENING-IMPORT');
+    await page.getByRole('button', { name: 'Validate file' }).click();
+    await expect(page.getByText(/row\(s\) validated, nothing written yet/)).toBeVisible();
+    await page.getByRole('button', { name: 'Validate and load' }).click();
+    await expect(page.getByText(/Imported \d+ .*record\(s\) from/)).toBeVisible();
+  };
+
+  await importDataSet(
+    'Strategic initiatives',
+    'e2e/fixtures/opening-import/strategic-initiatives.csv',
+  );
+  await importDataSet('Annual programs', 'e2e/fixtures/opening-import/annual-programs.csv');
+
+  // W8a timing: the 25-project workbook validated and loaded end to end.
+  const openingImportStartedAt = performance.now();
+  await importDataSet('Projects', 'e2e/fixtures/opening-import/projects-25.csv');
+  endTiming('opening-import', openingImportStartedAt);
+
+  // control totals and the one-time sign-off
+  const controlValues = {
+    controlEnvelope: '0',
+    controlPriorProgramBudgetUsed: '0',
+    controlProgramBudgets: '0',
+    controlProgramCarryIn: '0',
+    controlProjectOpeningAllocated: '0',
+    controlProjectOpeningCommitted: '0',
+    controlProjectOpeningSpent: '0',
+    controlProjectFullLifeAllocated: '0',
+  };
+  const controlForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save control totals' }) });
+  for (const [name, value] of Object.entries(controlValues)) {
+    await controlForm.locator(`input[name="${name}"]`).fill(value);
+  }
+  await controlForm.locator('input[name="reason"]').fill('E2E control totals.');
+  await page.getByRole('button', { name: 'Save control totals' }).click();
+  await expect(page.getByText('Control totals saved; compare the differences below.')).toBeVisible();
+
+  const signOffForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Sign off opening balances' }) });
+  await signOffForm.locator('input[name="reason"]').fill('E2E opening balances sign-off.');
+  await page.getByRole('button', { name: 'Sign off opening balances' }).click();
+  await expect(page.getByText('Opening balances signed off.')).toBeVisible();
+  await expect(page.getByText('signed off', { exact: true })).toBeVisible();
 
   // ------------------------------------------------------ reports and exports
   await page.goto('/reports');

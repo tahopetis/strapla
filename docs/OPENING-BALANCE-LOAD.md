@@ -136,6 +136,22 @@ TypeScript happy.
 CSV samples, an invalid project sample, an owner-column example, and `projects.sample.xlsx` (the same
 rows as its CSV sibling; the tests keep them in agreement). The real FY2026 workbook stays off-repo.
 
+## Loading with the wizard (W3b)
+
+The go-live load runs through **Plan → Opening balances → Opening import**, in the load order above.
+For each data set:
+
+1. Download the generated CSV/XLSX template (the field list in `src/lib/opening-import/field-list.ts`
+   is the schema; the reason convention is `Opening balance — FY<closing year> close / <reference>`).
+2. Upload and validate: row-level errors are reported by line and nothing is written.
+3. Validate and load: one transaction, one audit entry per created record, duplicate/unknown
+   references rejected before any write. The import creates records; it does not update them.
+
+After each load, the **Import** card on `/plan/opening-balances` shows the record counts per data set,
+and the control-total card compares the eight spreadsheet control totals with the in-app totals.
+Enter the totals, save, review every difference, then sign off with a reason. The sign-off is a
+one-time audited action; later corrections are audited edits.
+
 ## Reconciliation and sign-off
 
 `/plan/opening-balances` must show:

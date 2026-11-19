@@ -483,3 +483,64 @@ export const carryOverEntries = pgTable(
     check('carry_over_entries_amount_non_negative', sql`${table.amount} >= 0`),
   ],
 );
+
+// ---------------------------------------------------------------- opening balances (W3b)
+
+/**
+ * The owner's control totals for the one-time opening load, per strategic plan,
+ * plus the one-time sign-off. The in-app totals are derived from the records; the
+ * difference is computed in the UI. A signed-off reconciliation is read-only.
+ */
+export const openingBalanceReconciliations = pgTable(
+  'opening_balance_reconciliations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => strategicPlans.id)
+      .unique(),
+    controlEnvelope: money('control_envelope').notNull().default(0),
+    controlPriorProgramBudgetUsed: money('control_prior_program_budget_used')
+      .notNull()
+      .default(0),
+    controlProgramBudgets: money('control_program_budgets').notNull().default(0),
+    controlProgramCarryIn: money('control_program_carry_in').notNull().default(0),
+    controlProjectOpeningAllocated: money('control_project_opening_allocated')
+      .notNull()
+      .default(0),
+    controlProjectOpeningCommitted: money('control_project_opening_committed')
+      .notNull()
+      .default(0),
+    controlProjectOpeningSpent: money('control_project_opening_spent').notNull().default(0),
+    controlProjectFullLifeAllocated: money('control_project_full_life_allocated')
+      .notNull()
+      .default(0),
+    signedOffAt: timestamp('signed_off_at', { withTimezone: true }),
+    signedOffBy: uuid('signed_off_by').references(() => users.id),
+    signOffReason: text('sign_off_reason'),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    check(
+      'opening_balance_reconciliations_non_negative',
+      sql`${table.controlEnvelope} >= 0
+        AND ${table.controlPriorProgramBudgetUsed} >= 0
+        AND ${table.controlProgramBudgets} >= 0
+        AND ${table.controlProgramCarryIn} >= 0
+        AND ${table.controlProjectOpeningAllocated} >= 0
+        AND ${table.controlProjectOpeningCommitted} >= 0
+        AND ${table.controlProjectOpeningSpent} >= 0
+        AND ${table.controlProjectFullLifeAllocated} >= 0`,
+    ),
+  ],
+);
+
+export type OpeningBalanceReconciliation = typeof openingBalanceReconciliations.$inferSelect;
+export type NewOpeningBalanceReconciliation =
+  typeof openingBalanceReconciliations.$inferInsert;
+export type NewStrategicInitiative = typeof strategicInitiatives.$inferInsert;
+export type NewAnnualProgram = typeof annualPrograms.$inferInsert;
+export type NewProject = typeof projects.$inferInsert;
+export type NewIjinPrinsipRecord = typeof ijinPrinsipRecords.$inferInsert;

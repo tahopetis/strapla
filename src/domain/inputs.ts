@@ -386,3 +386,32 @@ export const closeFiscalYearSchema = z.object({
 });
 
 export type CloseFiscalYearInput = z.infer<typeof closeFiscalYearSchema>;
+
+// ---------------------------------------------------------------- opening balances (W3b)
+
+const openingControlFields = {
+  controlEnvelope: requiredRupiah('Total envelope'),
+  controlPriorProgramBudgetUsed: requiredRupiah('Prior program budget consumed'),
+  controlProgramBudgets: requiredRupiah('In-app program budgets'),
+  controlProgramCarryIn: requiredRupiah('Program carry-in'),
+  controlProjectOpeningAllocated: requiredRupiah('Project opening allocated'),
+  controlProjectOpeningCommitted: requiredRupiah('Project opening open commitments'),
+  controlProjectOpeningSpent: requiredRupiah('Project opening spent'),
+  controlProjectFullLifeAllocated: requiredRupiah('Project full-life allocated budget'),
+};
+
+export const openingReconciliationSaveSchema = z.object({
+  planId: idSchema,
+  reason: reasonSchema,
+  ...openingControlFields,
+});
+
+export const openingReconciliationSignOffSchema = z.object({
+  planId: idSchema,
+  reason: reasonSchema,
+});
+
+export type OpeningReconciliationSaveInput = z.infer<typeof openingReconciliationSaveSchema>;
+export type OpeningReconciliationSignOffInput = z.infer<
+  typeof openingReconciliationSignOffSchema
+>;

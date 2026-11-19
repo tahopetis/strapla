@@ -47,7 +47,7 @@ entry/timestamp in the sign-off table below.
 | UAT-05 | Create the multi-year projects with full-life allocated budget, submitted price, final deal price and the ijin prinsip record (number, date, approved amount, approver, document link) | Project register shows the pricing chain; approved amount equals the document | SC-3, SC-4 |
 | UAT-06 | Allocate program budget to each project's FY2027 slice (with carry-in where applicable); check program unallocated and project remaining | Unallocated budget visible per component; remaining = allocation + carry-in (no commitments yet) | SC-3, SC-6 |
 | UAT-07 | Add the recurring operations items with opex budgets, carry-in and categories | Items appear in the annual plan and the reports; opex only | SC-8 |
-| UAT-08 | Load the opening balances for SIs, programs and projects; compare `/plan/opening-balances` totals with the spreadsheets and sign off | Totals reconcile exactly with the signed-off spreadsheet figures | SC-12 |
+| UAT-08 | Load the opening balances for SIs, programs and projects with the import wizard (validate, then load; nothing written on a bad file); enter the eight spreadsheet control totals on `/plan/opening-balances`, compare every difference and sign off | Malformed file reports each bad line and writes nothing; totals reconcile; the signed-off state records the reason | SC-12 |
 | UAT-09 | Flag checks with stress data: final deal price above approved amount; above submitted price; allocation above program budget; cumulative program budgets above the SI envelope | Each flag appears in context; saving is still possible (BR-17); void the stress records afterwards | SC-6 |
 | UAT-10 | Fill in one complete real project (ijin prinsip, allocations, recurring ops cross-check) and spot-check traceability from a number back to SI and annual plan | Every figure traces to project → program → SI → annual plan | SC-4 |
 | UAT-11 | Open the four reports; export CSV and XLSX; print/PDF the SI five-year view; hand the exports to finance for a sanity check | Exports match the screen; print view is readable on A4 landscape | SC-10 |
@@ -110,12 +110,11 @@ regression baselines. They are machine time for one scripted run, not a human st
 | --- | --- | --- | --- | --- | --- |
 | First plan step | automated segment: strategic plan created and activated (first-run setup/sign-in excluded) | 557 ms | ≤ 45 min | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-02 |
 | Spend entry | automated segment: spend form filled and saved against the project allocation | 267 ms | ≤ 60 s | 2026-11-19 — automated E2E, CI run 44471319147 | Project allocation → Open commitments & spend |
-| Opening import | template download → the 25-project workbook validated and loaded | pending — Phase B (W3b) | ≤ 15 min | 2026-11-19 — pending, W3b not shipped | UAT-08 |
+| Opening import | automated segment: wizard opened with the 25-project workbook, validated and loaded | 455 ms | ≤ 15 min | 2026-11-19 — automated E2E, CI run 44481784773 | UAT-08 |
 | Reconciliation | automated segment: open `/plan/opening-balances` and load its control totals | 214 ms | ≤ 1 day | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-08 |
 
-The owner still runs the stopwatch protocol during the UAT window (9–15 December 2026); the automated
-rows are replaced or paired with the owner's medians then. The opening-import row stays pending until
-the Phase B wizard (W3b) ships.
+All four automated baselines are now recorded. The owner still runs the stopwatch protocol during the
+UAT window (9–15 December 2026) and replaces or pairs these with the owner's medians then.
 
 | Approval | Name | Date |
 | --- | --- | --- |
