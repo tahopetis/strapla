@@ -110,12 +110,11 @@ regression baselines. They are machine time for one scripted run, not a human st
 | --- | --- | --- | --- | --- | --- |
 | First plan step | automated segment: strategic plan created and activated (first-run setup/sign-in excluded) | 557 ms | ≤ 45 min | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-02 |
 | Spend entry | automated segment: spend form filled and saved against the project allocation | 267 ms | ≤ 60 s | 2026-11-19 — automated E2E, CI run 44471319147 | Project allocation → Open commitments & spend |
-| Opening import | template download → the 25-project workbook validated and loaded | pending — Phase B (W3b) | ≤ 15 min | 2026-11-19 — pending, W3b not shipped | UAT-08 |
+| Opening import | automated segment: wizard opened with the 25-project workbook, validated and loaded | 455 ms | ≤ 15 min | 2026-11-19 — automated E2E, CI run 44481784773 | UAT-08 |
 | Reconciliation | automated segment: open `/plan/opening-balances` and load its control totals | 214 ms | ≤ 1 day | 2026-11-19 — automated E2E, CI run 44471319147 | UAT-08 |
 
-The owner still runs the stopwatch protocol during the UAT window (9–15 December 2026); the automated
-rows are replaced or paired with the owner's medians then. The opening-import row stays pending until
-the Phase B wizard (W3b) ships.
+All four automated baselines are now recorded. The owner still runs the stopwatch protocol during the
+UAT window (9–15 December 2026) and replaces or pairs these with the owner's medians then.
 
 | Approval | Name | Date |
 | --- | --- | --- |
