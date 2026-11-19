@@ -318,13 +318,13 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await projectEditForm.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Project updated.')).toBeVisible();
   await expect(page.getByText('Additional fields')).toBeVisible();
-  await expect(page.getByText('Open tender')).toBeVisible();
-  await expect(page.getByText('Phased rollout')).toBeVisible();
+  await expect(page.locator('dd', { hasText: 'Open tender' })).toBeVisible();
+  await expect(page.locator('dd', { hasText: 'Phased rollout' })).toBeVisible();
 
   // the values ride along in the audit snapshot for the update
   const changeHistory = page.locator('section').filter({ hasText: 'Change history' });
-  await expect(changeHistory.getByText('customFields')).toBeVisible();
-  await expect(changeHistory.getByText('Phased rollout')).toBeVisible();
+  await expect(changeHistory.locator('pre', { hasText: 'customFields' }).first()).toBeVisible();
+  await expect(changeHistory.locator('pre', { hasText: 'Phased rollout' }).first()).toBeVisible();
 
   // the report shows the extra columns, filters by them, and the export selects columns
   await page.goto('/reports/project-register');
