@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useActionState, useState, type Dispatch, type SetStateAction } from 'react';
+import { FormMessage, SubmitButton } from '@/components/form';
 import { Card, Money } from '@/components/ui';
 import {
   carryOverTotals,
@@ -9,6 +10,7 @@ import {
   type CarryOverTotalsByEntity,
 } from '@/domain/close';
 import { formatRupiah, parseRupiah } from '@/domain/money';
+import { initialFormState } from '@/lib/form-state';
 import { carryOverFieldName, type CarryOverComponent } from '@/lib/close-form';
 import { closeFiscalYearAction } from '@/server/plan/close-actions';
 
@@ -65,9 +67,13 @@ function previewAmount(raw: string): number | null {
 }
 
 /**
- * The year-close form (W4a). It owns the carry amounts as local state so the
- * preview above the button is derived from real values — not by reading other
- * components' DOM — and submits through the same server action as before.
+ * The year-close form (W4a/W5b). It owns the carry amounts, the approval
+ * reference, the typed confirmation and the target programs as local state, so
+ * the preview above the button is derived from real values — not by reading
+ * other components' DOM — and a refused close keeps every one of them. The
+ * state-returning server action is driven directly (this form is not wrapped in
+ * the shared `<Form>`) and the returned message renders in place above the
+ * submit button.
  */
 export function CloseYearForm({
   annualPlanId,
@@ -77,8 +83,21 @@ export function CloseYearForm({
   allocations,
 }: CloseYearFormProps) {
   const confirmationPhrase = closeConfirmationPhrase(fiscalYear);
+  const [state, formAction] = useActionState(closeFiscalYearAction, initialFormState);
   const [programAmounts, setProgramAmounts] = useState<Amounts>(() => initialAmounts(programs));
   const [allocationAmounts, setAllocationAmounts] = useState<Amounts>(() => initialAmounts(allocations));
+  // The approval reference, typed confirmation and target selects are kept as
+  // local state: React resets an uncontrolled form after its action runs, and a
+  // refused close must not discard what the user entered.
+  const [reference, setReference] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [programTargets, setProgramTargets] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      programs.map((row) => [row.id, row.defaultTargetProgramId ?? '']),
+    ),
+  );
+  const referenceError = state.fieldErrors?.reference;
+  const confirmationError = state.fieldErrors?.confirmation;
 
   const entries: CarryOverAmount[] = [];
   let hasInvalid = false;
@@ -118,7 +137,7 @@ export function CloseYearForm({
   };
 
   return (
-    <form action={closeFiscalYearAction} className="space-y-6">
+    <form action={formAction} className="space-y-6">
       <input type="hidden" name="annualPlanId" value={annualPlanId} />
 
       <Card
@@ -182,7 +201,13 @@ export function CloseYearForm({
                     <td className="py-3 pr-3">
                       <select
                         name={`target_program_${row.id}`}
-                        defaultValue={row.defaultTargetProgramId ?? ''}
+                        value={programTargets[row.id] ?? ''}
+                        onChange={(event) =>
+                          setProgramTargets((current) => ({
+                            ...current,
+                            [row.id]: event.target.value,
+                          }))
+                        }
                         className={selectClass}
                       >
                         <option value="">Select a target program</option>
@@ -308,6 +333,7 @@ export function CloseYearForm({
           ) : null}
         </section>
 
+        <FormMessage state={state} />
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-700">
             Approval reference
@@ -315,9 +341,15 @@ export function CloseYearForm({
               name="reference"
               required
               maxLength={160}
+              value={reference}
+              onChange={(event) => setReference(event.target.value)}
+              aria-invalid={referenceError ? true : undefined}
               placeholder="Board approval or memo reference"
               className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
             />
+            {referenceError ? (
+              <span className="mt-1 block text-xs font-medium text-red-700">{referenceError}</span>
+            ) : null}
           </label>
           <label className="block text-sm font-medium text-slate-700">
             Typed confirmation
@@ -329,19 +361,22 @@ export function CloseYearForm({
               pattern={confirmationPhrase}
               title={`Type ${confirmationPhrase} to confirm`}
               placeholder={confirmationPhrase}
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              aria-invalid={confirmationError ? true : undefined}
               className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
             />
             <span className="mt-1 block text-xs font-normal text-slate-500">
               Type <code className="font-mono">{confirmationPhrase}</code> exactly to confirm.
             </span>
+            {confirmationError ? (
+              <span className="mt-1 block text-xs font-medium text-red-700">{confirmationError}</span>
+            ) : null}
           </label>
           <div className="flex items-end sm:col-span-2">
-            <button
-              type="submit"
-              className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-            >
+            <SubmitButton pendingLabel="Closing…">
               Close FY{fiscalYear} and carry over
-            </button>
+            </SubmitButton>
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">

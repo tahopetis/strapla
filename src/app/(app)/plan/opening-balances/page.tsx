@@ -1,12 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PlanNav } from '@/components/plan-nav';
+import { OpeningReconciliationForms } from '@/components/plan/opening-reconciliation-forms';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import { formatDate } from '@/lib/format';
-import {
-  signOffOpeningBalancesAction,
-  saveOpeningReconciliationAction,
-} from '@/server/plan/opening-reconciliation-actions';
 import {
   getOpeningBalancesOverview,
   getOpeningLoadScene,
@@ -94,8 +91,9 @@ export default async function OpeningBalancesPage({
     },
   ] as const;
 
-  const controlInputClass =
-    'block w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
+  const initialValues = reconciliation
+    ? Object.fromEntries(controlFields.map((field) => [field.name, reconciliation[field.name]]))
+    : null;
 
   return (
     <div>
@@ -431,88 +429,12 @@ export default async function OpeningBalancesPage({
           )}
 
           {signedOffAt ? null : (
-            <>
-              <form action={saveOpeningReconciliationAction} className="mt-5 space-y-4">
-                <input type="hidden" name="planId" value={plan.id} />
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                        <th className="py-2 pr-4">Control total</th>
-                        <th className="py-2 pr-4">Spreadsheet total (Rp)</th>
-                        <th className="py-2">Strapla</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {controlFields.map((field) => (
-                        <tr key={field.name}>
-                          <td className="py-2 pr-4">{field.label}</td>
-                          <td className="py-2 pr-4">
-                            <input
-                              name={field.name}
-                              inputMode="numeric"
-                              required
-                              defaultValue={reconciliation ? String(reconciliation[field.name]) : ''}
-                              placeholder="0"
-                              className={controlInputClass}
-                            />
-                          </td>
-                          <td className="py-2 whitespace-nowrap">
-                            <Money value={field.app} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Reason for change
-                  <input
-                    name="reason"
-                    required
-                    maxLength={1000}
-                    placeholder="Why the control totals changed"
-                    className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  Save control totals
-                </button>
-              </form>
-
-              {reconciliation ? (
-                <form
-                  action={signOffOpeningBalancesAction}
-                  className="mt-5 space-y-3 rounded border border-slate-200 bg-slate-50 p-4"
-                >
-                  <input type="hidden" name="planId" value={plan.id} />
-                  <p className="text-sm font-medium text-slate-800">Sign off the opening balances</p>
-                  <p className="text-xs text-slate-600">
-                    Signing off is final; later corrections on records are audited edits. A non-zero
-                    difference is allowed but its reason is recorded.
-                  </p>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Sign-off reason
-                    <input
-                      name="reason"
-                      required
-                      maxLength={1000}
-                      placeholder={`Reconciled to the FY${priorYear} control totals`}
-                      className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                  >
-                    Sign off opening balances
-                  </button>
-                </form>
-              ) : null}
-            </>
+            <OpeningReconciliationForms
+              planId={plan.id}
+              fields={controlFields}
+              initialValues={initialValues}
+              priorYear={priorYear}
+            />
           )}
 
           <p className="mt-4 text-xs text-slate-500">

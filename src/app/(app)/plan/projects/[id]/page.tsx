@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
+  Form,
   HiddenField,
   MoneyField,
   ReasonField,
@@ -135,14 +137,16 @@ export default async function ProjectPage({
 
         {editable ? (
           <Card title="Cancel project" description="Cancellation keeps the record and its history; nothing is deleted (BR-14).">
-            <details>
-              <summary className="cursor-pointer text-sm font-medium text-red-700">Cancel this project</summary>
-              <form action={cancelProjectAction} className="mt-4 space-y-3">
-                <HiddenField name="id" value={detail.project.id} />
-                <ReasonField hint="Recorded in the audit trail together with the cancellation." />
-                <SubmitButton variant="danger">Cancel project</SubmitButton>
-              </form>
-            </details>
+            <ConfirmDialog
+              action={cancelProjectAction}
+              triggerLabel="Cancel project"
+              title="Cancel this project?"
+              consequence="Cancelling keeps the record and its history; nothing is deleted."
+              confirmLabel="Cancel project"
+            >
+              <HiddenField name="id" value={detail.project.id} />
+              <ReasonField hint="Recorded in the audit trail." />
+            </ConfirmDialog>
           </Card>
         ) : null}
       </div>
@@ -249,7 +253,7 @@ function PricingCard({
       {editable ? (
         <details className="mt-5 border-t border-slate-100 pt-4">
           <summary className={summaryClass}>Edit project</summary>
-          <form action={updateProjectAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={updateProjectAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="id" value={project.id} />
             <TextField label="Code" name="code" defaultValue={project.code} required maxLength={40} />
             <TextField label="Name" name="name" defaultValue={project.name} required maxLength={160} />
@@ -301,7 +305,7 @@ function PricingCard({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Save changes</SubmitButton>
             </div>
-          </form>
+          </Form>
         </details>
       ) : null}
     </Card>
@@ -354,7 +358,7 @@ function IjinPrinsipCard({ detail, editable }: { detail: ProjectDetail; editable
       {editable ? (
         <details open={!ijin}>
           <summary className={summaryClass}>{ijin ? 'Update ijin prinsip' : 'Record ijin prinsip'}</summary>
-          <form action={saveIjinPrinsipAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={saveIjinPrinsipAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="projectId" value={detail.project.id} />
             <TextField
               label="Document number"
@@ -385,7 +389,7 @@ function IjinPrinsipCard({ detail, editable }: { detail: ProjectDetail; editable
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>{ijin ? 'Update ijin prinsip' : 'Record ijin prinsip'}</SubmitButton>
             </div>
-          </form>
+          </Form>
         </details>
       ) : null}
     </Card>

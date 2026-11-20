@@ -1,7 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { HiddenField, ReasonField, SelectField, SubmitButton, TextAreaField, TextField } from '@/components/form';
-import { Badge, Card, EmptyState, Flash, PageHeader, dangerButtonClass, labelClass } from '@/components/ui';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import {
+  CheckboxField,
+  Form,
+  HiddenField,
+  ReasonField,
+  SelectField,
+  SubmitButton,
+  TextAreaField,
+  TextField,
+} from '@/components/form';
+import { Badge, Card, EmptyState, Flash, PageHeader } from '@/components/ui';
 import {
   CUSTOM_FIELD_ENTITIES,
   CUSTOM_FIELD_TYPES,
@@ -26,31 +36,15 @@ const typeOptions = CUSTOM_FIELD_TYPES.map((type) => ({
   label: customFieldTypeLabel(type),
 }));
 
-function RequiredCheckbox({ defaultChecked }: { defaultChecked?: boolean }) {
-  return (
-    <label className={`${labelClass} flex items-center gap-2 self-end pb-2`}>
-      <input type="hidden" name="required" value="off" />
-      <input
-        type="checkbox"
-        name="required"
-        value="on"
-        defaultChecked={defaultChecked}
-        className="h-4 w-4 rounded border-slate-300"
-      />
-      Required
-    </label>
-  );
-}
-
 function AddFieldForm({ entityType }: { entityType: CustomFieldEntityType }) {
   return (
     <details className="mt-4 border-t border-slate-100 pt-4">
       <summary className="cursor-pointer text-sm font-medium text-slate-700">Add a field</summary>
-      <form action={createCustomFieldAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Form action={createCustomFieldAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <HiddenField name="entityType" value={entityType} />
         <TextField label="Field name" name="name" required maxLength={80} placeholder="Procurement method" />
         <SelectField label="Type" name="type" options={typeOptions} defaultValue="text" required />
-        <RequiredCheckbox />
+        <CheckboxField label="Required" name="required" />
         <div className="sm:col-span-2 lg:col-span-4">
           <TextAreaField
             label="Description"
@@ -63,7 +57,7 @@ function AddFieldForm({ entityType }: { entityType: CustomFieldEntityType }) {
         <div className="sm:col-span-2 lg:col-span-4">
           <SubmitButton>Add field</SubmitButton>
         </div>
-      </form>
+      </Form>
     </details>
   );
 }
@@ -84,7 +78,7 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
       <div className="mt-4 grid gap-6 lg:grid-cols-2">
         <details>
           <summary className="cursor-pointer text-sm font-medium text-slate-700">Edit field</summary>
-          <form action={updateCustomFieldAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Form action={updateCustomFieldAction} className="mt-4 grid gap-3 sm:grid-cols-2">
             <HiddenField name="id" value={field.id} />
             <TextField label="Field name" name="name" defaultValue={field.name} required maxLength={80} />
             <SelectField
@@ -95,7 +89,7 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
               required
               hint="The type can only change while every recorded value stays valid."
             />
-            <RequiredCheckbox defaultChecked={field.required} />
+            <CheckboxField label="Required" name="required" defaultChecked={field.required} />
             <div className="sm:col-span-2">
               <TextAreaField label="Description" name="description" defaultValue={field.description} required rows={2} />
             </div>
@@ -105,24 +99,22 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
             <div className="sm:col-span-2">
               <SubmitButton>Save field</SubmitButton>
             </div>
-          </form>
+          </Form>
         </details>
 
-        <details>
-          <summary className="cursor-pointer text-sm font-medium text-red-700">Remove field</summary>
-          <form action={removeCustomFieldAction} className="mt-4 space-y-3">
+        <div className="flex items-start">
+          <ConfirmDialog
+            action={removeCustomFieldAction}
+            triggerLabel="Remove field"
+            title={`Remove “${field.name}”?`}
+            consequence="Removing the field archives it, so it leaves forms, record pages, reports and exports while the values already recorded stay in place but are no longer shown."
+            confirmLabel="Remove field"
+            pendingLabel="Removing…"
+          >
             <HiddenField name="id" value={field.id} />
-            <p className="text-sm text-slate-600">
-              Removing the field archives it: it disappears from forms, record pages, reports and exports,
-              and its name can be reused. Values recorded on existing records are kept but no longer shown;
-              the audit trail records what was recorded.
-            </p>
-            <ReasonField hint="Required: recorded in the audit trail." />
-            <button type="submit" className={dangerButtonClass}>
-              Remove field
-            </button>
-          </form>
-        </details>
+            <ReasonField hint="Recorded in the audit trail." />
+          </ConfirmDialog>
+        </div>
       </div>
     </li>
   );

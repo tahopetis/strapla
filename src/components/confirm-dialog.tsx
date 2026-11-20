@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useId, useRef, useActionState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useRef, useActionState, type ReactNode } from 'react';
 import { initialFormState, type FormAction } from '@/lib/form-state';
-import { FormMessage, SubmitButton } from './form';
+import { FormMessage, FormStateProvider, SubmitButton } from './form';
 import { dangerButtonClass, secondaryButtonClass } from './ui';
 
 /**
@@ -49,7 +49,10 @@ export function ConfirmDialog({
     <>
       <button
         type="button"
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => {
+          const dialog = dialogRef.current;
+          if (dialog && !dialog.open) dialog.showModal();
+        }}
         className={triggerClassName ?? dangerButtonClass}
       >
         {triggerLabel}
@@ -60,31 +63,31 @@ export function ConfirmDialog({
         className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40"
       >
         <form action={formAction} className="space-y-4 p-5">
-          <div className="space-y-1">
-            <h2 id={titleId} className="text-lg font-semibold tracking-tight">
-              {title}
-            </h2>
-            <p className="text-sm text-slate-600">{consequence}</p>
-          </div>
+          <FormStateProvider value={{ state, pending }}>
+            <div className="space-y-1">
+              <h2 id={titleId} className="text-lg font-semibold tracking-tight">
+                {title}
+              </h2>
+              <p className="text-sm text-slate-600">{consequence}</p>
+            </div>
 
-          <FormMessage state={state} />
-          <div key={state.attempt} className="space-y-4">
-            {children}
-          </div>
+            <FormMessage state={state} />
+            <Fragment key={state.attempt}>{children}</Fragment>
 
-          <div className="flex flex-wrap justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => dialogRef.current?.close()}
-              className={secondaryButtonClass}
-              disabled={pending}
-            >
-              Cancel
-            </button>
-            <SubmitButton variant="danger" pendingLabel={pendingLabel}>
-              {confirmLabel}
-            </SubmitButton>
-          </div>
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => dialogRef.current?.close()}
+                className={secondaryButtonClass}
+                disabled={pending}
+              >
+                Cancel
+              </button>
+              <SubmitButton variant="danger" pendingLabel={pendingLabel}>
+                {confirmLabel}
+              </SubmitButton>
+            </div>
+          </FormStateProvider>
         </form>
       </dialog>
     </>

@@ -21,17 +21,22 @@ import {
   type AllocationCreateInput,
   type AllocationUpdateInput,
 } from '@/domain/inputs';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 
 const PROJECTS_PAGE = '/plan/projects';
+
+interface SavedAllocation {
+  allocation: ProjectYearAllocation;
+  fiscalYear: number;
+}
 
 function snapshot(allocation: ProjectYearAllocation): Record<string, unknown> {
   return {
@@ -135,7 +140,10 @@ function requireProjectActiveYear(project: Project, fiscalYear: number): void {
   }
 }
 
-async function createAllocation(userId: string, input: AllocationCreateInput): Promise<void> {
+async function createAllocation(
+  userId: string,
+  input: AllocationCreateInput,
+): Promise<SavedAllocation> {
   const context = await loadProjectContext(input.projectId);
   requireProjectEditable(context.project, context.strategicPlanStatus);
 
@@ -167,6 +175,7 @@ async function createAllocation(userId: string, input: AllocationCreateInput): P
   }
   requireProjectActiveYear(context.project, target.annualPlan.fiscalYear);
 
+  let allocation: ProjectYearAllocation | undefined;
   await getDb().transaction(async (tx) => {
     const existingRows = await tx
       .select()
@@ -202,6 +211,7 @@ async function createAllocation(userId: string, input: AllocationCreateInput): P
         .where(eq(projectYearAllocations.id, existing.id))
         .returning();
       if (!restored) throw new Error('failed to restore the project year allocation');
+      allocation = restored;
       await recordAudit(tx, {
         actorUserId: userId,
         action: 'restore',
@@ -229,6 +239,7 @@ async function createAllocation(userId: string, input: AllocationCreateInput): P
       })
       .returning();
     if (!created) throw new Error('failed to create the project year allocation');
+    allocation = created;
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
@@ -237,16 +248,22 @@ async function createAllocation(userId: string, input: AllocationCreateInput): P
       after: snapshot(created),
     });
   });
+  if (!allocation) throw new Error('failed to save the project year allocation');
+  return { allocation, fiscalYear: target.annualPlan.fiscalYear };
 }
 
-async function updateAllocation(userId: string, input: AllocationUpdateInput): Promise<void> {
+async function updateAllocation(
+  userId: string,
+  input: AllocationUpdateInput,
+): Promise<SavedAllocation> {
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
   requireAllocationEditable(context);
   requireProjectActiveYear(context.project, context.annualPlan.fiscalYear);
 
+  let updated: ProjectYearAllocation | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    const [row] = await tx
       .update(projectYearAllocations)
       .set({
         allocationCapex: input.allocationCapex,
@@ -259,20 +276,23 @@ async function updateAllocation(userId: string, input: AllocationUpdateInput): P
       })
       .where(eq(projectYearAllocations.id, input.id))
       .returning();
-    if (!updated) throw new FormError('Project year allocation not found.');
+    if (!row) throw new FormError('Project year allocation not found.');
+    updated = row;
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'update',
       entityType: 'project_year_allocation',
       entityId: input.id,
       before: snapshot(context.allocation),
-      after: snapshot(updated),
+      after: snapshot(row),
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Project year allocation not found.');
+  return { allocation: updated, fiscalYear: context.annualPlan.fiscalYear };
 }
 
-async function voidAllocation(userId: string, id: string, reason: string): Promise<void> {
+async function voidAllocation(userId: string, id: string, reason: string): Promise<SavedAllocation> {
   const context = await loadAllocationContext(id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is already voided.');
   requireAllocationEditable(context);
@@ -280,8 +300,9 @@ async function voidAllocation(userId: string, id: string, reason: string): Promi
     throw new FormError('This fiscal year is closed; allocations cannot be voided.');
   }
 
+  let updated: ProjectYearAllocation | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    const [row] = await tx
       .update(projectYearAllocations)
       .set({
         voidedAt: new Date(),
@@ -291,58 +312,80 @@ async function voidAllocation(userId: string, id: string, reason: string): Promi
       })
       .where(eq(projectYearAllocations.id, id))
       .returning();
-    if (!updated) throw new FormError('Project year allocation not found.');
+    if (!row) throw new FormError('Project year allocation not found.');
+    updated = row;
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'void',
       entityType: 'project_year_allocation',
       entityId: id,
       before: snapshot(context.allocation),
-      after: snapshot(updated),
+      after: snapshot(row),
       reason,
     });
   });
+  if (!updated) throw new FormError('Project year allocation not found.');
+  return { allocation: updated, fiscalYear: context.annualPlan.fiscalYear };
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createAllocationAction(formData: FormData): Promise<void> {
+export async function createAllocationAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let projectId = '';
+  const parsed = validateForm(previous, allocationCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let saved: SavedAllocation;
   try {
-    const input = parseForm(allocationCreateSchema, formData);
-    projectId = input.projectId;
-    await createAllocation(user.id, input);
+    saved = await createAllocation(user.id, parsed.data);
   } catch (error) {
-    failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${PROJECTS_PAGE}/${projectId}`, 'Project year allocation saved.');
+  finishWith(
+    `${PROJECTS_PAGE}/${saved.allocation.projectId}`,
+    `Project year allocation FY${saved.fiscalYear} created.`,
+  );
 }
 
-export async function updateAllocationAction(formData: FormData): Promise<void> {
+export async function updateAllocationAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let projectId = '';
+  const parsed = validateForm(previous, allocationUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let saved: SavedAllocation;
   try {
-    const input = parseForm(allocationUpdateSchema, formData);
-    const context = await loadAllocationContext(input.id);
-    projectId = context.project.id;
-    await updateAllocation(user.id, input);
+    saved = await updateAllocation(user.id, parsed.data);
   } catch (error) {
-    failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${PROJECTS_PAGE}/${projectId}`, 'Project year allocation updated.');
+  finishWith(
+    `${PROJECTS_PAGE}/${saved.allocation.projectId}`,
+    `Project year allocation FY${saved.fiscalYear} updated.`,
+  );
 }
 
-export async function voidAllocationAction(formData: FormData): Promise<void> {
+export async function voidAllocationAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let projectId = '';
+  const parsed = validateForm(previous, allocationVoidSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let saved: SavedAllocation;
   try {
-    const input = parseForm(allocationVoidSchema, formData);
-    const context = await loadAllocationContext(input.id);
-    projectId = context.project.id;
-    await voidAllocation(user.id, input.id, input.reason);
+    saved = await voidAllocation(user.id, parsed.data.id, parsed.data.reason);
   } catch (error) {
-    failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${PROJECTS_PAGE}/${projectId}`, 'Project year allocation voided.');
+  finishWith(
+    `${PROJECTS_PAGE}/${saved.allocation.projectId}`,
+    `Project year allocation FY${saved.fiscalYear} voided.`,
+  );
 }

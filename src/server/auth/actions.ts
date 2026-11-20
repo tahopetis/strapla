@@ -1,31 +1,83 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
+import { errorFormState, type FormState } from '@/lib/form-state';
+import { validateForm } from '@/server/actions/common';
 import { validatePasswordPolicy, verifyPassword } from './password';
 import { clearAttempts, isRateLimited, recordFailedAttempt } from './rate-limit';
 import { createSession, destroyCurrentSession } from './session';
 import { countUsers, createUser, findUserByEmail } from './users';
 
-function errorRedirect(path: string, message: string): never {
-  redirect(`${path}?error=${encodeURIComponent(message)}`);
-}
+/**
+ * Authentication forms (W5b): the login and setup pages stay server components
+ * that check the session and the administrator count, and submit into these
+ * actions through the shared client `<Form>`. Validation issues come back under
+ * the input that caused them; rate-limit and credential failures are form-level
+ * messages. A successful sign-in or setup redirects exactly as before.
+ */
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Input names whose submitted value is never echoed back into form state. */
+const SECRET_FIELDS = ['password', 'confirm'] as const;
 
-export async function setupAction(formData: FormData): Promise<void> {
-  const name = String(formData.get('name') ?? '').trim();
-  const email = String(formData.get('email') ?? '').trim().toLowerCase();
-  const password = String(formData.get('password') ?? '');
-  const confirm = String(formData.get('confirm') ?? '');
+const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(254, 'Email must be at most 254 characters.')
+  .regex(EMAIL_PATTERN, 'Enter a valid email address.');
 
-  if (await countUsers() > 0) {
+/** The password policy lives in one place; the schema only decides which field it belongs to. */
+const passwordSchema = z.string().superRefine((value, ctx) => {
+  const message = validatePasswordPolicy(value);
+  if (message !== null) ctx.addIssue({ code: 'custom', message });
+});
+
+const loginSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, 'Enter your password.'),
+});
+
+const setupSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Enter your name.')
+      .max(120, 'Name must be at most 120 characters.'),
+    email: emailSchema,
+    password: passwordSchema,
+    confirm: z.string().min(1, 'Confirm the password.'),
+  })
+  .refine((data) => data.password === data.confirm, {
+    path: ['confirm'],
+    message: 'The passwords do not match.',
+  });
+
+/** Form state without any password (or password confirmation) value. */
+function withoutSecrets(values: Record<string, string>): Record<string, string> {
+  const echoed: Record<string, string> = {};
+  for (const [name, value] of Object.entries(values)) {
+    if (!(SECRET_FIELDS as readonly string[]).includes(name)) echoed[name] = value;
+  }
+  return echoed;
+}
+
+/** The submitted values for a refused submission, minus the secrets. */
+function invalidState(state: FormState): FormState {
+  return { ...state, values: withoutSecrets(state.values ?? {}) };
+}
+
+export async function setupAction(previous: FormState, formData: FormData): Promise<FormState> {
+  if ((await countUsers()) > 0) {
     redirect('/login');
   }
-  if (name.length === 0 || name.length > 120) errorRedirect('/setup', 'Enter a name (at most 120 characters).');
-  if (!EMAIL_PATTERN.test(email)) errorRedirect('/setup', 'Enter a valid email address.');
-  if (password !== confirm) errorRedirect('/setup', 'The passwords do not match.');
-  const policyError = validatePasswordPolicy(password);
-  if (policyError) errorRedirect('/setup', policyError);
+
+  const parsed = validateForm(previous, setupSchema, formData);
+  if (!parsed.ok) return invalidState(parsed.state);
+  const values = withoutSecrets(parsed.values);
+  const { name, email, password } = parsed.data;
 
   let userId: string;
   try {
@@ -33,21 +85,21 @@ export async function setupAction(formData: FormData): Promise<void> {
     userId = created.id;
   } catch (error) {
     console.error('setup: failed to create the first administrator', error);
-    errorRedirect('/setup', 'Could not create the account. Please try again.');
+    return errorFormState(previous, 'Could not create the account. Please try again.', values);
   }
 
   await createSession(userId);
   redirect('/dashboard');
 }
 
-export async function loginAction(formData: FormData): Promise<void> {
-  const email = String(formData.get('email') ?? '').trim().toLowerCase();
-  const password = String(formData.get('password') ?? '');
-
-  if (!email || !password) errorRedirect('/login', 'Enter your email and password.');
+export async function loginAction(previous: FormState, formData: FormData): Promise<FormState> {
+  const parsed = validateForm(previous, loginSchema, formData);
+  if (!parsed.ok) return invalidState(parsed.state);
+  const values = withoutSecrets(parsed.values);
+  const { email, password } = parsed.data;
 
   if (isRateLimited(email)) {
-    errorRedirect('/login', 'Too many attempts. Try again in 15 minutes.');
+    return errorFormState(previous, 'Too many attempts. Try again in 15 minutes.', values);
   }
 
   const user = await findUserByEmail(email);
@@ -56,7 +108,7 @@ export async function loginAction(formData: FormData): Promise<void> {
   if (!user || !user.isActive || !passwordOk) {
     recordFailedAttempt(email);
     console.warn('login failed', { email });
-    errorRedirect('/login', 'Email or password is incorrect.');
+    return errorFormState(previous, 'Email or password is incorrect.', values);
   }
 
   clearAttempts(email);

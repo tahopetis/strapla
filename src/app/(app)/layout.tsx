@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { SubmitButton } from '@/components/form';
 import { logoutAction } from '@/server/auth/actions';
 import { requireUser } from '@/server/auth/session';
 
@@ -40,12 +41,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-600">{user.name}</span>
             <form action={logoutAction}>
-              <button
-                type="submit"
+              <SubmitButton
                 className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                pendingLabel="Signing out…"
               >
                 Sign out
-              </button>
+              </SubmitButton>
             </form>
           </div>
         </div>

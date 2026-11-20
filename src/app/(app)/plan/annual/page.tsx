@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { HiddenField, SelectField, SubmitButton, TextAreaField } from '@/components/form';
+import { Form, HiddenField, SelectField, SubmitButton, TextAreaField } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, PageHeader, StatusBadge } from '@/components/ui';
 import { planYears } from '@/domain/plan';
@@ -71,7 +71,7 @@ export default async function AnnualPlansPage({
           description="The plan starts as a draft; activate it when the fiscal year's budget is settled."
           className="mb-6"
         >
-          <form action={createAnnualPlanAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createAnnualPlanAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="planId" value={strategicPlan.id} />
             <SelectField
               label="Fiscal year"
@@ -86,7 +86,7 @@ export default async function AnnualPlansPage({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Create annual plan</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : (
         <Card title="Every fiscal year in the horizon already has an annual plan">

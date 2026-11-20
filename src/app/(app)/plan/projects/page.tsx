@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CustomFieldInputs } from '@/components/custom-fields';
-import { MoneyField, SelectField, SubmitButton, TextField } from '@/components/form';
+import { Form, MoneyField, SelectField, SubmitButton, TextField } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { ProjectListRow } from '@/server/plan/project-queries';
@@ -84,7 +84,7 @@ export default async function ProjectsPage({
           description="The full-life figures are recorded now; annual allocations are added on the project page."
           className="mb-6"
         >
-          <form action={createProjectAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createProjectAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField
               label="Originating program"
               name="originatingProgramId"
@@ -125,7 +125,7 @@ export default async function ProjectsPage({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Create project</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Server-action tests for the close guard (W4a). The database, session and
+ * Server-action tests for the close guard (W4a/W5b). The database, session and
  * redirect are mocked at the module boundary, so these tests observe what the
- * action does with a submitted form: reject a wrong typed phrase or a blank
- * carry-over before any transaction starts, and let explicit zeros through.
+ * action does with a submitted form: reject a wrong typed phrase, a blank
+ * confirmation or a blank carry-over before any transaction starts, and let
+ * explicit zeros through. A refusal comes back as form state — the message the
+ * form renders beside the values the user entered — not as a redirect.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -19,15 +21,11 @@ vi.mock('@/server/auth/session', () => ({ requireUser: mocks.requireUser }));
 vi.mock('@/db/client', () => ({ getDb: mocks.getDb }));
 vi.mock('./close-queries', () => ({ getCloseState: mocks.getCloseState }));
 
+import type { FormState } from '@/lib/form-state';
 import type { CloseState } from './close-queries';
 import { closeFiscalYearAction } from './close-actions';
 
-class RedirectSignal extends Error {
-  constructor(readonly url: string) {
-    super(url);
-  }
-}
-
+const INITIAL: FormState = { status: 'idle', attempt: 0 };
 const PLAN_ID = '11111111-1111-4111-8111-111111111111';
 const TARGET_PLAN_ID = '22222222-2222-4222-8222-222222222222';
 const PROGRAM_ID = '33333333-3333-4333-8333-333333333333';
@@ -52,14 +50,8 @@ function closeForm(values: Record<string, string>): FormData {
   return form;
 }
 
-async function runAction(form: FormData): Promise<string> {
-  try {
-    await closeFiscalYearAction(form);
-  } catch (error) {
-    if (error instanceof RedirectSignal) return error.url;
-    throw error;
-  }
-  throw new Error('expected the action to redirect');
+async function runAction(form: FormData): Promise<FormState> {
+  return closeFiscalYearAction(INITIAL, form);
 }
 
 beforeEach(() => {
@@ -69,9 +61,6 @@ beforeEach(() => {
     id: 'user-1',
     email: 'owner@example.test',
     name: 'Owner',
-  });
-  mocks.redirect.mockImplementation((url: string) => {
-    throw new RedirectSignal(url);
   });
 });
 
@@ -83,7 +72,7 @@ describe('closeFiscalYearAction guards', () => {
   it('rejects a wrong typed confirmation before any database work', async () => {
     mocks.getCloseState.mockResolvedValue(closeState());
 
-    const url = await runAction(
+    const state = await runAction(
       closeForm({
         annualPlanId: PLAN_ID,
         reference: 'Board memo 12/2027',
@@ -91,7 +80,26 @@ describe('closeFiscalYearAction guards', () => {
       }),
     );
 
-    expect(decodeURIComponent(url)).toContain('Type "CLOSE FY2027" exactly to confirm the close.');
+    expect(state.status).toBe('error');
+    expect(state.message).toContain('Type "CLOSE FY2027" exactly to confirm the close.');
+    // The refused submission keeps what the user entered.
+    expect(state.values?.reference).toBe('Board memo 12/2027');
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it('returns a field error when the typed confirmation is blank', async () => {
+    mocks.getCloseState.mockResolvedValue(closeState());
+
+    const state = await runAction(
+      closeForm({
+        annualPlanId: PLAN_ID,
+        reference: 'Board memo 12/2027',
+        confirmation: '',
+      }),
+    );
+
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors?.confirmation).toContain('Type the close confirmation phrase');
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
@@ -110,7 +118,7 @@ describe('closeFiscalYearAction guards', () => {
       } as unknown as Partial<CloseState>),
     );
 
-    const url = await runAction(
+    const state = await runAction(
       closeForm({
         annualPlanId: PLAN_ID,
         reference: 'Board memo 12/2027',
@@ -118,9 +126,8 @@ describe('closeFiscalYearAction guards', () => {
       }),
     );
 
-    expect(decodeURIComponent(url)).toContain(
-      'PRG-01 capex carry-over is required (use 0 for none).',
-    );
+    expect(state.status).toBe('error');
+    expect(state.message).toContain('PRG-01 capex carry-over is required (use 0 for none).');
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
@@ -141,15 +148,19 @@ describe('closeFiscalYearAction guards', () => {
       } as unknown as Partial<CloseState>),
     );
 
-    await runAction(
-      closeForm({
-        annualPlanId: PLAN_ID,
-        reference: 'Board memo 12/2027',
-        confirmation: 'CLOSE FY2027',
-        [`carry_program_${PROGRAM_ID}_capex`]: '0',
-        [`carry_program_${PROGRAM_ID}_opex`]: '0',
-      }),
-    );
+    // An unexpected failure is rethrown so the error boundary renders; the
+    // point here is that the guards let the submission reach the transaction.
+    await expect(
+      runAction(
+        closeForm({
+          annualPlanId: PLAN_ID,
+          reference: 'Board memo 12/2027',
+          confirmation: 'CLOSE FY2027',
+          [`carry_program_${PROGRAM_ID}_capex`]: '0',
+          [`carry_program_${PROGRAM_ID}_opex`]: '0',
+        }),
+      ),
+    ).rejects.toThrow('stop after the guards');
 
     expect(transaction).toHaveBeenCalledTimes(1);
   });

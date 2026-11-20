@@ -21,27 +21,9 @@ export async function actionUser(): Promise<CurrentUser> {
   return requireUser();
 }
 
-/** Parses a FormData payload with a Zod schema; only string entries are kept. */
-export function parseForm<S extends z.ZodType>(schema: S, formData: FormData): z.output<S> {
-  const raw: Record<string, unknown> = {};
-  for (const [key, value] of formData.entries()) {
-    if (typeof value === 'string') raw[key] = value;
-  }
-  const result = schema.safeParse(raw);
-  if (!result.success) {
-    const issue = result.error.issues[0];
-    throw new FormError(issue?.message ?? 'Invalid input.');
-  }
-  return result.data;
-}
-
 function appendParam(path: string, key: string, value: string): string {
   const separator = path.includes('?') ? '&' : '?';
   return `${path}${separator}${key}=${encodeURIComponent(value)}`;
-}
-
-export function failWith(path: string, message: string): never {
-  redirect(appendParam(path, 'error', message));
 }
 
 export function finishWith(path: string, message = 'Saved.'): never {

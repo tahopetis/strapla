@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Fragment,
   createContext,
   useContext,
   useId,
@@ -27,15 +28,29 @@ import {
  * values, so a refused submission never loses what the user typed.
  */
 
-interface FormContextValue {
+export interface FormStateValue {
   state: FormState;
   pending: boolean;
 }
 
-const FormContext = createContext<FormContextValue | null>(null);
+const FormContext = createContext<FormStateValue | null>(null);
 
-function useFormContext(): FormContextValue | null {
+function useFormContext(): FormStateValue | null {
   return useContext(FormContext);
+}
+
+/**
+ * Provides the submitted state to fields outside `<Form>` — the confirmation
+ * dialog and any hand-built form that uses `useActionState` directly.
+ */
+export function FormStateProvider({
+  value,
+  children,
+}: {
+  value: FormStateValue;
+  children: ReactNode;
+}) {
+  return <FormContext.Provider value={value}>{children}</FormContext.Provider>;
 }
 
 /** The error for one input, when the surrounding `<Form>` has one. */
@@ -84,9 +99,7 @@ export function Form({
     <form action={formAction} className={className}>
       <FormContext.Provider value={{ state, pending }}>
         <FormMessage state={state} />
-        <div key={state.attempt} className="contents">
-          {children}
-        </div>
+        <Fragment key={state.attempt}>{children}</Fragment>
       </FormContext.Provider>
     </form>
   );
@@ -141,6 +154,7 @@ export function TextField({
   hint,
   autoComplete,
   maxLength,
+  minLength,
 }: {
   label: string;
   name: string;
@@ -151,6 +165,7 @@ export function TextField({
   hint?: ReactNode;
   autoComplete?: string;
   maxLength?: number;
+  minLength?: number;
 }) {
   const { error, errorId, hintId, describedBy, invalid } = useFieldState(name);
   // A password is never echoed back into the DOM.
@@ -169,6 +184,7 @@ export function TextField({
         placeholder={placeholder}
         autoComplete={autoComplete}
         maxLength={maxLength}
+        minLength={minLength}
         aria-invalid={invalid}
         aria-describedby={describedBy(Boolean(hint))}
         className={inputClass}

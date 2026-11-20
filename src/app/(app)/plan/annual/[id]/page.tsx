@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import {
+  Form,
   HiddenField,
   MoneyField,
   ReasonField,
@@ -110,11 +112,11 @@ export default async function AnnualPlanPage({
           {canActivate ? (
             <details className="mt-4 border-t border-slate-100 pt-4">
               <summary className={summaryClass}>Activate annual plan</summary>
-              <form action={activateAnnualPlanAction} className="mt-4 space-y-3">
+              <Form action={activateAnnualPlanAction} className="mt-4 space-y-3">
                 <HiddenField name="id" value={detail.annualPlan.id} />
                 <ReasonField hint="Activation is audited; programs stay editable until the yearly close." />
                 <SubmitButton>Activate annual plan</SubmitButton>
-              </form>
+              </Form>
             </details>
           ) : null}
         </Card>
@@ -167,7 +169,7 @@ function ProgramsSection({
           title="Add annual program"
           description="A program belongs to exactly one SI (BR-4) and carries capex and opex budgets. A continuing program links to last year's program (program thread)."
         >
-          <form action={createProgramAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createProgramAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="annualPlanId" value={detail.annualPlan.id} />
             <TextField label="Code" name="code" defaultValue={detail.suggestedProgramCode} required maxLength={40} />
             <TextField label="Name" name="name" required maxLength={160} />
@@ -206,7 +208,7 @@ function ProgramsSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add program</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 
@@ -320,7 +322,7 @@ function ProgramCard({
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit program</summary>
-            <form action={updateProgramAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Form action={updateProgramAction} className="mt-4 grid gap-3 sm:grid-cols-2">
               <HiddenField name="id" value={program.id} />
               <TextField label="Code" name="code" defaultValue={program.code} required maxLength={40} />
               <TextField label="Name" name="name" defaultValue={program.name} required maxLength={160} />
@@ -352,17 +354,21 @@ function ProgramCard({
               <div className="sm:col-span-2">
                 <SubmitButton>Save changes</SubmitButton>
               </div>
-            </form>
+            </Form>
           </details>
 
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-red-700">Void program</summary>
-            <form action={voidProgramAction} className="mt-4 space-y-3">
+          <div className="flex items-start">
+            <ConfirmDialog
+              action={voidProgramAction}
+              triggerLabel="Void program"
+              title="Void this program?"
+              consequence="Voiding keeps the program and its history but removes it from active lists."
+              confirmLabel="Void program"
+            >
               <HiddenField name="id" value={program.id} />
-              <ReasonField hint="Voiding keeps the record and history; programs with projects or continuations cannot be voided." />
-              <SubmitButton variant="danger">Void program</SubmitButton>
-            </form>
-          </details>
+              <ReasonField hint="Recorded in the audit trail." />
+            </ConfirmDialog>
+          </div>
         </div>
       ) : null}
     </Card>

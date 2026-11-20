@@ -16,13 +16,13 @@ import {
   type CustomFieldEntityType,
   type CustomFieldType,
 } from '@/domain/custom-fields';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 
@@ -90,9 +90,10 @@ async function createCustomField(
     required: boolean;
     description: string;
   },
-): Promise<void> {
+): Promise<CustomField> {
   await assertNameFree(input.entityType, input.name);
 
+  let created: CustomField | undefined;
   await getDb().transaction(async (tx) => {
     const activeKeys = await tx
       .select({ key: customFields.key })
@@ -103,7 +104,7 @@ async function createCustomField(
           isNull(customFields.archivedAt),
         ),
       );
-    const [created] = await tx
+    [created] = await tx
       .insert(customFields)
       .values({
         entityType: input.entityType,
@@ -126,6 +127,8 @@ async function createCustomField(
       after: fieldSnapshot(created),
     });
   });
+  if (!created) throw new Error('failed to create the custom field');
+  return created;
 }
 
 /**
@@ -171,13 +174,14 @@ async function updateCustomField(
     description: string;
     reason: string;
   },
-): Promise<void> {
+): Promise<CustomField> {
   const existing = await requireField(input.id);
   await assertNameFree(existing.entityType, input.name, existing.id);
   await assertTypeChangeKeepsValues(existing, input.type);
 
+  let updated: CustomField | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(customFields)
       .set({
         name: input.name,
@@ -201,6 +205,8 @@ async function updateCustomField(
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('That custom field no longer exists.');
+  return updated;
 }
 
 /**
@@ -209,9 +215,10 @@ async function updateCustomField(
  * reports and exports) and its name is freed for reuse; the recorded values stay
  * in place and their before-state is kept in the audit snapshot.
  */
-async function removeCustomField(actorId: string, id: string, reason: string): Promise<void> {
+async function removeCustomField(actorId: string, id: string, reason: string): Promise<CustomField> {
   const existing = await requireField(id);
 
+  let archived: CustomField | undefined;
   await getDb().transaction(async (tx) => {
     const rows = await tx
       .select({ entityId: customFieldValues.entityId, values: customFieldValues.values })
@@ -225,7 +232,7 @@ async function removeCustomField(actorId: string, id: string, reason: string): P
       recordedValues.push({ recordId: row.entityId, value: recorded });
     }
 
-    const [archived] = await tx
+    const [archivedRow] = await tx
       .update(customFields)
       .set({
         archivedAt: new Date(),
@@ -235,7 +242,8 @@ async function removeCustomField(actorId: string, id: string, reason: string): P
       })
       .where(eq(customFields.id, existing.id))
       .returning();
-    if (!archived) throw new FormError('That custom field no longer exists.');
+    if (!archivedRow) throw new FormError('That custom field no longer exists.');
+    archived = archivedRow;
 
     await recordAudit(tx, {
       actorUserId: actorId,
@@ -244,45 +252,56 @@ async function removeCustomField(actorId: string, id: string, reason: string): P
       entityId: existing.id,
       before: { ...fieldSnapshot(existing), recordedValues },
       after: {
-        ...fieldSnapshot(archived),
-        archivedAt: archived.archivedAt?.toISOString() ?? null,
+        ...fieldSnapshot(archivedRow),
+        archivedAt: archivedRow.archivedAt?.toISOString() ?? null,
       },
       reason,
     });
   });
+  if (!archived) throw new FormError('That custom field no longer exists.');
+  return archived;
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createCustomFieldAction(formData: FormData): Promise<void> {
+export async function createCustomFieldAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, customFieldCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let created: CustomField;
   try {
-    const input = parseForm(customFieldCreateSchema, formData);
-    await createCustomField(actor.id, input);
+    created = await createCustomField(actor.id, parsed.data);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Custom field added.');
+  finishWith(PAGE, `Custom field “${created.name}” added.`);
 }
 
-export async function updateCustomFieldAction(formData: FormData): Promise<void> {
+export async function updateCustomFieldAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, customFieldUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: CustomField;
   try {
-    const input = parseForm(customFieldUpdateSchema, formData);
-    await updateCustomField(actor.id, input);
+    updated = await updateCustomField(actor.id, parsed.data);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Custom field updated.');
+  finishWith(PAGE, `Custom field “${updated.name}” updated.`);
 }
 
-export async function removeCustomFieldAction(formData: FormData): Promise<void> {
+export async function removeCustomFieldAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, customFieldRemoveSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let archived: CustomField;
   try {
-    const input = parseForm(customFieldRemoveSchema, formData);
-    await removeCustomField(actor.id, input.id, input.reason);
+    archived = await removeCustomField(actor.id, parsed.data.id, parsed.data.reason);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Custom field removed.');
+  finishWith(PAGE, `Custom field “${archived.name}” removed.`);
 }

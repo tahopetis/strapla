@@ -1,4 +1,6 @@
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import {
+  Form,
   HiddenField,
   MoneyField,
   ReasonField,
@@ -18,6 +20,7 @@ import {
   voidCommitmentAction,
   voidSpendAction,
 } from '@/server/plan/execution-actions';
+import { SettlementInput } from './settlement-input';
 
 const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
 
@@ -161,7 +164,7 @@ export function CommitmentsSection({
 
       {editable ? (
         <Card title="Record commitment" description="Commitments are fiscal-year money for this parent.">
-          <form action={createCommitmentAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createCommitmentAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name={parentField} value={parentId} />
             <SelectField
               label="Component"
@@ -185,7 +188,7 @@ export function CommitmentsSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add commitment</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 
@@ -235,7 +238,7 @@ export function CommitmentsSection({
                         <details>
                           <summary className={summaryClass}>Manage</summary>
                           <div className="mt-3 grid gap-4 lg:grid-cols-2">
-                            <form action={updateCommitmentAction} className="space-y-2">
+                            <Form action={updateCommitmentAction} className="grid gap-2">
                               <HiddenField name="id" value={row.commitment.id} />
                               <SelectField
                                 label="Component"
@@ -275,13 +278,22 @@ export function CommitmentsSection({
                                 rows={2}
                               />
                               <ReasonField />
-                              <SubmitButton>Save commitment</SubmitButton>
-                            </form>
-                            <form action={voidCommitmentAction} className="space-y-2">
-                              <HiddenField name="id" value={row.commitment.id} />
-                              <ReasonField hint="Only commitments without settlements can be voided." />
-                              <SubmitButton variant="danger">Void commitment</SubmitButton>
-                            </form>
+                              <div>
+                                <SubmitButton>Save commitment</SubmitButton>
+                              </div>
+                            </Form>
+                            <div className="flex items-start">
+                              <ConfirmDialog
+                                action={voidCommitmentAction}
+                                triggerLabel="Void commitment"
+                                title="Void this commitment?"
+                                consequence="Voiding keeps the record and its history but takes it out of the open commitments; a commitment with settlements cannot be voided."
+                                confirmLabel="Void commitment"
+                              >
+                                <HiddenField name="id" value={row.commitment.id} />
+                                <ReasonField hint="Recorded in the audit trail." />
+                              </ConfirmDialog>
+                            </div>
                           </div>
                         </details>
                       ) : (
@@ -335,7 +347,7 @@ export function SpendSection({
 
       {editable ? (
         <Card title="Record spend" description="Optionally settle open commitments with this payment.">
-          <form action={createSpendAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createSpendAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name={parentField} value={parentId} />
             <SelectField
               label="Component"
@@ -384,15 +396,11 @@ export function SpendSection({
                 </p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {settlementOptions.map((option) => (
-                    <label key={option.commitmentId} className="block text-xs text-slate-600">
-                      {option.label}
-                      <input
-                        name={`settle_${option.commitmentId}`}
-                        inputMode="numeric"
-                        placeholder="0"
-                        className="mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                      />
-                    </label>
+                    <SettlementInput
+                      key={option.commitmentId}
+                      name={`settle_${option.commitmentId}`}
+                      label={option.label}
+                    />
                   ))}
                 </div>
               </div>
@@ -400,7 +408,7 @@ export function SpendSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Record spend</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 
@@ -463,7 +471,7 @@ export function SpendSection({
                         <details>
                           <summary className={summaryClass}>Manage</summary>
                           <div className="mt-3 grid gap-4 lg:grid-cols-2">
-                            <form action={updateSpendAction} className="space-y-2">
+                            <Form action={updateSpendAction} className="grid gap-2">
                               <HiddenField name="id" value={row.spend.id} />
                               <SelectField
                                 label="Component"
@@ -523,13 +531,22 @@ export function SpendSection({
                                 defaultValue={row.spend.settlementKind}
                               />
                               <ReasonField hint="Settlement links are fixed after creation; void and re-enter to change them." />
-                              <SubmitButton>Save spend</SubmitButton>
-                            </form>
-                            <form action={voidSpendAction} className="space-y-2">
-                              <HiddenField name="id" value={row.spend.id} />
-                              <ReasonField hint="Voiding releases its settlements and excludes it from remaining." />
-                              <SubmitButton variant="danger">Void spend</SubmitButton>
-                            </form>
+                              <div>
+                                <SubmitButton>Save spend</SubmitButton>
+                              </div>
+                            </Form>
+                            <div className="flex items-start">
+                              <ConfirmDialog
+                                action={voidSpendAction}
+                                triggerLabel="Void spend"
+                                title="Void this spend entry?"
+                                consequence="Voiding keeps the record and its history but releases any commitment it settled, so those commitments become open again."
+                                confirmLabel="Void spend"
+                              >
+                                <HiddenField name="id" value={row.spend.id} />
+                                <ReasonField hint="Recorded in the audit trail." />
+                              </ConfirmDialog>
+                            </div>
                           </div>
                         </details>
                       ) : (

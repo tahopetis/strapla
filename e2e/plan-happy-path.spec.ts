@@ -55,13 +55,13 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await planForm.locator('input[name="startFiscalYear"]').fill('2026');
   await planForm.locator('input[name="endFiscalYear"]').fill('2030');
   await page.getByRole('button', { name: 'Create plan' }).click();
-  await expect(page.getByText('Strategic plan created.')).toBeVisible();
+  await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” created\./)).toBeVisible();
 
   const activatePlan = page.locator('details').filter({ hasText: 'Activate plan' });
   await activatePlan.locator('summary').click();
   await activatePlan.locator('textarea[name="reason"]').fill('Approved by the directors.');
   await activatePlan.getByRole('button', { name: 'Activate plan' }).click();
-  await expect(page.getByText('Strategic plan activated.')).toBeVisible();
+  await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” activated\./)).toBeVisible();
   endTiming('first-plan-step', firstPlanStepStartedAt);
 
   const initiativeForm = page
@@ -74,14 +74,14 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await initiativeForm.locator('input[name="envelopeAmount"]').fill('5000000000');
   await initiativeForm.locator('input[name="priorProgramBudgetUsed"]').fill('750000000');
   await page.getByRole('button', { name: 'Add initiative' }).click();
-  await expect(page.getByText('Strategic initiative created.')).toBeVisible();
+  await expect(page.getByText(/Strategic initiative SI-01 created\./)).toBeVisible();
   await expect(page.getByText('SI-01 · Digital Workplace')).toBeVisible();
 
   // -------------------------------------------- annual plan and annual program
   await page.goto('/plan/annual');
   await page.locator('select[name="fiscalYear"]').selectOption('2027');
   await page.getByRole('button', { name: 'Create annual plan' }).click();
-  await expect(page.getByText('Annual plan created.')).toBeVisible();
+  await expect(page.getByText(/Annual plan FY2027 created\./)).toBeVisible();
 
   await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
@@ -90,7 +90,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await activateAnnualPlan.locator('summary').click();
   await activateAnnualPlan.locator('textarea[name="reason"]').fill('FY2027 budget approved.');
   await activateAnnualPlan.getByRole('button', { name: 'Activate annual plan' }).click();
-  await expect(page.getByText('Annual plan activated.')).toBeVisible();
+  await expect(page.getByText(/Annual plan FY2027 activated\./)).toBeVisible();
 
   const programForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
   await programForm.locator('input[name="code"]').fill('PRG-2027-001');
@@ -101,7 +101,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await programForm.locator('input[name="capexBudget"]').fill('1200000000');
   await programForm.locator('input[name="opexBudget"]').fill('300000000');
   await page.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText('Annual program created.')).toBeVisible();
+  await expect(page.getByText(/Annual program PRG-2027-001 created\./)).toBeVisible();
   await expect(page.getByText('PRG-2027-001 · Workplace Modernisation 2027')).toBeVisible();
 
   // ---------------------------------------------------------------- project
@@ -119,9 +119,28 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await projectForm.locator('input[name="allocatedBudgetFullLife"]').fill('1000000000');
   await projectForm.locator('input[name="submittedPrice"]').fill('950000000');
   await projectForm.locator('input[name="finalDealPrice"]').fill('900000000');
+  // W5b acceptance: one invalid field returns the form with every value intact,
+  // the message under the offending input, and nothing created.
+  await projectForm.locator('input[name="startFiscalYear"]').fill('1999');
   await page.getByRole('button', { name: 'Create project' }).click();
-  await expect(page.getByText('Project created.')).toBeVisible();
-  await expect(page.getByText('PRJ-2027-001')).toBeVisible();
+  await expect(
+    page.getByText('Start fiscal year must be between 2000 and 2100.'),
+  ).toBeVisible();
+  await expect(projectForm.locator('input[name="name"]')).toHaveValue('Device Refresh 2027');
+  await expect(projectForm.locator('input[name="owner"]')).toHaveValue('IT Infrastructure Lead');
+  await expect(projectForm.locator('input[name="startFiscalYear"]')).toHaveValue('1999');
+  await expect(projectForm.locator('input[name="startFiscalYear"]')).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  await expect(projectForm.locator('select[name="originatingProgramId"]')).toHaveValue(
+    /^[0-9a-f-]{36}$/,
+  );
+
+  await projectForm.locator('input[name="startFiscalYear"]').fill('2027');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.getByText(/Project PRJ-2027-001 created\./)).toBeVisible();
+  await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
 
   // ijin prinsip with the BR-9 over-approved flag
   await Promise.all([
@@ -137,7 +156,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await ijinForm.locator('input[name="approvedAmount"]').fill('800000000');
   await ijinForm.locator('input[name="approver"]').fill('Board of Directors');
   await page.getByRole('button', { name: 'Record ijin prinsip' }).click();
-  await expect(page.getByText('Ijin prinsip saved.')).toBeVisible();
+  await expect(page.getByText(/Ijin prinsip for PRJ-2027-001 saved\./)).toBeVisible();
   await expect(page.getByText('over approved budget (BR-9)')).toBeVisible();
 
   // ------------------------------------------------ project year allocation (M2)
@@ -150,7 +169,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await allocationForm.locator('input[name="allocationCapex"]').fill('500000000');
   await allocationForm.locator('input[name="allocationOpex"]').fill('100000000');
   await page.getByRole('button', { name: 'Add allocation' }).click();
-  await expect(page.getByText('Project year allocation saved.')).toBeVisible();
+  await expect(page.getByText(/Project year allocation FY2027 created\./)).toBeVisible();
   await expect(
     page.getByText('FY2027 · PRG-2027-001 · Workplace Modernisation 2027').first(),
   ).toBeVisible();
@@ -167,7 +186,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await commitmentForm.locator('input[name="commitmentDate"]').fill('2027-08-15');
   await commitmentForm.locator('input[name="reference"]').fill('PO-2027-001');
   await page.getByRole('button', { name: 'Add commitment' }).click();
-  await expect(page.getByText('Commitment recorded.')).toBeVisible();
+  await expect(page.getByText(/Commitment PO-2027-001 recorded\./)).toBeVisible();
 
   // W8a timing: one spend entry recorded against the allocation.
   const spendEntryStartedAt = performance.now();
@@ -181,7 +200,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await spendForm.locator('input[name="reference"]').fill('INV-2027-0001');
   await spendForm.locator('input[name^="settle_"]').first().fill('60000000');
   await page.getByRole('button', { name: 'Record spend' }).click();
-  await expect(page.getByText('Spend entry recorded.')).toBeVisible();
+  await expect(page.getByText(/Spend entry INV-2027-0001 recorded\./)).toBeVisible();
   await expect(page.getByText('partially settled')).toBeVisible();
   endTiming('spend-entry', spendEntryStartedAt);
 
@@ -205,8 +224,8 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await recurringForm.locator('select[name="categoryId"]').selectOption({ label: 'Connectivity' });
   await recurringForm.locator('input[name="opexBudget"]').fill('240000000');
   await page.getByRole('button', { name: 'Add recurring ops item' }).click();
-  await expect(page.getByText('Recurring ops item created.')).toBeVisible();
-  await expect(page.getByText('Leased lines 2027')).toBeVisible();
+  await expect(page.getByText(/Recurring ops item “Leased lines 2027” created\./)).toBeVisible();
+  await expect(page.getByText('Leased lines 2027').first()).toBeVisible();
 
   // -------------------------------------------------- opening balances view
   // W8a timing: open the reconciliation view and load its control totals.
@@ -238,7 +257,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await addFieldForm.locator('select[name="type"]').selectOption('text');
   await addFieldForm.locator('textarea[name="description"]').fill('How the delivery is staged.');
   await addFieldForm.getByRole('button', { name: 'Add field' }).click();
-  await expect(page.getByText('Custom field added.')).toBeVisible();
+  await expect(page.getByText(/Custom field “Delivery note” added\./)).toBeVisible();
   await expect(page.getByText('Delivery note').first()).toBeVisible();
 
   // ---------------------------------------- opening-balance import (W3b)
@@ -363,7 +382,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await projectEditForm.getByLabel('Delivery note').fill('Phased rollout');
   await projectEditForm.locator('textarea[name="reason"]').fill('Record the procurement detail.');
   await projectEditForm.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByText('Project updated.')).toBeVisible();
+  await expect(page.getByText(/Project PRJ-2027-001 updated\./)).toBeVisible();
   await expect(page.getByText('Additional fields')).toBeVisible();
   await expect(page.locator('dd', { hasText: 'Open tender' })).toBeVisible();
   await expect(page.locator('dd', { hasText: 'Phased rollout' })).toBeVisible();
@@ -409,14 +428,13 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // removing the field archives it, frees the name and drops it from forms and reports
   await page.goto('/admin/custom-fields');
   const deliveryField = page.locator('li').filter({ hasText: 'Delivery note' });
-  await deliveryField.locator('summary').filter({ hasText: 'Remove field' }).click();
-  const removeFieldForm = deliveryField
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: 'Remove field' }) });
-  await removeFieldForm.locator('textarea[name="reason"]').fill('No longer needed.');
-  await removeFieldForm.getByRole('button', { name: 'Remove field' }).click();
-  await expect(page.getByText('Custom field removed.')).toBeVisible();
-  await expect(page.getByText('Delivery note')).toHaveCount(0);
+  await deliveryField.getByRole('button', { name: 'Remove field' }).click();
+  const removeFieldDialog = deliveryField.getByRole('dialog');
+  await expect(removeFieldDialog).toBeVisible();
+  await removeFieldDialog.locator('textarea[name="reason"]').fill('No longer needed.');
+  await removeFieldDialog.getByRole('button', { name: 'Remove field' }).click();
+  await expect(page.getByText(/Custom field “Delivery note” removed\./)).toBeVisible();
+  await expect(page.locator('li').getByText('Delivery note')).toHaveCount(0);
 
   await page.goto('/plan/projects');
   await page
@@ -464,17 +482,17 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await createMember.locator('input[name="email"]').fill('second-admin@strapla.test');
   await createMember.locator('input[name="password"]').fill('another strong password');
   await page.getByRole('button', { name: 'Create member' }).click();
-  await expect(page.getByText('Member created.')).toBeVisible();
+  await expect(page.getByText(/Member Second Admin created\./)).toBeVisible();
   await expect(page.getByText('second-admin@strapla.test')).toBeVisible();
 
   const memberRow = page.locator('tbody tr', { hasText: 'second-admin@strapla.test' });
   await memberRow.locator('summary', { hasText: 'Manage' }).click();
-  const deactivateForm = memberRow
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: 'Deactivate member' }) });
-  await deactivateForm.locator('textarea[name="reason"]').fill('Testing the deactivation flow.');
-  await deactivateForm.getByRole('button', { name: 'Deactivate member' }).click();
-  await expect(page.getByText('Member deactivated.')).toBeVisible();
+  await memberRow.getByRole('button', { name: 'Deactivate member' }).click();
+  const deactivateDialog = memberRow.getByRole('dialog');
+  await expect(deactivateDialog).toBeVisible();
+  await deactivateDialog.locator('textarea[name="reason"]').fill('Testing the deactivation flow.');
+  await deactivateDialog.getByRole('button', { name: 'Deactivate member' }).click();
+  await expect(page.getByText(/Member Second Admin deactivated\./)).toBeVisible();
 
   await page.goto('/admin/audit?entityType=user');
   await expect(page.locator('tbody').getByText('member_create').first()).toBeVisible();
@@ -487,7 +505,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
     .filter({ has: page.getByRole('button', { name: 'Create annual plan' }) });
   await annualForm.locator('select[name="fiscalYear"]').selectOption('2028');
   await page.getByRole('button', { name: 'Create annual plan' }).click();
-  await expect(page.getByText('Annual plan created.')).toBeVisible();
+  await expect(page.getByText(/Annual plan FY2028 created\./)).toBeVisible();
   await expect(page.locator('tbody tr', { hasText: 'FY2028' })).toBeVisible();
 
   await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
@@ -501,7 +519,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
     .locator('select[name="prevProgramId"]')
     .selectOption({ label: 'PRG-2027-001 · Workplace Modernisation 2027 (FY2027, SI-01)' });
   await page.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText('Annual program created.')).toBeVisible();
+  await expect(page.getByText(/Annual program .* created\./)).toBeVisible();
   await expect(page.getByText('Continues program').first()).toBeVisible();
 
   // close FY2027 with a program carry-over
@@ -529,7 +547,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
 
   await page.locator('input[name="confirmation"]').fill('CLOSE FY2027');
   await page.getByRole('button', { name: /Close FY2027 and carry over/ }).click();
-  await expect(page.getByText('Fiscal year closed and carry-over recorded.')).toBeVisible();
+  await expect(page.getByText(/Fiscal year FY2027 closed and carry-over recorded\./)).toBeVisible();
   await page.goto('/plan/annual');
   await expect(page.locator('tbody tr', { hasText: 'FY2027' }).getByText('closed')).toBeVisible();
 

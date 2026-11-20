@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import {
+  Form,
   HiddenField,
   MoneyField,
   ReasonField,
@@ -48,7 +50,7 @@ export function ProjectAllocationsSection({
           title="Add annual allocation"
           description="The program's available budget is budget + carry-in per component. Allocating above it is flagged, never blocked (BR-7/BR-17)."
         >
-          <form action={createAllocationAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createAllocationAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="projectId" value={projectId} />
             <SelectField
               label="Fiscal year program"
@@ -77,7 +79,7 @@ export function ProjectAllocationsSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add allocation</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 
@@ -177,7 +179,7 @@ function AllocationCard({
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit allocation</summary>
-            <form action={updateAllocationAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Form action={updateAllocationAction} className="mt-4 grid gap-3 sm:grid-cols-2">
               <HiddenField name="id" value={allocation.id} />
               <MoneyField
                 label="Capex allocation"
@@ -210,17 +212,21 @@ function AllocationCard({
               <div className="sm:col-span-2">
                 <SubmitButton>Save changes</SubmitButton>
               </div>
-            </form>
+            </Form>
           </details>
 
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-red-700">Void allocation</summary>
-            <form action={voidAllocationAction} className="mt-4 space-y-3">
+          <div className="flex items-start">
+            <ConfirmDialog
+              action={voidAllocationAction}
+              triggerLabel="Void allocation"
+              title="Void this fiscal-year allocation?"
+              consequence="Voiding keeps the record and its history; the allocation leaves the active fiscal year."
+              confirmLabel="Void allocation"
+            >
               <HiddenField name="id" value={allocation.id} />
-              <ReasonField hint="Voiding keeps the record and history; commitments and spend block voiding once recorded." />
-              <SubmitButton variant="danger">Void allocation</SubmitButton>
-            </form>
-          </details>
+              <ReasonField hint="Recorded in the audit trail." />
+            </ConfirmDialog>
+          </div>
         </div>
       ) : null}
     </Card>

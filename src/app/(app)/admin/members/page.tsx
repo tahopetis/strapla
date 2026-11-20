@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { HiddenField, ReasonField, SubmitButton, TextField } from '@/components/form';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { Form, HiddenField, ReasonField, SubmitButton, TextField } from '@/components/form';
 import { Badge, Card, Flash, PageHeader } from '@/components/ui';
 import {
   activateMemberAction,
@@ -16,6 +17,12 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Members' };
 
 const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
+const rowButtonClass =
+  'rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50';
+const rowDangerButtonClass =
+  'rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50';
+const rowSuccessButtonClass =
+  'rounded border border-emerald-300 bg-white px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50';
 
 export default async function MembersPage({
   searchParams,
@@ -44,14 +51,20 @@ export default async function MembersPage({
           title="Create member"
           description="The administrator sets an initial password and hands it over out of band; the member changes it by resetting it here."
         >
-          <form action={createMemberAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createMemberAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <TextField label="Name" name="name" required maxLength={120} />
             <TextField label="Email" name="email" type="email" required maxLength={254} />
-            <TextField label="Initial password" name="password" type="password" required autoComplete="new-password" />
+            <TextField
+              label="Initial password"
+              name="password"
+              type="password"
+              required
+              autoComplete="new-password"
+            />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Create member</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
 
         <Card title="Accounts" description="Active sessions are revoked on deactivation and password reset.">
@@ -96,71 +109,60 @@ export default async function MembersPage({
                         <details>
                           <summary className={summaryClass}>Manage</summary>
                           <div className="mt-3 grid gap-4 lg:grid-cols-3">
-                            <form action={resetMemberPasswordAction} className="space-y-2">
+                            <Form action={resetMemberPasswordAction} className="space-y-2">
                               <p className="text-xs font-medium text-slate-600">Reset password</p>
                               <HiddenField name="userId" value={member.user.id} />
-                              <input
+                              <TextField
+                                label="New password"
                                 name="password"
                                 type="password"
                                 required
-                                minLength={12}
-                                placeholder="New password (12+ characters)"
                                 autoComplete="new-password"
-                                className="block w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                                minLength={12}
+                                hint="At least 12 characters."
                               />
-                              <textarea
-                                name="reason"
-                                required
-                                rows={2}
-                                placeholder="Reason (audited)"
-                                className="block w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                              />
-                              <button
-                                type="submit"
-                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                              >
+                              <ReasonField hint="Recorded in the audit trail." />
+                              <SubmitButton className={rowButtonClass} pendingLabel="Resetting…">
                                 Reset password
-                              </button>
-                            </form>
+                              </SubmitButton>
+                            </Form>
 
-                            <form action={revokeMemberSessionsAction} className="space-y-2">
+                            <Form action={revokeMemberSessionsAction} className="space-y-2">
                               <p className="text-xs font-medium text-slate-600">Revoke sessions</p>
                               <HiddenField name="userId" value={member.user.id} />
                               <ReasonField hint="Signs the member out everywhere." />
-                              <button
-                                type="submit"
-                                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                              >
+                              <SubmitButton className={rowButtonClass} pendingLabel="Revoking…">
                                 Revoke sessions
-                              </button>
-                            </form>
+                              </SubmitButton>
+                            </Form>
 
                             {member.user.isActive && !isSelf ? (
-                              <form action={deactivateMemberAction} className="space-y-2">
+                              <div className="space-y-2">
                                 <p className="text-xs font-medium text-red-700">Deactivate account</p>
-                                <HiddenField name="userId" value={member.user.id} />
-                                <ReasonField hint="The account and its history remain; it can be reactivated." />
-                                <button
-                                  type="submit"
-                                  className="rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                                <ConfirmDialog
+                                  action={deactivateMemberAction}
+                                  triggerLabel="Deactivate member"
+                                  title={`Deactivate ${member.user.name}?`}
+                                  consequence="The account and its history stay on record, but the member is signed out everywhere and cannot sign in until reactivated."
+                                  confirmLabel="Deactivate member"
+                                  triggerClassName={rowDangerButtonClass}
+                                  pendingLabel="Deactivating…"
                                 >
-                                  Deactivate member
-                                </button>
-                              </form>
+                                  <HiddenField name="userId" value={member.user.id} />
+                                  <ReasonField hint="Recorded in the audit trail." />
+                                </ConfirmDialog>
+                              </div>
                             ) : null}
 
                             {!member.user.isActive ? (
-                              <form action={activateMemberAction} className="space-y-2">
+                              <Form action={activateMemberAction} className="space-y-2">
                                 <p className="text-xs font-medium text-emerald-700">Reactivate account</p>
                                 <HiddenField name="userId" value={member.user.id} />
                                 <ReasonField hint="Sessions are not restored; the member signs in again." />
-                                <button
-                                  type="submit"
-                                  className="rounded border border-emerald-300 bg-white px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
-                                >
+                                <SubmitButton className={rowSuccessButtonClass} pendingLabel="Activating…">
                                   Activate member
-                                </button>
-                              </form>
+                                </SubmitButton>
+                              </Form>
                             ) : null}
                           </div>
                         </details>
