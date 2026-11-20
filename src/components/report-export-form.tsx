@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { secondaryButtonClass } from '@/components/ui';
 import type { CustomFieldDefinition } from '@/domain/custom-fields';
@@ -29,6 +30,7 @@ export function ReportExportForm({
   /** Ticked fields; when omitted every active field is ticked. */
   selectedExportFieldIds?: readonly string[];
 }) {
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [notice, setNotice] = useState<string | null>(null);
@@ -57,6 +59,9 @@ export function ReportExportForm({
             ? 'Selection saved. This report will show no extra custom columns.'
             : `Selection saved: ${names.join(', ')}.`,
         );
+        // Apply the saved selection to this view: drop an explicit columns
+        // parameter so the report re-reads the preference we just stored.
+        router.replace(`/reports/${reportKey}`);
       } catch {
         setError('Could not save the selection. Try again.');
       }
