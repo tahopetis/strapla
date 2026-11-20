@@ -59,11 +59,15 @@ export default async function StrategicPlanPage({
           plan ? (
             <PlanHeaderActions
               status={plan.status}
-              activation={{
-                action: activatePlanAction,
-                id: plan.id,
-                label: 'Activate plan',
-              }}
+              activation={
+                plan.status === 'draft'
+                  ? {
+                      action: activatePlanAction,
+                      id: plan.id,
+                      label: 'Activate plan',
+                    }
+                  : undefined
+              }
             />
           ) : undefined
         }

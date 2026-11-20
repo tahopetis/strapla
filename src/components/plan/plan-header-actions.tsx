@@ -11,11 +11,15 @@ const ACTIVATION_PENDING_LABEL = 'Activating…';
 type PlanStatus = 'draft' | 'active' | 'archived' | 'closed';
 
 /**
- * W1a: the page header carries the plan status and, for a draft, the activation
- * form. It is visible instead of hidden inside a closed disclosure, and it
- * reuses the same server action and reason field as before (the W5b form
- * pattern), so the audit entry is unchanged and a refused submission keeps the
- * typed reason under an inline error.
+ * W1a: the page header carries the plan status and, when the caller allows it,
+ * the activation form. It is visible instead of hidden inside a closed
+ * disclosure, and it reuses the same server action and reason field as before
+ * (the W5b form pattern), so the audit entry is unchanged and a refused
+ * submission keeps the typed reason under an inline error.
+ *
+ * The caller decides when activation is allowed (a draft plan, and for an
+ * annual plan an active strategic plan); this component only renders the
+ * form it is given.
  */
 export function PlanHeaderActions({
   status,
@@ -39,7 +43,7 @@ export function PlanHeaderActions({
         <StatusBadge status={status} />
         {children}
       </div>
-      {status === 'draft' && activation ? (
+      {activation ? (
         <Form
           action={activation.action}
           className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"
