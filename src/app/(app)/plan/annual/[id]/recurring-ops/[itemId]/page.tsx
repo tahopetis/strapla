@@ -26,7 +26,7 @@ export default async function RecurringOpsFundingPage({
 }) {
   const { id, itemId } = await params;
   const { error, message } = await searchParams;
-  const funding = await getRecurringOpsFunding(itemId);
+  const funding = await getRecurringOpsFunding(itemId, { withCustomFields: true });
   if (!funding || funding.annualPlan.id !== id) notFound();
 
   const categories = await listSpendCategoryOptions();
@@ -67,6 +67,8 @@ export default async function RecurringOpsFundingPage({
           editable={editable}
           allowCapex={false}
           today={today}
+          customFields={funding.customFields.commitmentFields}
+          customValues={funding.customFields.commitmentValues}
         />
 
         <SpendSection
@@ -79,6 +81,8 @@ export default async function RecurringOpsFundingPage({
           allowCapex={false}
           today={today}
           fiscalYear={funding.annualPlan.fiscalYear}
+          customFields={funding.customFields.spendFields}
+          customValues={funding.customFields.spendValues}
         />
       </div>
     </div>

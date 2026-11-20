@@ -21,14 +21,21 @@ import {
   type AllocationCreateInput,
   type AllocationUpdateInput,
 } from '@/domain/inputs';
+import { withCustomFields } from '@/domain/custom-fields';
 import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
+  invalidCustomFieldState,
   failureState,
   finishWith,
   validateForm,
 } from '@/server/actions/common';
+import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
+import {
+  readCustomFieldPayloadState,
+  type CustomFieldPayload,
+} from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 
 const PROJECTS_PAGE = '/plan/projects';
@@ -143,6 +150,7 @@ function requireProjectActiveYear(project: Project, fiscalYear: number): void {
 async function createAllocation(
   userId: string,
   input: AllocationCreateInput,
+  custom: CustomFieldPayload,
 ): Promise<AllocationSaveResult> {
   const context = await loadProjectContext(input.projectId);
   requireProjectEditable(context.project, context.strategicPlanStatus);
@@ -194,6 +202,11 @@ async function createAllocation(
     }
 
     if (existing) {
+      const beforeValues = await readCustomFieldValues(
+        'project_year_allocation',
+        existing.id,
+        tx,
+      );
       const [restored] = await tx
         .update(projectYearAllocations)
         .set({
@@ -212,13 +225,20 @@ async function createAllocation(
         .returning();
       if (!restored) throw new Error('failed to restore the project year allocation');
       allocation = restored;
+      await saveCustomFieldValues(tx, {
+        entityType: 'project_year_allocation',
+        entityId: restored.id,
+        fields: custom.fields,
+        values: custom.values,
+        userId,
+      });
       await recordAudit(tx, {
         actorUserId: userId,
         action: 'restore',
         entityType: 'project_year_allocation',
         entityId: restored.id,
-        before: snapshot(existing),
-        after: snapshot(restored),
+        before: withCustomFields(snapshot(existing), custom.fields, beforeValues),
+        after: withCustomFields(snapshot(restored), custom.fields, custom.values),
       });
       return;
     }
@@ -240,12 +260,19 @@ async function createAllocation(
       .returning();
     if (!created) throw new Error('failed to create the project year allocation');
     allocation = created;
+    await saveCustomFieldValues(tx, {
+      entityType: 'project_year_allocation',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
       entityType: 'project_year_allocation',
       entityId: created.id,
-      after: snapshot(created),
+      after: withCustomFields(snapshot(created), custom.fields, custom.values),
     });
   });
   if (!allocation) throw new Error('failed to save the project year allocation');
@@ -255,6 +282,7 @@ async function createAllocation(
 async function updateAllocation(
   userId: string,
   input: AllocationUpdateInput,
+  custom: CustomFieldPayload,
 ): Promise<AllocationSaveResult> {
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
@@ -263,6 +291,7 @@ async function updateAllocation(
 
   let updated: ProjectYearAllocation | undefined;
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('project_year_allocation', input.id, tx);
     const [row] = await tx
       .update(projectYearAllocations)
       .set({
@@ -278,13 +307,20 @@ async function updateAllocation(
       .returning();
     if (!row) throw new FormError('Project year allocation not found.');
     updated = row;
+    await saveCustomFieldValues(tx, {
+      entityType: 'project_year_allocation',
+      entityId: input.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'update',
       entityType: 'project_year_allocation',
       entityId: input.id,
-      before: snapshot(context.allocation),
-      after: snapshot(row),
+      before: withCustomFields(snapshot(context.allocation), custom.fields, beforeValues),
+      after: withCustomFields(snapshot(row), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -338,9 +374,13 @@ export async function createAllocationAction(
   const parsed = validateForm(previous, allocationCreateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('project_year_allocation', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   let saved: AllocationSaveResult;
   try {
-    saved = await createAllocation(user.id, parsed.data);
+    saved = await createAllocation(user.id, parsed.data, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
@@ -358,9 +398,13 @@ export async function updateAllocationAction(
   const parsed = validateForm(previous, allocationUpdateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('project_year_allocation', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   let saved: AllocationSaveResult;
   try {
-    saved = await updateAllocation(user.id, parsed.data);
+    saved = await updateAllocation(user.id, parsed.data, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }

@@ -1,4 +1,3 @@
-import { inputClass, labelClass, secondaryButtonClass } from '@/components/ui';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 
@@ -9,6 +8,7 @@ import { formatDate } from '@/lib/format';
  */
 
 export { CustomFieldInputs } from './custom-field-inputs';
+export { CustomFieldFilterForm } from './custom-field-filter-form';
 
 /** Read-only display value; dates are shown in the app time zone like every other date. */
 export function customFieldDisplayValue(
@@ -80,81 +80,5 @@ export function CustomFieldCells({
         </td>
       ))}
     </>
-  );
-}
-
-/**
- * A GET filter: pick one custom field and a value. Text matches a substring,
- * number and date use their typed parser. The page applies it to the rows it
- * already loaded; exports deliberately always carry the whole report.
- */
-export function CustomFieldFilterForm({
-  fields,
-  action,
-  fieldId,
-  query,
-  columnSelection,
-}: {
-  fields: readonly CustomFieldDefinition[];
-  action: string;
-  fieldId?: string;
-  query?: string;
-  /**
-   * The export-column selection to carry through the GET form, so applying or
-   * clearing a filter cannot silently reset it. Omitted when the visitor has no
-   * explicit selection (the page then shows every active field).
-   */
-  columnSelection?: readonly string[];
-}) {
-  if (fields.length === 0) return null;
-
-  const clearHref =
-    columnSelection === undefined
-      ? action
-      : `${action}?${
-          columnSelection.length === 0
-            ? 'columns='
-            : columnSelection.map((id) => `columns=${encodeURIComponent(id)}`).join('&')
-        }`;
-
-  return (
-    <form method="get" action={action} className="flex flex-wrap items-end gap-3">
-      {columnSelection !== undefined ? (
-        <>
-          <input type="hidden" name="columns" value="" />
-          {columnSelection.map((id) => (
-            <input key={id} type="hidden" name="columns" value={id} />
-          ))}
-        </>
-      ) : null}
-      <label className={`${labelClass} block`}>
-        Custom field
-        <select name="cf" defaultValue={fieldId ?? ''} className={inputClass}>
-          <option value="">No custom-field filter</option>
-          {fields.map((field) => (
-            <option key={field.id} value={field.id}>
-              {field.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className={`${labelClass} block`}>
-        Value
-        <input
-          name="cv"
-          defaultValue={query ?? ''}
-          placeholder="Part of the text or an exact number/date"
-          className={inputClass}
-        />
-      </label>
-      <button type="submit" className={secondaryButtonClass}>
-        Apply filter
-      </button>
-      {fieldId ? (
-        <a href={clearHref} className="text-sm text-slate-600 underline decoration-slate-300">
-          Clear
-        </a>
-      ) : null}
-    </form>
   );
 }

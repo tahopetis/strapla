@@ -26,6 +26,7 @@ function field(
     required: false,
     description: 'Registered for the report tests.',
     example: '',
+    position: 0,
     ...overrides,
   };
 }

@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   CUSTOM_FIELD_ENTITIES,
+  CUSTOM_FIELD_ENTITY_TYPES,
   countCustomFieldUsage,
   customFieldEntityLabel,
+  customFieldMoveNeighbour,
   customFieldRestoreConflictMessage,
   customFieldSnapshot,
   deriveCustomFieldKey,
   customFieldTypeLabel,
   isCustomFieldEntityType,
+  matchesAllCustomFieldFilters,
   matchesCustomFieldFilter,
   parseCustomFieldValues,
+  resolveCustomFieldFilters,
   resolveCustomExportFields,
+  resolveReportColumnSelection,
   selectCustomExportFields,
   withCustomFields,
   type CustomFieldDefinition,
@@ -27,6 +32,7 @@ function field(
     required: false,
     description: '',
     example: '',
+    position: 0,
     ...overrides,
   };
 }
@@ -202,17 +208,21 @@ describe('customFieldRestoreConflictMessage', () => {
 });
 
 describe('custom field registry vocabulary', () => {
-  it('knows the four plan-record entities and their labels', () => {
-    expect(CUSTOM_FIELD_ENTITIES.map((entity) => entity.type)).toEqual([
-      'strategic_initiative',
-      'annual_program',
-      'project',
-      'recurring_ops_item',
-    ]);
+  it('knows the plan-record entities and their labels', () => {
+    // #71 extended the original four with the four owner-selected records;
+    // the full registry is asserted in the #71 describe below.
+    expect(CUSTOM_FIELD_ENTITIES.map((entity) => entity.type)).toEqual(
+      expect.arrayContaining([
+        'strategic_initiative',
+        'annual_program',
+        'project',
+        'recurring_ops_item',
+      ]),
+    );
     expect(customFieldEntityLabel('project')).toBe('Project');
     expect(customFieldEntityLabel('recurring_ops_item')).toBe('Recurring Ops Item');
     expect(isCustomFieldEntityType('project')).toBe(true);
-    expect(isCustomFieldEntityType('commitment_entry')).toBe(false);
+    expect(isCustomFieldEntityType('annual_plan')).toBe(false);
     expect(customFieldTypeLabel('date')).toBe('Date');
   });
 });
@@ -345,5 +355,133 @@ describe('resolveCustomExportFields', () => {
   it('selects none for an explicitly empty parameter', () => {
     expect(resolveCustomExportFields(fields, '')).toEqual([]);
     expect(resolveCustomExportFields(fields, ['', '  '])).toEqual([]);
+  });
+});
+
+describe('custom field entity registry (#71)', () => {
+  it('supports the four original entities plus the four owner-selected records', () => {
+    expect(CUSTOM_FIELD_ENTITY_TYPES).toEqual([
+      'strategic_initiative',
+      'annual_program',
+      'project',
+      'recurring_ops_item',
+      'ijin_prinsip',
+      'project_year_allocation',
+      'commitment_entry',
+      'spend_entry',
+    ]);
+    expect(CUSTOM_FIELD_ENTITIES.map((entity) => entity.type)).toEqual([
+      ...CUSTOM_FIELD_ENTITY_TYPES,
+    ]);
+  });
+
+  it('labels every entity in readable words and keeps the strategic and annual plans out', () => {
+    expect(customFieldEntityLabel('ijin_prinsip')).toBe('Ijin prinsip');
+    expect(customFieldEntityLabel('project_year_allocation')).toBe('Project year allocation');
+    expect(customFieldEntityLabel('commitment_entry')).toBe('Commitment entry');
+    expect(customFieldEntityLabel('spend_entry')).toBe('Spend entry');
+    expect(isCustomFieldEntityType('annual_plan')).toBe(false);
+    expect(isCustomFieldEntityType('strategic_plan')).toBe(false);
+  });
+});
+
+describe('multi custom-field filters (#74)', () => {
+  const fields = [
+    procurementMethod,
+    field({ id: 'field-risk', name: 'Risk score', type: 'number' }),
+    field({ id: 'field-review', name: 'Review on', type: 'date' }),
+  ];
+
+  it('pairs repeated cf/cv values by index and drops blanks and unknown ids', () => {
+    expect(
+      resolveCustomFieldFilters(
+        fields,
+        ['field-procurement', 'field-unknown', 'field-risk', 'field-review'],
+        ['tender', 'ignored', ' ', '2026-02-28'],
+      ).map((filter) => [filter.field.id, filter.query]),
+    ).toEqual([
+      ['field-procurement', 'tender'],
+      ['field-review', '2026-02-28'],
+    ]);
+  });
+
+  it('accepts a single (non-repeated) parameter and no parameter at all', () => {
+    expect(
+      resolveCustomFieldFilters(fields, 'field-procurement', 'open').map(
+        (filter) => filter.field.id,
+      ),
+    ).toEqual(['field-procurement']);
+    expect(resolveCustomFieldFilters(fields, undefined, undefined)).toEqual([]);
+  });
+
+  it('composes filters with AND: every filter must match the record', () => {
+    const values = {
+      'field-procurement': 'Open tender',
+      'field-risk': 1234,
+      'field-review': '2026-02-28',
+    };
+    const filters = resolveCustomFieldFilters(
+      fields,
+      ['field-procurement', 'field-risk', 'field-review'],
+      ['tender', '1234', '2026-02-28'],
+    );
+
+    expect(matchesAllCustomFieldFilters(values, filters)).toBe(true);
+    expect(
+      matchesAllCustomFieldFilters(
+        values,
+        resolveCustomFieldFilters(fields, ['field-procurement', 'field-risk'], ['tender', '1235']),
+      ),
+    ).toBe(false);
+    // One failing filter is enough to exclude the row, and no filters keep it.
+    expect(matchesAllCustomFieldFilters(values, [])).toBe(true);
+  });
+});
+
+describe('remembered report columns (#75)', () => {
+  const fields = [
+    field({ id: 'f-text', name: 'Procurement method', type: 'text' }),
+    field({ id: 'f-number', name: 'Risk score', type: 'number' }),
+    field({ id: 'f-date', name: 'Review on', type: 'date' }),
+  ];
+
+  it('uses every active field when nothing was chosen and no explicit parameter exists', () => {
+    expect(resolveReportColumnSelection(fields, undefined, null).map((selected) => selected.id)).toEqual([
+      'f-text',
+      'f-number',
+      'f-date',
+    ]);
+  });
+
+  it('uses the remembered selection when no explicit parameter exists', () => {
+    expect(
+      resolveReportColumnSelection(fields, undefined, ['f-date', 'f-archived']).map(
+        (selected) => selected.id,
+      ),
+    ).toEqual(['f-date']);
+    // A saved empty list means "no extra columns", not "never chosen".
+    expect(resolveReportColumnSelection(fields, undefined, [])).toEqual([]);
+  });
+
+  it('lets an explicit parameter win, including the explicit empty value', () => {
+    expect(
+      resolveReportColumnSelection(fields, 'f-number', ['f-date']).map((selected) => selected.id),
+    ).toEqual(['f-number']);
+    expect(resolveReportColumnSelection(fields, '', ['f-date'])).toEqual([]);
+  });
+});
+
+describe('customFieldMoveNeighbour (#73)', () => {
+  const fields = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('returns the adjacent field in the registry order', () => {
+    expect(customFieldMoveNeighbour(fields, 'b', 'up')).toBe('a');
+    expect(customFieldMoveNeighbour(fields, 'b', 'down')).toBe('c');
+  });
+
+  it('returns null at the edges and for an unknown field', () => {
+    expect(customFieldMoveNeighbour(fields, 'a', 'up')).toBeNull();
+    expect(customFieldMoveNeighbour(fields, 'c', 'down')).toBeNull();
+    expect(customFieldMoveNeighbour(fields, 'missing', 'down')).toBeNull();
   });
 });

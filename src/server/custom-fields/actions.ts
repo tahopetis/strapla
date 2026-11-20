@@ -5,12 +5,14 @@ import { getDb, type Db } from '@/db/client';
 import { customFieldValues, customFields, type CustomField } from '@/db/schema';
 import {
   customFieldCreateSchema,
+  customFieldMoveSchema,
   customFieldRemoveSchema,
   customFieldRestoreSchema,
   customFieldUpdateSchema,
 } from '@/domain/inputs';
 import {
   customFieldEntityLabel,
+  customFieldMoveNeighbour,
   customFieldRestoreConflictMessage,
   customFieldTypeLabel,
   deriveCustomFieldKey,
@@ -29,17 +31,21 @@ import {
   validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
-import type { ArchivedFieldRow } from './data';
+import {
+  listCustomFieldDefinitions,
+  nextCustomFieldPosition,
+  type ArchivedFieldRow,
+} from './data';
 
 const PAGE = '/admin/custom-fields';
 
-/** Everything the administrator edits; the id and the derived key are app-owned. */
-type CustomFieldContent = Omit<CustomFieldDefinition, 'id' | 'key'>;
+/** Everything the administrator edits; the id, derived key and position are app-owned. */
+type CustomFieldContent = Omit<CustomFieldDefinition, 'id' | 'key' | 'position'>;
 
 function fieldSnapshot(
   field: Pick<
     CustomField,
-    'entityType' | 'name' | 'key' | 'type' | 'required' | 'description' | 'example'
+    'entityType' | 'name' | 'key' | 'type' | 'required' | 'description' | 'example' | 'position'
   >,
 ): Record<string, unknown> {
   return {
@@ -50,6 +56,7 @@ function fieldSnapshot(
     required: field.required,
     description: field.description,
     example: field.example,
+    position: field.position,
   };
 }
 
@@ -183,6 +190,8 @@ async function createCustomField(
         required: input.required,
         description: input.description,
         example: input.example,
+        // #73: a new field appends to the end of its entity's sequence.
+        position: await nextCustomFieldPosition(tx, input.entityType),
         createdBy: actorId,
         updatedBy: actorId,
       })
@@ -374,6 +383,57 @@ async function restoreCustomField(
   return restored;
 }
 
+/**
+ * Reorders one field within its entity's sequence (#73). The two neighbours
+ * swap `position` values; the audit entry records the actor and both positions
+ * (before/after), so the traceback shows who moved what, even though a reorder
+ * is a reversible display preference rather than a record edit.
+ */
+async function moveCustomField(
+  actorId: string,
+  input: { id: string; direction: 'up' | 'down' },
+): Promise<{ name: string; atEdge: boolean }> {
+  const existing = await requireField(input.id);
+  const ordered = await listCustomFieldDefinitions(
+    existing.entityType as CustomFieldEntityType,
+  );
+  const neighbourId = customFieldMoveNeighbour(ordered, existing.id, input.direction);
+  if (!neighbourId) return { name: existing.name, atEdge: true };
+
+  const neighbour = ordered.find((field) => field.id === neighbourId);
+  if (!neighbour) return { name: existing.name, atEdge: true };
+
+  await getDb().transaction(async (tx) => {
+    await tx
+      .update(customFields)
+      .set({ position: neighbour.position, updatedBy: actorId, updatedAt: new Date() })
+      .where(eq(customFields.id, existing.id));
+    await tx
+      .update(customFields)
+      .set({ position: existing.position, updatedBy: actorId, updatedAt: new Date() })
+      .where(eq(customFields.id, neighbour.id));
+
+    await recordAudit(tx, {
+      actorUserId: actorId,
+      action: 'custom_field_reorder',
+      entityType: 'custom_field',
+      entityId: existing.id,
+      before: {
+        name: existing.name,
+        position: existing.position,
+        swappedWith: neighbour.name,
+      },
+      after: {
+        name: existing.name,
+        position: neighbour.position,
+        swappedWith: neighbour.name,
+      },
+    });
+  });
+
+  return { name: existing.name, atEdge: false };
+}
+
 // ---------------------------------------------------------------- actions
 
 export async function createCustomFieldAction(previous: FormState, formData: FormData): Promise<FormState> {
@@ -444,4 +504,33 @@ export async function restoreCustomFieldAction(
     return failureState(previous, error, parsed.values);
   }
   finishWith(PAGE, `Custom field “${restored.name}” restored.`);
+}
+
+/**
+ * Moves one field up or down in Administration -> Custom fields (#73). The
+ * registry read applies the new order everywhere, so a form, a record panel, a
+ * report column list and the export checkboxes all pick it up without another
+ * change.
+ */
+export async function moveCustomFieldAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await actionUser();
+  const parsed = validateForm(previous, customFieldMoveSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let result: { name: string; atEdge: boolean };
+  try {
+    result = await moveCustomField(actor.id, parsed.data);
+  } catch (error) {
+    return failureState(previous, error, parsed.values);
+  }
+  if (result.atEdge) {
+    finishWith(
+      PAGE,
+      `“${result.name}” is already at the ${parsed.data.direction === 'up' ? 'top' : 'bottom'} of its list.`,
+    );
+  }
+  finishWith(PAGE, `“${result.name}” moved ${parsed.data.direction}.`);
 }

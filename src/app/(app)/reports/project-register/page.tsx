@@ -6,9 +6,12 @@ import {
 } from '@/components/custom-fields';
 import { ReportNote, ReportShell } from '@/components/report-shell';
 import { Badge, Card, Money } from '@/components/ui';
-import { matchesCustomFieldFilter } from '@/domain/custom-fields';
+import { matchesAllCustomFieldFilters, resolveCustomFieldFilters } from '@/domain/custom-fields';
 import { getProjectRegisterReport } from '@/server/plan/report-queries';
-import { loadReportCustomFieldGroups } from '@/server/plan/report-custom-fields';
+import {
+  loadReportCustomFieldGroups,
+  readRememberedReportColumns,
+} from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -26,27 +29,26 @@ export default async function ProjectRegisterReportPage({
   }>;
 }) {
   const { cf: cfParam, cv: cvParam, columns } = await searchParams;
-  const cf = Array.isArray(cfParam) ? cfParam[0] : cfParam;
-  const cv = Array.isArray(cvParam) ? cvParam[0] : cvParam;
   const plan = await getCurrentStrategicPlan();
   if (!plan) {
     return <p className="text-sm text-slate-600">Create the strategic plan to see this report.</p>;
   }
   const report = await getProjectRegisterReport(plan.id);
-  const groups = await loadReportCustomFieldGroups('project-register', columns);
+  const remembered = await readRememberedReportColumns('project-register', columns);
+  const groups = await loadReportCustomFieldGroups('project-register', columns, remembered);
   const [group] = groups;
   const fields = group?.fields ?? [];
   const selectedIds = groups.flatMap((candidate) =>
     candidate.selectedFields.map((field) => field.id),
   );
   const visibleFields = group?.selectedFields ?? [];
-  const filterField = cf ? fields.find((field) => field.id === cf) : undefined;
-  const filterQuery = cv?.trim() ?? '';
-  const filtering = filterField !== undefined && filterQuery.length > 0;
+  // Repeated cf/cv pairs narrow the rows together (AND, #74); totals and the
+  // export above stay whole-report because they never see these filters.
+  const filters = resolveCustomFieldFilters(fields, cfParam, cvParam);
   const rows =
-    filtering && filterField !== undefined
+    filters.length > 0
       ? report.rows.filter((row) =>
-          matchesCustomFieldFilter(group?.values.get(row.project.id), filterField, filterQuery),
+          matchesAllCustomFieldFilters(group?.values.get(row.project.id), filters),
         )
       : report.rows;
 
@@ -71,8 +73,7 @@ export default async function ProjectRegisterReportPage({
           <CustomFieldFilterForm
             fields={fields}
             action="/reports/project-register"
-            fieldId={filterField?.id}
-            query={cv}
+            filters={filters}
             columnSelection={columns === undefined ? undefined : selectedIds}
           />
         </div>
@@ -191,7 +192,7 @@ export default async function ProjectRegisterReportPage({
             </tfoot>
           </table>
         </div>
-        {filtering ? (
+        {filters.length > 0 ? (
           <p className="mt-3 text-xs text-slate-500">
             Totals cover the whole report, not only the filtered rows.
           </p>

@@ -522,10 +522,10 @@ detailed exportable sources.
   entity type, action and actor. The screen shows the latest 200 matching entries.
 - **Export CSV** downloads the filtered trail (up to 5000 entries) for directors/finance.
 - **Custom fields**: when an administrator defines extra fields on a record type, they appear here in
-  the before/after values under `customFields`. The four custom-field actions and the entity are
-  shown in readable words (**Custom field created / updated / removed / restored**, entity
-  **Custom field**); the filter keeps the machine token as its value, so a saved filter link still
-  works.
+  the before/after values under `customFields`. The five custom-field actions and the entity are
+  shown in readable words (**Custom field created / updated / removed / restored / reordered**,
+  entity **Custom field**); the filter keeps the machine token as its value, so a saved filter link
+  still works.
 - **Values** expands before/after JSON in place.
 - Most record pages (e.g. projects) also have a **Change history** card.
 
@@ -533,8 +533,10 @@ detailed exportable sources.
 
 **Administration → Custom fields**
 
-- An administrator can add, edit and remove extra typed fields on four record types: **strategic
-  initiatives, annual programs, projects** and **recurring ops items**.
+- An administrator can add, edit and remove extra typed fields on eight record types: **strategic
+  initiatives, annual programs, projects, recurring ops items, ijin prinsip records, project year
+  allocations, commitment entries** and **spend entries**. The strategic plan and annual plan are
+  deliberately out — one record each, with no per-record variance to capture.
 - A field has a **name**, a **type** (text, number or date), an optional **required** flag, a
   **description** and an optional **example value**. Every change is audited; a reason is required
   when editing or removing.
@@ -546,9 +548,19 @@ detailed exportable sources.
 - Values appear on the create/edit form and in an **Additional fields** panel on the record. Text is
   free text, numbers are whole numbers (digits, with an optional minus) and dates are real calendar
   dates.
-- Reports show the fields of the record type they list as extra columns, offer a **custom-field
-  filter**, and the export lets you choose which extra columns to include. The filter narrows the
-  rows on screen; the totals and the export always cover the whole report.
+- An administrator can reorder the fields of a record type with **Move up / Move down**. The order
+  applies everywhere the fields appear — the administration list, create/edit forms, record panels,
+  report columns and the export checkboxes. New fields are added at the end, and archived fields
+  leave the order.
+- Reports show the fields of the record type they list as extra columns and accept more than one
+  **custom-field filter** at a time, combined with AND. Active filters appear as removable chips,
+  with a **Clear all** action; each removal keeps the other filters and the column selection. The
+  filter narrows the rows on screen; the totals and the export always cover the whole report.
+- Each report remembers the extra columns you choose for it: tick the columns under **Extra
+  columns** and choose **Save selection**, and the report and its export checkboxes use that
+  selection when you return. A link that carries an explicit column selection still shows exactly
+  that selection, so shared links keep working. Choosing no columns is remembered as no extra
+  columns, not as "all".
 - Custom fields are metadata: they never change budgets, remaining amounts, flags, allocations or
   report totals. Removing a field archives it: it disappears from forms, record pages, reports and
   exports, its recorded values are kept but hidden, and its name can be reused. The same screen

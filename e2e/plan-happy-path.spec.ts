@@ -312,6 +312,28 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText(/Custom field “Delivery note” added\./)).toBeVisible();
   await expect(page.getByText('Delivery note').first()).toBeVisible();
 
+  // #73: an administrator controls the order the fields appear in
+  const activeProjectFields = projectFieldCard.getByRole('list', { name: 'Active fields' });
+  const deliveryFieldRow = activeProjectFields
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  await deliveryFieldRow.getByRole('button', { name: 'Move up' }).click();
+  await expect(page.getByText(/“Delivery note” moved up\./)).toBeVisible();
+  await expect(activeProjectFields.locator('li').first()).toContainText('Delivery note');
+  // the position is persisted, not just a render-order change
+  await page.reload();
+  await expect(
+    projectFieldCard.getByRole('list', { name: 'Active fields' }).locator('li').first(),
+  ).toContainText('Delivery note');
+  // put the creation order back so the import template example below is stable
+  await projectFieldCard
+    .getByRole('list', { name: 'Active fields' })
+    .locator('li')
+    .first()
+    .getByRole('button', { name: 'Move down' })
+    .click();
+  await expect(page.getByText(/“Delivery note” moved down\./)).toBeVisible();
+
   // ---------------------------------------- opening-balance import (W3b)
   await page.goto('/plan/opening-balances/import');
   await expect(page.getByRole('heading', { name: 'Opening-balance import' })).toBeVisible();
@@ -463,6 +485,27 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(
     page.getByText('Totals cover the whole report, not only the filtered rows.'),
   ).toBeVisible();
+
+  // a second field's filter stacks with the first, combined with AND (#74)
+  await page.locator('select[name="cf"]').selectOption({ label: 'Procurement method' });
+  await page.locator('input[name="cv"]').fill('open');
+  await page.getByRole('button', { name: 'Apply filter' }).click();
+  await expect(page.locator('a[aria-label^="Remove filter"]')).toHaveCount(2);
+  await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
+  // the imported project matches the procurement filter but not the delivery one
+  await expect(page.getByText('Imported project 01')).toHaveCount(0);
+  // the URL carries both pairs, so a reload rebuilds the same AND view
+  await page.reload();
+  await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
+  await expect(page.getByText('Imported project 01')).toHaveCount(0);
+  // removing one filter widens the rows without losing the other filter
+  await page.locator('a[aria-label^="Remove filter"]').first().click();
+  await expect(page.locator('a[aria-label^="Remove filter"]')).toHaveCount(1);
+  await expect(page.getByText('Imported project 01').first()).toBeVisible();
+  // clear all drops the remaining filter and restores every row
+  await page.getByRole('link', { name: 'Clear all' }).click();
+  await expect(page.locator('a[aria-label^="Remove filter"]')).toHaveCount(0);
+  await expect(page.getByText('Imported project 01').first()).toBeVisible();
   await page.locator('select[name="cf"]').selectOption({ label: 'Delivery note' });
   await page.locator('input[name="cv"]').fill('no such value');
   await page.getByRole('button', { name: 'Apply filter' }).click();
@@ -665,6 +708,148 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
       .first(),
   ).toBeVisible();
 
+  // #71: a field on a newly covered record type works end to end
+  await page.goto('/admin/custom-fields');
+  const addEntityField = async (entityLabel: string, name: string, description: string) => {
+    const card = page.locator('section').filter({ hasText: entityLabel });
+    await card.getByText('Add a field').click();
+    const form = card
+      .locator('form')
+      .filter({ has: page.getByRole('button', { name: 'Add field' }) });
+    await form.locator('input[name="name"]').fill(name);
+    await form.locator('select[name="type"]').selectOption('text');
+    await form.locator('textarea[name="description"]').fill(description);
+    await form.getByRole('button', { name: 'Add field' }).click();
+    await expect(page.getByText(new RegExp(`Custom field “${name}” added\\.`))).toBeVisible();
+  };
+  await addEntityField('Ijin prinsip', 'Approval note', 'What the directors approved.');
+  await addEntityField('Project year allocation', 'Allocation note', 'Note kept on this year.');
+  await addEntityField('Commitment entry', 'Commitment note', 'Note kept on this commitment.');
+  await addEntityField('Spend entry', 'Spend note', 'Note kept on this spend entry.');
+
+  await page.goto('/plan/projects');
+  await Promise.all([
+    page.waitForURL(/\/plan\/projects\/[0-9a-f-]+$/),
+    page
+      .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+      .getByRole('link', { name: 'Open' })
+      .click(),
+  ]);
+  const ijinCard = page.locator('section').filter({ hasText: 'Ijin prinsip' });
+  await ijinCard.locator('summary', { hasText: 'Update ijin prinsip' }).click();
+  const updateIjinForm = ijinCard
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Update ijin prinsip' }) });
+  await updateIjinForm.getByLabel('Approval note').fill('Approved for phased delivery.');
+  await updateIjinForm.locator('textarea[name="reason"]').fill('Record the approval note.');
+  await updateIjinForm.getByRole('button', { name: 'Update ijin prinsip' }).click();
+  await expect(page.getByText(/Ijin prinsip for PRJ-2027-001 saved\./)).toBeVisible();
+  await expect(
+    ijinCard.locator('dd', { hasText: 'Approved for phased delivery.' }),
+  ).toBeVisible();
+
+  // the definition and the value survive a reload, and the record form prefills
+  await page.reload();
+  await expect(
+    ijinCard.locator('dd', { hasText: 'Approved for phased delivery.' }),
+  ).toBeVisible();
+  await ijinCard.locator('summary', { hasText: 'Update ijin prinsip' }).click();
+  await expect(ijinCard.getByLabel('Approval note')).toHaveValue(
+    'Approved for phased delivery.',
+  );
+  await page.goto('/admin/audit?entityType=ijin_prinsip');
+  const ijinAuditRow = page.locator('tbody tr').filter({ hasText: 'Record the approval note.' });
+  await ijinAuditRow.getByText('Show values').click();
+  await expect(ijinAuditRow.locator('pre', { hasText: 'Approval note' })).toBeVisible();
+
+  // project year allocation: enter, panel and audit on its own edit form
+  await page.goto('/plan/projects');
+  await Promise.all([
+    page.waitForURL(/\/plan\/projects\/[0-9a-f-]+$/),
+    page
+      .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+      .getByRole('link', { name: 'Open' })
+      .click(),
+  ]);
+  const allocationCard = page.locator('section').filter({ hasText: 'FY2027 · PRG-2027-001' });
+  await allocationCard.locator('summary', { hasText: 'Edit allocation' }).click();
+  const allocationEditForm = allocationCard
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save changes' }) });
+  await allocationEditForm.getByLabel('Allocation note').fill('Delivered in two tranches.');
+  await allocationEditForm.locator('textarea[name="reason"]').fill('Record the allocation note.');
+  await allocationEditForm.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText(/Project year allocation FY2027 updated\./)).toBeVisible();
+  await expect(
+    allocationCard.locator('dd', { hasText: 'Delivered in two tranches.' }),
+  ).toBeVisible();
+  await page.goto('/admin/audit?entityType=project_year_allocation');
+  const allocationAuditRow = page
+    .locator('tbody tr')
+    .filter({ hasText: 'Record the allocation note.' });
+  await allocationAuditRow.getByText('Show values').click();
+  await expect(
+    allocationAuditRow.locator('pre', { hasText: 'Allocation note' }),
+  ).toBeVisible();
+
+  // commitment and spend: enter, panel and audit on their inline edit forms
+  await page.goto('/plan/projects');
+  await Promise.all([
+    page.waitForURL(/\/plan\/projects\/[0-9a-f-]+$/),
+    page
+      .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+      .getByRole('link', { name: 'Open' })
+      .click(),
+  ]);
+  await page.getByRole('link', { name: 'Open commitments & spend' }).first().click();
+  await expect(page.getByRole('heading', { name: /FY2027 allocation/ })).toBeVisible();
+
+  const commitmentEntries = page.locator('section').filter({ hasText: 'Commitment entries' });
+  const commitmentRow = commitmentEntries.locator('tbody tr').filter({ hasText: 'PO-2027-001' });
+  await commitmentRow.locator('summary', { hasText: 'Manage' }).click();
+  const commitmentEditForm = commitmentRow
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save commitment' }) });
+  await commitmentEditForm.getByLabel('Commitment note').fill('Covers the first milestone.');
+  await commitmentEditForm.locator('textarea[name="reason"]').fill('Record the commitment note.');
+  await commitmentEditForm.getByRole('button', { name: 'Save commitment' }).click();
+  await expect(page.getByText(/Commitment PO-2027-001 updated\./)).toBeVisible();
+  await expect(commitmentEntries.getByText('Covers the first milestone.')).toBeVisible();
+  await page.goto('/admin/audit?entityType=commitment_entry');
+  const commitmentAuditRow = page
+    .locator('tbody tr')
+    .filter({ hasText: 'Record the commitment note.' });
+  await commitmentAuditRow.getByText('Show values').click();
+  await expect(
+    commitmentAuditRow.locator('pre', { hasText: 'Commitment note' }),
+  ).toBeVisible();
+
+  await page.goto('/plan/projects');
+  await Promise.all([
+    page.waitForURL(/\/plan\/projects\/[0-9a-f-]+$/),
+    page
+      .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+      .getByRole('link', { name: 'Open' })
+      .click(),
+  ]);
+  await page.getByRole('link', { name: 'Open commitments & spend' }).first().click();
+  await expect(page.getByRole('heading', { name: /FY2027 allocation/ })).toBeVisible();
+  const spendEntries = page.locator('section').filter({ hasText: 'Spend entries' });
+  const spendRow = spendEntries.locator('tbody tr').filter({ hasText: 'INV-2027-0001' });
+  await spendRow.locator('summary', { hasText: 'Manage' }).click();
+  const spendEditForm = spendRow
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save spend' }) });
+  await spendEditForm.getByLabel('Spend note').fill('Invoice settled against the PO.');
+  await spendEditForm.locator('textarea[name="reason"]').fill('Record the spend note.');
+  await spendEditForm.getByRole('button', { name: 'Save spend' }).click();
+  await expect(page.getByText(/Spend entry INV-2027-0001 updated\./)).toBeVisible();
+  await expect(spendEntries.getByText('Invoice settled against the PO.')).toBeVisible();
+  await page.goto('/admin/audit?entityType=spend_entry');
+  const spendAuditRow = page.locator('tbody tr').filter({ hasText: 'Record the spend note.' });
+  await spendAuditRow.getByText('Show values').click();
+  await expect(spendAuditRow.locator('pre', { hasText: 'Spend note' })).toBeVisible();
+
   // ------------------------------------------------------ reports and exports
   await page.goto('/reports');
   await expect(page.getByText('SI five-year view', { exact: true }).first()).toBeVisible();
@@ -690,6 +875,36 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   const xlsx = await page.request.get(`${origin}/reports/export/project-register?format=xlsx`);
   expect(xlsx.status()).toBe(200);
   expect(xlsx.headers()['content-type']).toContain('spreadsheetml');
+
+  // #75: the report remembers the chosen custom columns for the signed-in user.
+  // The recreated field was renamed above, so the surviving active field is the
+  // renamed one; the archived original is out of every report.
+  await page.goto('/reports/project-register');
+  // The checkboxes live in the closed "Extra columns" disclosure, so open it first.
+  await page.getByText('Extra columns').click();
+  const deliveryColumn = page.getByRole('checkbox', {
+    name: 'Delivery note (renamed)',
+    exact: true,
+  });
+  const deliveryColumnId = await deliveryColumn.getAttribute('value');
+  expect(deliveryColumnId).toBeTruthy();
+  await deliveryColumn.uncheck();
+  await page.getByRole('button', { name: 'Save selection' }).click();
+  await expect(page.getByText(/Selection saved/)).toBeVisible();
+  // saving applies the selection to the current view immediately
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note (renamed)', exact: true }),
+  ).toHaveCount(0);
+  // returning to the report without a columns parameter keeps the saved subset
+  await page.goto('/reports/project-register');
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note (renamed)', exact: true }),
+  ).toHaveCount(0);
+  // an explicit columns link still wins for a shareable view
+  await page.goto(`/reports/project-register?columns=${deliveryColumnId}`);
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note (renamed)', exact: true }),
+  ).toBeVisible();
 
   // ------------------------------------------------------ administration (M2.5)
   await page.goto('/admin/members');

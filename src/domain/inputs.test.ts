@@ -70,7 +70,7 @@ describe('custom field administration schemas', () => {
 
   it('rejects an unknown entity type or field type', () => {
     expect(
-      customFieldCreateSchema.safeParse({ ...definition, entityType: 'commitment_entry' }).success,
+      customFieldCreateSchema.safeParse({ ...definition, entityType: 'annual_plan' }).success,
     ).toBe(false);
     expect(customFieldCreateSchema.safeParse({ ...definition, type: 'money' }).success).toBe(false);
   });

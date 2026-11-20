@@ -462,7 +462,19 @@ export const customFieldRemoveSchema = z.object({ id: idSchema, reason: reasonSc
 
 export const customFieldRestoreSchema = z.object({ id: idSchema, reason: reasonSchema });
 
+/**
+ * Move one field up or down in its entity's sequence (#73). The order is a
+ * display preference, not a record edit: the action swaps two positions and
+ * records the actor plus both positions in the audit trail, without asking for
+ * a reason on every click.
+ */
+export const customFieldMoveSchema = z.object({
+  id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
 export type CustomFieldCreateInput = z.infer<typeof customFieldCreateSchema>;
 export type CustomFieldUpdateInput = z.infer<typeof customFieldUpdateSchema>;
 export type CustomFieldRemoveInput = z.infer<typeof customFieldRemoveSchema>;
 export type CustomFieldRestoreInput = z.infer<typeof customFieldRestoreSchema>;
+export type CustomFieldMoveInput = z.infer<typeof customFieldMoveSchema>;

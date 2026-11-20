@@ -19,6 +19,7 @@ import {
   type SpendEntry,
   type StrategicPlan,
 } from '@/db/schema';
+import { withCustomFields } from '@/domain/custom-fields';
 import {
   commitmentCreateSchema,
   commitmentUpdateSchema,
@@ -37,11 +38,17 @@ import { invalidFormState, type FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
+  invalidCustomFieldState,
   failureState,
   finishWith,
   validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
+import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
+import {
+  readCustomFieldPayloadState,
+  type CustomFieldPayload,
+} from '@/server/custom-fields/form';
 
 interface ParentContext {
   kind: 'allocation' | 'recurring';
@@ -210,6 +217,7 @@ async function createCommitment(
   actorId: string,
   input: CommitmentCreateInput,
   context: ParentContext,
+  custom: CustomFieldPayload,
 ): Promise<CommitmentEntry> {
   requireEditable(context);
   requireComponentAllowed(context, input.component);
@@ -231,12 +239,19 @@ async function createCommitment(
       })
       .returning();
     if (!created) throw new Error('failed to create the commitment entry');
+    await saveCustomFieldValues(tx, {
+      entityType: 'commitment_entry',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId: actorId,
+    });
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'create',
       entityType: 'commitment_entry',
       entityId: created.id,
-      after: commitmentSnapshot(created),
+      after: withCustomFields(commitmentSnapshot(created), custom.fields, custom.values),
     });
   });
   if (!created) throw new Error('failed to create the commitment entry');
@@ -248,6 +263,7 @@ async function updateCommitment(
   input: CommitmentUpdateInput,
   commitment: CommitmentEntry,
   context: ParentContext,
+  custom: CustomFieldPayload,
 ): Promise<CommitmentEntry> {
   if (commitment.voidedAt) throw new FormError('This commitment is voided and read-only.');
   requireEditable(context);
@@ -261,6 +277,7 @@ async function updateCommitment(
 
   let updated: CommitmentEntry | undefined;
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('commitment_entry', commitment.id, tx);
     [updated] = await tx
       .update(commitmentEntries)
       .set({
@@ -275,13 +292,20 @@ async function updateCommitment(
       .where(eq(commitmentEntries.id, commitment.id))
       .returning();
     if (!updated) throw new FormError('Commitment entry not found.');
+    await saveCustomFieldValues(tx, {
+      entityType: 'commitment_entry',
+      entityId: commitment.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId: actorId,
+    });
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'update',
       entityType: 'commitment_entry',
       entityId: commitment.id,
-      before: commitmentSnapshot(commitment),
-      after: commitmentSnapshot(updated),
+      before: withCustomFields(commitmentSnapshot(commitment), custom.fields, beforeValues),
+      after: withCustomFields(commitmentSnapshot(updated), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -367,6 +391,7 @@ async function createSpend(
   input: SpendCreateInput,
   context: ParentContext,
   splits: ParsedSplits[],
+  custom: CustomFieldPayload,
 ): Promise<SpendEntry> {
   requireEditable(context);
   requireComponentAllowed(context, input.component);
@@ -473,12 +498,19 @@ async function createSpend(
       .returning();
     if (!created) throw new Error('failed to create the spend entry');
 
+    await saveCustomFieldValues(tx, {
+      entityType: 'spend_entry',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId: actorId,
+    });
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'create',
       entityType: 'spend_entry',
       entityId: created.id,
-      after: spendSnapshot(created),
+      after: withCustomFields(spendSnapshot(created), custom.fields, custom.values),
     });
 
     for (const split of splits) {
@@ -510,6 +542,7 @@ async function updateSpend(
   input: SpendUpdateInput,
   spend: SpendEntry,
   context: ParentContext,
+  custom: CustomFieldPayload,
 ): Promise<SpendEntry> {
   if (spend.voidedAt) throw new FormError('This spend entry is voided and read-only.');
   requireSpendLifecycle(context);
@@ -528,6 +561,7 @@ async function updateSpend(
 
   let updated: SpendEntry | undefined;
   await getDb().transaction(async (tx) => {
+    const beforeValues = await readCustomFieldValues('spend_entry', spend.id, tx);
     [updated] = await tx
       .update(spendEntries)
       .set({
@@ -544,13 +578,20 @@ async function updateSpend(
       .where(eq(spendEntries.id, spend.id))
       .returning();
     if (!updated) throw new FormError('Spend entry not found.');
+    await saveCustomFieldValues(tx, {
+      entityType: 'spend_entry',
+      entityId: spend.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId: actorId,
+    });
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'update',
       entityType: 'spend_entry',
       entityId: spend.id,
-      before: spendSnapshot(spend),
-      after: spendSnapshot(updated),
+      before: withCustomFields(spendSnapshot(spend), custom.fields, beforeValues),
+      after: withCustomFields(spendSnapshot(updated), custom.fields, custom.values),
       reason: input.reason,
     });
   });
@@ -606,6 +647,10 @@ export async function createCommitmentAction(
   const parsed = validateForm(previous, commitmentCreateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('commitment_entry', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   let redirectTo = '/plan/projects';
   let created: CommitmentEntry;
   try {
@@ -614,7 +659,7 @@ export async function createCommitmentAction(
       recurringOpsItemId: parsed.data.recurringOpsItemId,
     });
     redirectTo = context.redirectTo;
-    created = await createCommitment(actor.id, parsed.data, context);
+    created = await createCommitment(actor.id, parsed.data, context, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
@@ -629,12 +674,16 @@ export async function updateCommitmentAction(
   const parsed = validateForm(previous, commitmentUpdateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('commitment_entry', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   let redirectTo = '/plan/projects';
   let updated: CommitmentEntry;
   try {
     const { commitment, context } = await loadCommitment(parsed.data.id);
     redirectTo = context.redirectTo;
-    updated = await updateCommitment(actor.id, parsed.data, commitment, context);
+    updated = await updateCommitment(actor.id, parsed.data, commitment, context, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
@@ -669,6 +718,10 @@ export async function createSpendAction(
   const parsed = validateForm(previous, spendCreateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('spend_entry', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   const settlements = readSettlementSplits(formData);
   if (Object.keys(settlements.errors).length > 0) {
     return invalidFormState(
@@ -687,7 +740,7 @@ export async function createSpendAction(
       recurringOpsItemId: parsed.data.recurringOpsItemId,
     });
     redirectTo = context.redirectTo;
-    created = await createSpend(actor.id, parsed.data, context, settlements.splits);
+    created = await createSpend(actor.id, parsed.data, context, settlements.splits, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
@@ -702,12 +755,16 @@ export async function updateSpendAction(
   const parsed = validateForm(previous, spendUpdateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('spend_entry', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   let redirectTo = '/plan/projects';
   let updated: SpendEntry;
   try {
     const { spend, context } = await loadSpend(parsed.data.id);
     redirectTo = context.redirectTo;
-    updated = await updateSpend(actor.id, parsed.data, spend, context);
+    updated = await updateSpend(actor.id, parsed.data, spend, context, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }

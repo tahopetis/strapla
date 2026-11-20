@@ -30,10 +30,16 @@ export function toCustomFieldDefinition(row: CustomField): CustomFieldDefinition
     required: row.required,
     description: row.description,
     example: row.example,
+    position: row.position,
   };
 }
 
-/** The active registry, in creation order; optionally scoped to one entity. */
+/**
+ * The active registry, in administrator order; optionally scoped to one entity.
+ * This is the one ordering read (#73): the position column is authoritative,
+ * with creation order and then name as tie-breakers so legacy rows and a
+ * concurrent insert can never leave the order undefined.
+ */
 export async function listCustomFieldDefinitions(
   entityType?: CustomFieldEntityType,
 ): Promise<CustomFieldDefinition[]> {
@@ -42,8 +48,26 @@ export async function listCustomFieldDefinitions(
     .select()
     .from(customFields)
     .where(entityType ? and(active, eq(customFields.entityType, entityType)) : active)
-    .orderBy(asc(customFields.createdAt), asc(customFields.name));
+    .orderBy(
+      asc(customFields.position),
+      asc(customFields.createdAt),
+      asc(customFields.name),
+    );
   return rows.map(toCustomFieldDefinition);
+}
+
+/** The next position for a new field: one past the highest, archived rows included. */
+export async function nextCustomFieldPosition(
+  executor: Pick<Db, 'select'>,
+  entityType: CustomFieldEntityType,
+): Promise<number> {
+  const rows = await executor
+    .select({ position: customFields.position })
+    .from(customFields)
+    .where(eq(customFields.entityType, entityType))
+    .orderBy(desc(customFields.position))
+    .limit(1);
+  return (rows[0]?.position ?? -1) + 1;
 }
 
 export async function findCustomField(id: string): Promise<CustomFieldDefinition | null> {
