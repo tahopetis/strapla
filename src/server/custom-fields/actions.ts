@@ -392,18 +392,16 @@ async function restoreCustomField(
 async function moveCustomField(
   actorId: string,
   input: { id: string; direction: 'up' | 'down' },
-): Promise<{ moved: CustomField; position: number; atEdge: boolean }> {
+): Promise<{ name: string; atEdge: boolean }> {
   const existing = await requireField(input.id);
   const ordered = await listCustomFieldDefinitions(
     existing.entityType as CustomFieldEntityType,
   );
   const neighbourId = customFieldMoveNeighbour(ordered, existing.id, input.direction);
-  if (!neighbourId) {
-    return { moved: existing, position: existing.position, atEdge: true };
-  }
+  if (!neighbourId) return { name: existing.name, atEdge: true };
 
   const neighbour = ordered.find((field) => field.id === neighbourId);
-  if (!neighbour) return { moved: existing, position: existing.position, atEdge: true };
+  if (!neighbour) return { name: existing.name, atEdge: true };
 
   await getDb().transaction(async (tx) => {
     await tx
@@ -433,7 +431,7 @@ async function moveCustomField(
     });
   });
 
-  return { moved: existing, position: neighbour.position, atEdge: false };
+  return { name: existing.name, atEdge: false };
 }
 
 // ---------------------------------------------------------------- actions
@@ -522,7 +520,7 @@ export async function moveCustomFieldAction(
   const parsed = validateForm(previous, customFieldMoveSchema, formData);
   if (!parsed.ok) return parsed.state;
 
-  let result: { moved: CustomField; position: number; atEdge: boolean };
+  let result: { name: string; atEdge: boolean };
   try {
     result = await moveCustomField(actor.id, parsed.data);
   } catch (error) {
@@ -531,8 +529,8 @@ export async function moveCustomFieldAction(
   if (result.atEdge) {
     finishWith(
       PAGE,
-      `“${result.moved.name}” is already at the ${parsed.data.direction === 'up' ? 'top' : 'bottom'} of its list.`,
+      `“${result.name}” is already at the ${parsed.data.direction === 'up' ? 'top' : 'bottom'} of its list.`,
     );
   }
-  finishWith(PAGE, `“${result.moved.name}” moved ${parsed.data.direction}.`);
+  finishWith(PAGE, `“${result.name}” moved ${parsed.data.direction}.`);
 }

@@ -123,6 +123,35 @@ async function loadExecutionCustomFields(
   return { commitmentFields, commitmentValues, spendFields, spendValues };
 }
 
+/**
+ * The empty shape for callers that only read money figures (project allocation
+ * list, year-close preview). The registry and values reads run only when the
+ * funding detail page asks for them, so the four extra indexed queries do not
+ * multiply across every allocation on those screens.
+ */
+function emptyExecutionCustomFields(): ExecutionCustomFields {
+  return {
+    commitmentFields: [],
+    commitmentValues: new Map(),
+    spendFields: [],
+    spendValues: new Map(),
+  };
+}
+
+/** Opt-in for the two records' custom fields on a funding payload (#71). */
+export interface ExecutionFundingOptions {
+  withCustomFields?: boolean;
+}
+
+async function fundingCustomFields(
+  commitments: CommitmentRow[],
+  spends: SpendRow[],
+  options: ExecutionFundingOptions,
+): Promise<ExecutionCustomFields> {
+  if (!options.withCustomFields) return emptyExecutionCustomFields();
+  return loadExecutionCustomFields(commitments, spends);
+}
+
 async function loadCommitmentRows(
   parent: { allocationId: string } | { recurringItemId: string },
 ): Promise<CommitmentRow[]> {
@@ -434,6 +463,7 @@ async function loadPriorSettlementOptions(
 
 export async function getAllocationFunding(
   allocationId: string,
+  options: ExecutionFundingOptions = {},
 ): Promise<AllocationFunding | null> {
   const db = getDb();
   const headerRows = await db
@@ -479,7 +509,7 @@ export async function getAllocationFunding(
       ...settlementOptionsFromCommitments(commitments),
       ...(await loadPriorSettlementOptions(header.project.id, header.annualPlan.fiscalYear)),
     ],
-    customFields: await loadExecutionCustomFields(commitments, spends),
+    customFields: await fundingCustomFields(commitments, spends, options),
   };
 }
 
@@ -496,6 +526,7 @@ export interface RecurringOpsFunding {
 
 export async function getRecurringOpsFunding(
   itemId: string,
+  options: ExecutionFundingOptions = {},
 ): Promise<RecurringOpsFunding | null> {
   const db = getDb();
   const headerRows = await db
@@ -527,7 +558,7 @@ export async function getRecurringOpsFunding(
       carryInOpex: header.item.carryInOpex,
     }),
     settlementOptions: settlementOptionsFromCommitments(commitments),
-    customFields: await loadExecutionCustomFields(commitments, spends),
+    customFields: await fundingCustomFields(commitments, spends, options),
   };
 }
 

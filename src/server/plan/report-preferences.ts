@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { reportPreferences } from '@/db/schema';
-import type { ReportKey } from './report-tables';
+import { recordAudit } from '@/server/audit';
+import { REPORT_TITLES, type ReportKey } from './report-tables';
 
 /**
  * Remembered custom-column selection per user and report (issue #75).
@@ -14,13 +15,10 @@ import type { ReportKey } from './report-tables';
  * request and is never stored by a plain report read.
  */
 
-/** Every report the preference table accepts, for validation at the action boundary. */
-export const REPORT_PREFERENCE_KEYS: readonly ReportKey[] = [
-  'si-five-year',
-  'annual-plan',
-  'project-register',
-  'budget-vs-actual',
-];
+/** Every report the preference table accepts; derived from the report catalogue. */
+export const REPORT_PREFERENCE_KEYS: readonly ReportKey[] = Object.keys(
+  REPORT_TITLES,
+) as ReportKey[];
 
 export function isReportPreferenceKey(value: string): value is ReportKey {
   return (REPORT_PREFERENCE_KEYS as readonly string[]).includes(value);
@@ -42,9 +40,10 @@ export async function readReportColumnPreference(
 }
 
 /**
- * Upserts one report's remembered selection. Ids are de-duplicated in the order
- * the form submitted; unknown and archived ids are harmless because every read
- * intersects them with the active registry.
+ * Upserts one report's remembered selection and audits the change (ADR-0004:
+ * every mutation writes its audit entry in the same transaction). Ids are
+ * de-duplicated in the order the form submitted; unknown and archived ids are
+ * harmless because every read intersects them with the active registry.
  */
 export async function saveReportColumnPreference(
   userId: string,
@@ -52,11 +51,31 @@ export async function saveReportColumnPreference(
   columnIds: readonly string[],
 ): Promise<void> {
   const next = [...new Set(columnIds)];
-  await getDb()
-    .insert(reportPreferences)
-    .values({ userId, reportKey: report, columnIds: next })
-    .onConflictDoUpdate({
-      target: [reportPreferences.userId, reportPreferences.reportKey],
-      set: { columnIds: next, updatedAt: new Date() },
+  await getDb().transaction(async (tx) => {
+    const existing = await tx
+      .select({ columnIds: reportPreferences.columnIds })
+      .from(reportPreferences)
+      .where(
+        and(eq(reportPreferences.userId, userId), eq(reportPreferences.reportKey, report)),
+      )
+      .limit(1);
+
+    await tx
+      .insert(reportPreferences)
+      .values({ userId, reportKey: report, columnIds: next })
+      .onConflictDoUpdate({
+        target: [reportPreferences.userId, reportPreferences.reportKey],
+        set: { columnIds: next, updatedAt: new Date() },
+      });
+
+    await recordAudit(tx, {
+      actorUserId: userId,
+      action: 'report_preference_save',
+      entityType: 'report_preference',
+      // The row is identified by the pair that makes it unique.
+      entityId: `${userId}:${report}`,
+      before: existing[0] ? { reportKey: report, columnIds: existing[0].columnIds } : null,
+      after: { reportKey: report, columnIds: next },
     });
+  });
 }

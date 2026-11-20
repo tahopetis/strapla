@@ -105,6 +105,7 @@ a tenant dimension.
 | --- | --- |
 | `custom_fields` | The administrator-defined registry: entity type, name, stable machine `key` (derived once from the name; the W9 field list's identifier), type (`text`, `number`, `date`), required flag, description, optional example value, administrator-controlled `position`, archive state and the audit references. Active names and keys are unique per entity; archiving frees both. |
 | `custom_field_values` | One row per record that has extra values, keyed by entity type and record id, holding one JSON object keyed by **field id** (so renaming a field never rewrites recorded data). |
+| `report_preferences` | One remembered custom-column selection per user and report (#75): the selected field ids. Resolved against the live registry on read, so archived ids drop out; no row means "never chosen" (all active fields), an empty list means "no extra columns". |
 
 - Supported entities: `strategic_initiative`, `annual_program`, `project`, `recurring_ops_item`, and (#71) `ijin_prinsip`, `project_year_allocation`, `commitment_entry`, `spend_entry`. The strategic plan and annual plan are deliberately out: one record each, with no per-record variance to capture. The opening import covers SIs, programs and projects only, so the four added records are entered through their own forms.
 - Values are parsed and validated by type in `src/domain/custom-fields.ts`; the forms, record panels,
@@ -117,7 +118,9 @@ a tenant dimension.
   The audit `before` snapshot records the values that were held. The audit view labels the five
   custom-field actions (create, update, remove, restore, reorder) and the `custom_field` entity in
   words while keeping the machine tokens as filter values, so a saved audit link still filters the
-  same rows.
+  same rows. Saving a report's column selection writes one `report_preference_save` audit entry
+  (entity `report_preference`, before/after ids), so personal display changes are traceable as
+  well and INV-13 holds for that row.
 - Administration → Custom fields shows every active field's stable key and how many records hold a
   value for it (the remove confirmation repeats the count); the archived list shows the key, type,
   archive date, reason and how many records still hold a value. Restoring (with a reason) clears the

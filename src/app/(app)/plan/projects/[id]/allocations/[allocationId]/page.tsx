@@ -26,7 +26,7 @@ export default async function AllocationFundingPage({
 }) {
   const { id, allocationId } = await params;
   const { error, message } = await searchParams;
-  const funding = await getAllocationFunding(allocationId);
+  const funding = await getAllocationFunding(allocationId, { withCustomFields: true });
   if (!funding || funding.project.id !== id) notFound();
 
   const categories = await listSpendCategoryOptions();

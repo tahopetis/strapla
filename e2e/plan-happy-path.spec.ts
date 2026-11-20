@@ -687,6 +687,50 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
       .first(),
   ).toBeVisible();
 
+  // #71: a field on a newly covered record type works end to end
+  await page.goto('/admin/custom-fields');
+  const ijinFieldCard = page.locator('section').filter({ hasText: 'Ijin prinsip' });
+  await ijinFieldCard.getByText('Add a field').click();
+  const addIjinFieldForm = ijinFieldCard
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add field' }) });
+  await addIjinFieldForm.locator('input[name="name"]').fill('Approval note');
+  await addIjinFieldForm.locator('select[name="type"]').selectOption('text');
+  await addIjinFieldForm
+    .locator('textarea[name="description"]')
+    .fill('What the directors approved.');
+  await addIjinFieldForm.getByRole('button', { name: 'Add field' }).click();
+  await expect(page.getByText(/Custom field “Approval note” added\./)).toBeVisible();
+
+  await page.goto('/plan/projects');
+  await Promise.all([
+    page.waitForURL(/\/plan\/projects\/[0-9a-f-]+$/),
+    page
+      .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+      .getByRole('link', { name: 'Open' })
+      .click(),
+  ]);
+  const ijinCard = page.locator('section').filter({ hasText: 'Ijin prinsip' });
+  const recordIjinForm = ijinCard
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Record ijin prinsip' }) });
+  await recordIjinForm.getByLabel('Approval note').fill('Approved for phased delivery.');
+  await recordIjinForm.getByRole('button', { name: 'Record ijin prinsip' }).click();
+  await expect(page.getByText(/Ijin prinsip for PRJ-2027-001 saved\./)).toBeVisible();
+  await expect(
+    ijinCard.locator('dd', { hasText: 'Approved for phased delivery.' }),
+  ).toBeVisible();
+
+  // the definition and the value survive a reload, and the record form prefills
+  await page.reload();
+  await expect(
+    ijinCard.locator('dd', { hasText: 'Approved for phased delivery.' }),
+  ).toBeVisible();
+  await ijinCard.locator('summary', { hasText: 'Update ijin prinsip' }).click();
+  await expect(ijinCard.getByLabel('Approval note')).toHaveValue(
+    'Approved for phased delivery.',
+  );
+
   // ------------------------------------------------------ reports and exports
   await page.goto('/reports');
   await expect(page.getByText('SI five-year view', { exact: true }).first()).toBeVisible();

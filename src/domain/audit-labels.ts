@@ -18,10 +18,12 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   custom_field_remove: 'Custom field removed',
   custom_field_restore: 'Custom field restored',
   custom_field_reorder: 'Custom field reordered',
+  report_preference_save: 'Report column selection saved',
 };
 
 const ENTITY_TYPE_LABELS: Readonly<Record<string, string>> = {
   custom_field: 'Custom field',
+  report_preference: 'Report preference',
 };
 
 export function auditActionLabel(action: string): string {

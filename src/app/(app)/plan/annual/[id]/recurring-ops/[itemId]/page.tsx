@@ -26,7 +26,7 @@ export default async function RecurringOpsFundingPage({
 }) {
   const { id, itemId } = await params;
   const { error, message } = await searchParams;
-  const funding = await getRecurringOpsFunding(itemId);
+  const funding = await getRecurringOpsFunding(itemId, { withCustomFields: true });
   if (!funding || funding.annualPlan.id !== id) notFound();
 
   const categories = await listSpendCategoryOptions();

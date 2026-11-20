@@ -522,10 +522,10 @@ detailed exportable sources.
   entity type, action and actor. The screen shows the latest 200 matching entries.
 - **Export CSV** downloads the filtered trail (up to 5000 entries) for directors/finance.
 - **Custom fields**: when an administrator defines extra fields on a record type, they appear here in
-  the before/after values under `customFields`. The four custom-field actions and the entity are
-  shown in readable words (**Custom field created / updated / removed / restored**, entity
-  **Custom field**); the filter keeps the machine token as its value, so a saved filter link still
-  works.
+  the before/after values under `customFields`. The five custom-field actions and the entity are
+  shown in readable words (**Custom field created / updated / removed / restored / reordered**,
+  entity **Custom field**); the filter keeps the machine token as its value, so a saved filter link
+  still works.
 - **Values** expands before/after JSON in place.
 - Most record pages (e.g. projects) also have a **Change history** card.
 
