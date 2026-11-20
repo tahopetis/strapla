@@ -152,7 +152,10 @@ a check at all; a check that only runs after the merge holds every PR open forev
 ## Current state (November 2026)
 
 The repository is public and MIT-licensed; secret scanning and push protection are enabled. The
-security gate runs four scanners and reports **0 findings at any severity**, with one open waiver.
+container package `ghcr.io/tahopetis/strapla` is public as well: anyone can pull a published image,
+and pushing requires repository write access (normally only the `docker` workflow's
+`GITHUB_TOKEN`). The security gate runs four scanners and reports **0 findings at any severity**,
+with one open waiver.
 The threshold is `medium`; the gate passes on its own merits rather than shadow mode. CodeQL,
 dependency review and the image scan are required on pull requests.
 

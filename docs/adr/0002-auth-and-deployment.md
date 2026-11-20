@@ -39,7 +39,7 @@
 - Multi-stage `Dockerfile`: pnpm install → `next build` (standalone output) → runtime image on `node:24-alpine`, non-root user, `HEALTHCHECK` against `/healthz`.
 - `docker-compose.yml` at the repo root: `app`, `db` (`postgres:18-alpine`), and a backup service. PostgreSQL data lives in a named volume. Migrations run on app start (`drizzle-kit migrate` in the entrypoint) before the server starts — single-instance deployment, so this is safe.
 - Configuration is environment only: `DATABASE_URL` and `APP_BASE_URL`. Nothing else is required to boot.
-- Images are published to private GHCR as **multi-arch** (`linux/amd64`, `linux/arm64`) with `sha-<commit>` and `latest` tags, so the same image runs on the dev box and on a future VPS.
+- Images are published to public GHCR as **multi-arch** (`linux/amd64`, `linux/arm64`) with `sha-<commit>` and `latest` tags, so the same image runs on the dev box and on a future VPS.
 - TLS terminates at a reverse proxy (Caddy or the platform) once a host and domain exist. Until then the app runs on HTTP for local use; the secure-cookie flag follows `APP_BASE_URL`.
 - **Nightly backup:** `pg_dump -Fc` to a mounted volume, retained 30 days; a documented restore procedure is part of M0 and is tested at least once. Off-site copies are deferred until the host is known.
 
@@ -73,3 +73,8 @@ Host, domain, TLS and SSH ownership are deferred (charter §11); images and comp
   which is still "migrations run on app start" above, and nothing in the
   container installs packages at runtime. The image scan therefore no longer
   carries npm's bundled toolchain as a CVE source.
+- **2026-11-20 — image visibility:** the GHCR package is **public**, so pulls
+  need no credential on the deployment host; the deployment line above now reads
+  public (it said private while the repository was private). Pushing still
+  requires repository write access, normally only the `docker` workflow's
+  `GITHUB_TOKEN`. See #83 and [ADR-0001](0001-stack.md) amendments.

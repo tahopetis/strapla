@@ -82,5 +82,5 @@ users=1  audit=7  programs=1
 - Production host, domain and TLS (charter §11 R9 — deferred by the owner; the compose file,
   `.env` contract, reverse-proxy guidance and go-live checklist are ready).
 - Pulling the published GHCR image on the host (the local build proves the Dockerfile/compose path;
-  the host needs a token with `read:packages`, documented in `docs/operations.md`).
+  the package is public now, so the host pulls it anonymously — documented in `docs/operations.md`).
 - The owner's UAT with real FY2027/FY2026 data and the UAT sign-off (`docs/UAT-PLAN.md`).

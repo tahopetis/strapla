@@ -38,8 +38,8 @@ docker compose pull app
 docker compose up -d --force-recreate app
 ```
 
-To pin a release, set `STRAPLA_TAG=v2026.12.0` in `.env`. The token used by `docker login ghcr.io`
-needs `read:packages`.
+To pin a release, set `STRAPLA_TAG=v2026.12.0` in `.env`. The image is published publicly, so
+pulling needs no registry login.
 
 ## Local development
 
@@ -94,7 +94,7 @@ docker compose up -d           # full stack (pulls the published GHCR image)
 docker compose build app       # build the app image locally
 ```
 
-Images are multi-arch (`linux/amd64`, `linux/arm64`) published to private GHCR on `main`; see [`docs/operations.md`](docs/operations.md).
+Images are multi-arch (`linux/amd64`, `linux/arm64`) published to public GHCR on `main`; see [`docs/operations.md`](docs/operations.md).
 
 ## Layout
 
