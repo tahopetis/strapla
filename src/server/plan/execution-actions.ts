@@ -591,16 +591,11 @@ async function voidSpend(
 
 // ---------------------------------------------------------------- actions
 
-function commitmentLabel(commitment: Pick<CommitmentEntry, 'reference' | 'amount'>): string {
-  return commitment.reference
-    ? `Commitment ${commitment.reference}`
-    : `Commitment of ${formatRupiah(commitment.amount)}`;
-}
-
-function spendLabel(spend: Pick<SpendEntry, 'reference' | 'amount'>): string {
-  return spend.reference
-    ? `Spend entry ${spend.reference}`
-    : `Spend entry of ${formatRupiah(spend.amount)}`;
+function recordLabel(
+  noun: 'Commitment' | 'Spend entry',
+  record: Pick<CommitmentEntry | SpendEntry, 'reference' | 'amount'>,
+): string {
+  return record.reference ? `${noun} ${record.reference}` : `${noun} of ${formatRupiah(record.amount)}`;
 }
 
 export async function createCommitmentAction(
@@ -623,7 +618,7 @@ export async function createCommitmentAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, `${commitmentLabel(created)} recorded.`);
+  finishWith(redirectTo, `${recordLabel('Commitment', created)} recorded.`);
 }
 
 export async function updateCommitmentAction(
@@ -643,7 +638,7 @@ export async function updateCommitmentAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, `${commitmentLabel(updated)} updated.`);
+  finishWith(redirectTo, `${recordLabel('Commitment', updated)} updated.`);
 }
 
 export async function voidCommitmentAction(
@@ -663,7 +658,7 @@ export async function voidCommitmentAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, `${commitmentLabel(voided)} voided.`);
+  finishWith(redirectTo, `${recordLabel('Commitment', voided)} voided.`);
 }
 
 export async function createSpendAction(
@@ -696,7 +691,7 @@ export async function createSpendAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, `${spendLabel(created)} recorded.`);
+  finishWith(redirectTo, `${recordLabel('Spend entry', created)} recorded.`);
 }
 
 export async function updateSpendAction(
@@ -716,7 +711,7 @@ export async function updateSpendAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, `${spendLabel(updated)} updated.`);
+  finishWith(redirectTo, `${recordLabel('Spend entry', updated)} updated.`);
 }
 
 export async function voidSpendAction(
@@ -736,5 +731,5 @@ export async function voidSpendAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, `${spendLabel(voided)} voided.`);
+  finishWith(redirectTo, `${recordLabel('Spend entry', voided)} voided.`);
 }

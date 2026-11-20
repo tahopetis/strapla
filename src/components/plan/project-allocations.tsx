@@ -219,7 +219,7 @@ function AllocationCard({
             <ConfirmDialog
               action={voidAllocationAction}
               triggerLabel="Void allocation"
-              title="Void this fiscal-year allocation?"
+              title="Void this project year allocation?"
               consequence="Voiding keeps the record and its history; the allocation leaves the active fiscal year."
               confirmLabel="Void allocation"
             >

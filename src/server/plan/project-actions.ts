@@ -29,7 +29,7 @@ import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  customFieldState,
+  invalidCustomFieldState,
   failureState,
   finishWith,
   validateForm,
@@ -407,7 +407,7 @@ export async function createProjectAction(previous: FormState, formData: FormDat
   if (!parsed.ok) return parsed.state;
 
   const custom = await readCustomFieldPayloadState('project', formData);
-  const customError = customFieldState(previous, parsed.values, custom.errors);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
   if (customError) return customError;
 
   let created: Project;
@@ -425,7 +425,7 @@ export async function updateProjectAction(previous: FormState, formData: FormDat
   if (!parsed.ok) return parsed.state;
 
   const custom = await readCustomFieldPayloadState('project', formData);
-  const customError = customFieldState(previous, parsed.values, custom.errors);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
   if (customError) return customError;
 
   let updated: Project;

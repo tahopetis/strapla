@@ -23,7 +23,7 @@ import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  customFieldState,
+  invalidCustomFieldState,
   failureState,
   finishWith,
   validateForm,
@@ -235,7 +235,7 @@ export async function createRecurringOpsAction(
   if (!parsed.ok) return parsed.state;
 
   const custom = await readCustomFieldPayloadState('recurring_ops_item', formData);
-  const customError = customFieldState(previous, parsed.values, custom.errors);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
   if (customError) return customError;
 
   let created: RecurringOpsItem;
@@ -259,7 +259,7 @@ export async function updateRecurringOpsAction(
   if (!parsed.ok) return parsed.state;
 
   const custom = await readCustomFieldPayloadState('recurring_ops_item', formData);
-  const customError = customFieldState(previous, parsed.values, custom.errors);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
   if (customError) return customError;
 
   let updated: RecurringOpsItem;

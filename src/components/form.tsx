@@ -105,23 +105,36 @@ export function Form({
   );
 }
 
-/** Per-input aria wiring shared by the field components. */
-function useFieldState(name: string): {
+export interface FieldState {
+  /** The message raised for this input. */
   error: string | undefined;
+  /** The value last submitted for this input, when a form surrounds it. */
+  echo: string | undefined;
   errorId: string;
   hintId: string;
-  describedBy: (hasHint: boolean) => string | undefined;
+  /** aria-describedby for the input: its hint, its error, or both. */
+  describedBy: (hasHint?: boolean) => string | undefined;
   invalid: true | undefined;
-} {
+}
+
+/**
+ * The per-input wiring shared by every field: the message, the echoed value
+ * and the aria ids. Exported because raw inputs outside the standard field
+ * components (settlement rows, control-total rows, registry fields) need the
+ * same behaviour.
+ */
+export function useFieldState(name: string): FieldState {
   const error = useFieldError(name);
+  const echo = useFormEcho(name);
   const instanceId = useId();
   const errorId = `${instanceId}-error`;
   const hintId = `${instanceId}-hint`;
   return {
     error,
+    echo,
     errorId,
     hintId,
-    describedBy: (hasHint: boolean) =>
+    describedBy: (hasHint = false) =>
       [hasHint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ') || undefined,
     invalid: error ? true : undefined,
   };
@@ -167,11 +180,9 @@ export function TextField({
   maxLength?: number;
   minLength?: number;
 }) {
-  const { error, errorId, hintId, describedBy, invalid } = useFieldState(name);
+  const { error, echo, errorId, hintId, describedBy, invalid } = useFieldState(name);
   // A password is never echoed back into the DOM.
-  const echo = useFormEcho(name);
-  const passwordType = type === 'password';
-  const value = passwordType ? undefined : (echo ?? defaultValue ?? undefined);
+  const value = type === 'password' ? undefined : (echo ?? defaultValue ?? undefined);
 
   return (
     <label className={`${labelClass} block`}>
@@ -208,8 +219,7 @@ export function MoneyField({
   required?: boolean;
   hint?: ReactNode;
 }) {
-  const { error, errorId, hintId, describedBy, invalid } = useFieldState(name);
-  const echo = useFormEcho(name);
+  const { error, echo, errorId, hintId, describedBy, invalid } = useFieldState(name);
   const value =
     echo ?? (defaultValue === null || defaultValue === undefined ? undefined : String(defaultValue));
 
@@ -254,8 +264,7 @@ export function TextAreaField({
   hint?: ReactNode;
   placeholder?: string;
 }) {
-  const { error, errorId, hintId, describedBy, invalid } = useFieldState(name);
-  const echo = useFormEcho(name);
+  const { error, echo, errorId, hintId, describedBy, invalid } = useFieldState(name);
   const value = echo ?? defaultValue ?? undefined;
 
   return (
@@ -299,8 +308,7 @@ export function SelectField({
   placeholder?: string;
   hint?: ReactNode;
 }) {
-  const { error, errorId, hintId, describedBy, invalid } = useFieldState(name);
-  const echo = useFormEcho(name);
+  const { error, echo, errorId, hintId, describedBy, invalid } = useFieldState(name);
   const value = echo ?? defaultValue ?? '';
 
   return (
@@ -346,8 +354,7 @@ export function CheckboxField({
   defaultChecked?: boolean;
   hint?: ReactNode;
 }) {
-  const { error, errorId, hintId, describedBy, invalid } = useFieldState(name);
-  const echo = useFormEcho(name);
+  const { error, echo, errorId, hintId, describedBy, invalid } = useFieldState(name);
   const checked = echo === undefined ? Boolean(defaultChecked) : echo === 'on';
 
   return (
@@ -394,18 +401,12 @@ export function SubmitButton({
   children,
   pendingLabel = 'Saving…',
   variant = 'primary',
-  name,
-  value,
   className,
-  disabled,
 }: {
   children: ReactNode;
   pendingLabel?: string;
   variant?: 'primary' | 'secondary' | 'danger';
-  name?: string;
-  value?: string;
   className?: string;
-  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   const baseClassName =
@@ -418,9 +419,7 @@ export function SubmitButton({
   return (
     <button
       type="submit"
-      name={name}
-      value={value}
-      disabled={pending || disabled}
+      disabled={pending}
       aria-busy={pending || undefined}
       className={`${className ?? baseClassName} disabled:cursor-not-allowed disabled:opacity-60`}
     >

@@ -1,14 +1,6 @@
 'use client';
 
-import { useId } from 'react';
-import {
-  Form,
-  HiddenField,
-  SubmitButton,
-  TextField,
-  useFieldError,
-  useFormEcho,
-} from '@/components/form';
+import { Form, HiddenField, SubmitButton, TextField, useFieldState } from '@/components/form';
 import { Money } from '@/components/ui';
 import {
   saveOpeningReconciliationAction,
@@ -102,9 +94,7 @@ function ControlTotalRow({
   field: ReconciliationControlField;
   initialValue?: number;
 }) {
-  const error = useFieldError(field.name);
-  const echo = useFormEcho(field.name);
-  const errorId = useId();
+  const { echo, error, errorId, describedBy, invalid } = useFieldState(field.name);
   const value = echo ?? (initialValue === undefined ? '' : String(initialValue));
 
   return (
@@ -117,8 +107,8 @@ function ControlTotalRow({
           required
           defaultValue={value}
           placeholder="0"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-invalid={invalid}
+          aria-describedby={describedBy()}
           className={controlInputClass}
         />
         {error ? (

@@ -1,13 +1,12 @@
 'use client';
 
-import { useId } from 'react';
 import { inputClass, labelClass } from './ui';
 import {
   customFieldTypeLabel,
   type CustomFieldDefinition,
   type CustomFieldValues,
 } from '@/domain/custom-fields';
-import { useFieldError, useFormEcho } from './form';
+import { useFieldState } from './form';
 
 /**
  * The registry's inputs as a client component so a refused submission can
@@ -40,13 +39,7 @@ function CustomFieldInput({
   value: string | number | undefined;
 }) {
   const name = `custom.${field.id}`;
-  const error = useFieldError(name);
-  const echo = useFormEcho(name);
-  const instanceId = useId();
-  const hintId = `${instanceId}-hint`;
-  const errorId = `${instanceId}-error`;
-  const describedBy =
-    [hintId, error ? errorId : null].filter(Boolean).join(' ') || undefined;
+  const { error, echo, errorId, hintId, describedBy, invalid } = useFieldState(name);
   const defaultValue = value === undefined ? undefined : String(value);
 
   return (
@@ -58,8 +51,8 @@ function CustomFieldInput({
         inputMode={field.type === 'number' ? 'numeric' : undefined}
         defaultValue={echo ?? defaultValue}
         required={field.required}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
+        aria-invalid={invalid}
+        aria-describedby={describedBy(true)}
         className={inputClass}
       />
       <span id={hintId} className="mt-1 block text-xs text-slate-500">

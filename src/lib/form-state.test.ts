@@ -82,6 +82,36 @@ describe('parseFormResult', () => {
     }
   });
 
+  it('validates an omitted field but never echoes its value', () => {
+    const schema = z.object({ email: z.string().email(), password: z.string().min(8) });
+    const formData = new FormData();
+    formData.set('email', 'owner@strapla.test');
+    formData.set('password', 'correct horse battery staple');
+
+    const result = parseFormResult(schema, formData, { omit: ['password'] });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.password).toBe('correct horse battery staple');
+      expect(result.values).toEqual({ email: 'owner@strapla.test' });
+    }
+  });
+
+  it('does not echo an omitted field when the submission is invalid', () => {
+    const schema = z.object({ email: z.string().email(), password: z.string().min(8) });
+    const formData = new FormData();
+    formData.set('email', 'not-an-email');
+    formData.set('password', 'short');
+
+    const result = parseFormResult(schema, formData, { omit: ['password'] });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.email).toBe('Invalid email address');
+      expect(result.values).toEqual({ email: 'not-an-email' });
+    }
+  });
+
   it('keeps a schema-level message separate from the field errors', () => {
     const schema = z
       .object({ start: z.string(), end: z.string() })

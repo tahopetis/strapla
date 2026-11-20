@@ -29,15 +29,6 @@ import { countActiveMembers, findMember } from './queries';
 
 const MEMBERS_PAGE = '/admin/members';
 
-/** A submitted password is never echoed back into form state. */
-function withoutPassword(values: Record<string, string>): Record<string, string> {
-  const echoed: Record<string, string> = {};
-  for (const [name, value] of Object.entries(values)) {
-    if (name !== 'password') echoed[name] = value;
-  }
-  return echoed;
-}
-
 function memberSnapshot(user: User): Record<string, unknown> {
   return {
     name: user.name,
@@ -194,15 +185,14 @@ async function revokeMemberSessions(actorId: string, userId: string, reason: str
 
 export async function createMemberAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
-  const parsed = validateForm(previous, memberCreateSchema, formData);
-  if (!parsed.ok) return { ...parsed.state, values: withoutPassword(parsed.state.values ?? {}) };
-  const values = withoutPassword(parsed.values);
+  const parsed = validateForm(previous, memberCreateSchema, formData, { omit: ['password'] });
+  if (!parsed.ok) return parsed.state;
 
   let created: User;
   try {
     created = await createMember(actor.id, parsed.data);
   } catch (error) {
-    return failureState(previous, error, values);
+    return failureState(previous, error, parsed.values);
   }
   finishWith(MEMBERS_PAGE, `Member ${created.name} created.`);
 }
@@ -237,15 +227,14 @@ export async function activateMemberAction(previous: FormState, formData: FormDa
 
 export async function resetMemberPasswordAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
-  const parsed = validateForm(previous, memberPasswordResetSchema, formData);
-  if (!parsed.ok) return { ...parsed.state, values: withoutPassword(parsed.state.values ?? {}) };
-  const values = withoutPassword(parsed.values);
+  const parsed = validateForm(previous, memberPasswordResetSchema, formData, { omit: ['password'] });
+  if (!parsed.ok) return parsed.state;
 
   let updated: User;
   try {
     updated = await resetMemberPassword(actor.id, parsed.data);
   } catch (error) {
-    return failureState(previous, error, values);
+    return failureState(previous, error, parsed.values);
   }
   finishWith(MEMBERS_PAGE, `Password reset for ${updated.email}.`);
 }

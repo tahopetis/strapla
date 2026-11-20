@@ -1,7 +1,6 @@
 'use client';
 
-import { useId } from 'react';
-import { useFieldError, useFormEcho } from '@/components/form';
+import { useFieldState } from '@/components/form';
 
 /**
  * A settlement amount (`settle_<commitmentId>`) is an optional raw input beside
@@ -10,10 +9,7 @@ import { useFieldError, useFormEcho } from '@/components/form';
  * a message raised for that row renders under its input with aria wiring.
  */
 export function SettlementInput({ name, label }: { name: string; label: string }) {
-  const echo = useFormEcho(name);
-  const error = useFieldError(name);
-  const instanceId = useId();
-  const errorId = `${instanceId}-error`;
+  const { echo, error, errorId, describedBy, invalid } = useFieldState(name);
 
   return (
     <label className="block text-xs text-slate-600">
@@ -23,8 +19,8 @@ export function SettlementInput({ name, label }: { name: string; label: string }
         inputMode="numeric"
         placeholder="0"
         defaultValue={echo}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
+        aria-invalid={invalid}
+        aria-describedby={describedBy()}
         className="mt-1 block w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
       />
       {error ? (

@@ -4,6 +4,7 @@ import {
   errorFormState,
   invalidFormState,
   parseFormResult,
+  type CollectFormValuesOptions,
   type FormFieldErrors,
   type FormState,
 } from '@/lib/form-state';
@@ -76,8 +77,9 @@ export function validateForm<S extends z.ZodType>(
   previous: FormState,
   schema: S,
   formData: FormData,
+  options: CollectFormValuesOptions = {},
 ): ValidatedForm<S> {
-  const parsed = parseFormResult(schema, formData);
+  const parsed = parseFormResult(schema, formData, options);
   if (parsed.ok) return parsed;
   return {
     ok: false,
@@ -102,7 +104,7 @@ export function failureState(
 }
 
 /** Custom-field issues keyed by the input name the field renders (`custom.<id>`). */
-export function customFieldState(
+export function invalidCustomFieldState(
   previous: FormState,
   values: Record<string, string>,
   errors: FormFieldErrors,

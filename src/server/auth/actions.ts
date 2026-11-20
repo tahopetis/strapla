@@ -20,6 +20,7 @@ import { countUsers, createUser, findUserByEmail } from './users';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Input names whose submitted value is never echoed back into form state. */
 const SECRET_FIELDS = ['password', 'confirm'] as const;
+const AUTH_FORM = { omit: SECRET_FIELDS };
 
 const emailSchema = z
   .string()
@@ -55,28 +56,13 @@ const setupSchema = z
     message: 'The passwords do not match.',
   });
 
-/** Form state without any password (or password confirmation) value. */
-function withoutSecrets(values: Record<string, string>): Record<string, string> {
-  const echoed: Record<string, string> = {};
-  for (const [name, value] of Object.entries(values)) {
-    if (!(SECRET_FIELDS as readonly string[]).includes(name)) echoed[name] = value;
-  }
-  return echoed;
-}
-
-/** The submitted values for a refused submission, minus the secrets. */
-function invalidState(state: FormState): FormState {
-  return { ...state, values: withoutSecrets(state.values ?? {}) };
-}
-
 export async function setupAction(previous: FormState, formData: FormData): Promise<FormState> {
   if ((await countUsers()) > 0) {
     redirect('/login');
   }
 
-  const parsed = validateForm(previous, setupSchema, formData);
-  if (!parsed.ok) return invalidState(parsed.state);
-  const values = withoutSecrets(parsed.values);
+  const parsed = validateForm(previous, setupSchema, formData, AUTH_FORM);
+  if (!parsed.ok) return parsed.state;
   const { name, email, password } = parsed.data;
 
   let userId: string;
@@ -85,7 +71,7 @@ export async function setupAction(previous: FormState, formData: FormData): Prom
     userId = created.id;
   } catch (error) {
     console.error('setup: failed to create the first administrator', error);
-    return errorFormState(previous, 'Could not create the account. Please try again.', values);
+    return errorFormState(previous, 'Could not create the account. Please try again.', parsed.values);
   }
 
   await createSession(userId);
@@ -93,13 +79,12 @@ export async function setupAction(previous: FormState, formData: FormData): Prom
 }
 
 export async function loginAction(previous: FormState, formData: FormData): Promise<FormState> {
-  const parsed = validateForm(previous, loginSchema, formData);
-  if (!parsed.ok) return invalidState(parsed.state);
-  const values = withoutSecrets(parsed.values);
+  const parsed = validateForm(previous, loginSchema, formData, AUTH_FORM);
+  if (!parsed.ok) return parsed.state;
   const { email, password } = parsed.data;
 
   if (isRateLimited(email)) {
-    return errorFormState(previous, 'Too many attempts. Try again in 15 minutes.', values);
+    return errorFormState(previous, 'Too many attempts. Try again in 15 minutes.', parsed.values);
   }
 
   const user = await findUserByEmail(email);
@@ -108,7 +93,7 @@ export async function loginAction(previous: FormState, formData: FormData): Prom
   if (!user || !user.isActive || !passwordOk) {
     recordFailedAttempt(email);
     console.warn('login failed', { email });
-    return errorFormState(previous, 'Email or password is incorrect.', values);
+    return errorFormState(previous, 'Email or password is incorrect.', parsed.values);
   }
 
   clearAttempts(email);

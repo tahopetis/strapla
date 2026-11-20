@@ -33,7 +33,7 @@ import { recordAudit } from '@/server/audit';
 
 const PROJECTS_PAGE = '/plan/projects';
 
-interface SavedAllocation {
+interface AllocationSaveResult {
   allocation: ProjectYearAllocation;
   fiscalYear: number;
 }
@@ -143,7 +143,7 @@ function requireProjectActiveYear(project: Project, fiscalYear: number): void {
 async function createAllocation(
   userId: string,
   input: AllocationCreateInput,
-): Promise<SavedAllocation> {
+): Promise<AllocationSaveResult> {
   const context = await loadProjectContext(input.projectId);
   requireProjectEditable(context.project, context.strategicPlanStatus);
 
@@ -255,7 +255,7 @@ async function createAllocation(
 async function updateAllocation(
   userId: string,
   input: AllocationUpdateInput,
-): Promise<SavedAllocation> {
+): Promise<AllocationSaveResult> {
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
   requireAllocationEditable(context);
@@ -292,7 +292,7 @@ async function updateAllocation(
   return { allocation: updated, fiscalYear: context.annualPlan.fiscalYear };
 }
 
-async function voidAllocation(userId: string, id: string, reason: string): Promise<SavedAllocation> {
+async function voidAllocation(userId: string, id: string, reason: string): Promise<AllocationSaveResult> {
   const context = await loadAllocationContext(id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is already voided.');
   requireAllocationEditable(context);
@@ -338,7 +338,7 @@ export async function createAllocationAction(
   const parsed = validateForm(previous, allocationCreateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
-  let saved: SavedAllocation;
+  let saved: AllocationSaveResult;
   try {
     saved = await createAllocation(user.id, parsed.data);
   } catch (error) {
@@ -358,7 +358,7 @@ export async function updateAllocationAction(
   const parsed = validateForm(previous, allocationUpdateSchema, formData);
   if (!parsed.ok) return parsed.state;
 
-  let saved: SavedAllocation;
+  let saved: AllocationSaveResult;
   try {
     saved = await updateAllocation(user.id, parsed.data);
   } catch (error) {
@@ -378,7 +378,7 @@ export async function voidAllocationAction(
   const parsed = validateForm(previous, allocationVoidSchema, formData);
   if (!parsed.ok) return parsed.state;
 
-  let saved: SavedAllocation;
+  let saved: AllocationSaveResult;
   try {
     saved = await voidAllocation(user.id, parsed.data.id, parsed.data.reason);
   } catch (error) {

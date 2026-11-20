@@ -329,7 +329,7 @@ async function closeFiscalYear(
       }
     }
 
-    [closed] = await tx
+    const [row] = await tx
       .update(annualPlans)
       .set({
         status: 'closed',
@@ -341,6 +341,8 @@ async function closeFiscalYear(
       })
       .where(eq(annualPlans.id, state.plan.id))
       .returning();
+    if (!row) throw new FormError('Annual plan not found.');
+    closed = row;
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'close',
