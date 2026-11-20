@@ -122,8 +122,8 @@ scripts/opening-import.ts  Opening-balance import CLI (template, dry run, field 
 ## Security
 
 Every pull request and push runs a closed-by-default `security-gate` (secrets,
-dependencies, SAST, container/IaC configuration) plus CodeQL and dependency
-review; the published image gets a report-only Trivy CVE scan. GitHub secret
+dependencies, SAST, container/IaC configuration) plus CodeQL, dependency
+review and a blocking Trivy CVE scan of the container image. GitHub secret
 scanning and push protection are enabled on the repository. The contract is
 [`docs/agents/security.md`](docs/agents/security.md).
 

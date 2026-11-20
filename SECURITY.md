@@ -19,7 +19,7 @@ Every pull request and push runs the security checks described in
 [`docs/agents/security.md`](docs/agents/security.md): a fail-closed
 `security-gate` (gitleaks, osv-scanner, semgrep, Trivy config), CodeQL,
 dependency review on pull requests, GitHub secret scanning with push
-protection, and a report-only Trivy image scan of the published container.
+protection, and a blocking Trivy CVE scan of the container image.
 
 A secret committed to the repository is treated as an incident: the value is
 removed, the history is cleaned if needed, and the credential is rotated.

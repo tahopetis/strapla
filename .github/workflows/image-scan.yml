@@ -1,22 +1,43 @@
 name: image-scan
 
-# Trivy CVE scan of the published container image, report-only in this first
-# iteration (exit-code 0 + SARIF to the Security tab). Promote to blocking once
-# the baseline has been triaged.
+# Trivy CVE scan of the container image. The job is blocking — it fails on any
+# CRITICAL or HIGH finding — and it is a required check on main.
 #
-# The scan is triggered by the docker workflow's completion and resolves the
-# image from that run's head SHA, so it always scans the image that run actually
-# published (sha-<commit>). It never guesses :latest, which could be a stale
-# image while a new build is still running. A scheduled/manual run scans
-# :latest because there is no build to correlate with.
+# Where the image comes from depends on the event:
+#
+#   pull_request       built here (linux/amd64, never pushed), because the
+#                      docker workflow deliberately does not publish PR images.
+#                      A check that only ran after a merge could not be
+#                      required on a pull request.
+#   workflow_run       the exact sha-<commit> image the docker run published.
+#                      It never guesses :latest, which could be a stale image
+#                      while a new build is still running.
+#   schedule           :latest, once a week, to catch new advisories in an
+#                      unchanged image.
+#   workflow_dispatch  :latest, or the image_ref input when given — that is how
+#                      the gate was proven to fail on an older, vulnerable
+#                      image (see docs/agents/security.md).
+#
+# The scan runs twice on purpose. The SARIF pass records every severity in the
+# Security tab and never fails; the gate pass is scoped to CRITICAL/HIGH and
+# owns the exit code. trivy-action couples --severity to both the report and
+# the exit code for SARIF output (it unsets --severity for SARIF unless
+# limit-severities-for-sarif is set), so one pass cannot both keep the medium
+# findings visible and fail only on the high ones.
 
 on:
   workflow_run:
     workflows: ["docker"]
     types: [completed]
+  pull_request:
   schedule:
     - cron: "41 4 * * 1"
   workflow_dispatch:
+    inputs:
+      image_ref:
+        description: "Image to scan (empty scans ghcr.io/<owner>/<repo>:latest)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -29,16 +50,18 @@ concurrency:
 
 jobs:
   scan:
-    name: Trivy image scan (report-only)
-    # PR image builds are never pushed, so there is nothing to scan for them.
+    name: Trivy image scan
+    # A pull_request run reported through workflow_run has no published image;
+    # the pull_request job scans the PR build instead.
     if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -47,28 +70,104 @@ jobs:
 
       - name: Resolve image reference
         id: image
+        env:
+          REQUESTED_REF: ${{ inputs.image_ref }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+          if [ -n "${REQUESTED_REF}" ]; then
+            echo "ref=${REQUESTED_REF}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
             short="${{ github.event.workflow_run.head_sha }}"
             echo "ref=ghcr.io/${{ github.repository }}:sha-${short:0:7}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=strapla:pr-scan" >> "$GITHUB_OUTPUT"
           else
             echo "ref=ghcr.io/${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Scan image with Trivy
+      - name: Set up Buildx
+        if: github.event_name == 'pull_request'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build image for the scan
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: strapla:pr-scan
+          # Its own cache scope: the docker workflow builds the same Dockerfile
+          # on every pull request, and two writers in one scope fight.
+          cache-from: type=gha,scope=image-scan
+          cache-to: type=gha,mode=max,scope=image-scan
+
+      # Pass 1 — record. Every severity goes to the Security tab; this step
+      # never fails on findings, so MEDIUM and LOW stay visible without
+      # blocking a merge.
+      - name: Scan image (SARIF, every severity)
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           image-ref: ${{ steps.image.outputs.ref }}
           format: sarif
           output: trivy-image.sarif
-          severity: CRITICAL,HIGH
+          # Unfixed findings are reported too: "no fix available" is a fact the
+          # gate should see, not a reason to hide the finding.
           ignore-unfixed: false
           exit-code: "0"
 
+      # Pass 2 — decide. Scoped to CRITICAL/HIGH and blocking. On a red job the
+      # table this prints is the triage detail (paths, CVE ids, fixed version).
+      - name: Fail on CRITICAL/HIGH
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "1"
+
       - name: Upload SARIF
-        if: always()
+        # A scan of an arbitrary image_ref is not an analysis of this commit, so
+        # it is not published to the Security tab. Fork and Dependabot PRs get a
+        # read-only token and cannot publish either — the scan itself still runs
+        # and still blocks.
+        if: >-
+          always() && hashFiles('trivy-image.sarif') != ''
+          && !(github.event_name == 'workflow_dispatch' && inputs.image_ref != '')
+          && (github.event_name != 'pull_request' ||
+              (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'))
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+      - name: Summarise findings
+        # Counts, not paths: the job summary is readable by anyone who can read
+        # the check. Paths and CVE ids stay in the scan log and the Security tab.
+        if: always() && hashFiles('trivy-image.sarif') != ''
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          node --input-type=module <<'JS' >> "$GITHUB_STEP_SUMMARY"
+          import { readFileSync } from "node:fs";
+
+          const sarif = JSON.parse(readFileSync("trivy-image.sarif", "utf8"));
+          const counts = { error: 0, warning: 0, note: 0 };
+          for (const run of sarif.runs ?? []) {
+            for (const result of run.results ?? []) {
+              const level = result.level in counts ? result.level : "note";
+              counts[level] += 1;
+            }
+          }
+          const total = counts.error + counts.warning + counts.note;
+          console.log("### Trivy image scan\n");
+          console.log(
+            `\`${process.env.IMAGE_REF}\` — ${total} finding${total === 1 ? "" : "s"} recorded in the SARIF report.\n`,
+          );
+          console.log("| SARIF level | severity band | findings | gate |");
+          console.log("| --- | --- | --- | --- |");
+          console.log(`| error | CRITICAL, HIGH | ${counts.error} | block |`);
+          console.log(`| warning | MEDIUM | ${counts.warning} | tracked |`);
+          console.log(`| note | LOW, UNKNOWN | ${counts.note} | tracked |`);
+          JS
