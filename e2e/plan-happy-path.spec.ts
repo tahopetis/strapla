@@ -880,13 +880,14 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // The recreated field was renamed above, so the surviving active field is the
   // renamed one; the archived original is out of every report.
   await page.goto('/reports/project-register');
+  // The checkboxes live in the closed "Extra columns" disclosure, so open it first.
+  await page.getByText('Extra columns').click();
   const deliveryColumn = page.getByRole('checkbox', {
     name: 'Delivery note (renamed)',
     exact: true,
   });
   const deliveryColumnId = await deliveryColumn.getAttribute('value');
   expect(deliveryColumnId).toBeTruthy();
-  await page.getByText('Extra columns').click();
   await deliveryColumn.uncheck();
   await page.getByRole('button', { name: 'Save selection' }).click();
   await expect(page.getByText(/Selection saved/)).toBeVisible();
