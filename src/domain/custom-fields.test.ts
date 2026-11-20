@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CUSTOM_FIELD_ENTITIES,
   customFieldEntityLabel,
+  customFieldRestoreConflictMessage,
   customFieldSnapshot,
   deriveCustomFieldKey,
   customFieldTypeLabel,
@@ -153,6 +154,47 @@ describe('deriveCustomFieldKey', () => {
 
   it('falls back to a usable key when the name has no letters or digits', () => {
     expect(deriveCustomFieldKey('***', [])).toBe('field');
+  });
+});
+
+describe('customFieldRestoreConflictMessage', () => {
+  const deliveryNote = field({
+    id: 'field-delivery',
+    name: 'Delivery note',
+    key: 'deliveryNote',
+    type: 'text',
+  });
+
+  it('returns null when an active field uses neither the name nor the key', () => {
+    expect(customFieldRestoreConflictMessage(deliveryNote, {}, 'Project')).toBeNull();
+  });
+
+  it('names the active field that already uses the name', () => {
+    expect(
+      customFieldRestoreConflictMessage(deliveryNote, { sameName: 'Delivery note' }, 'Project'),
+    ).toBe(
+      'Cannot restore “Delivery note”: the Project already has an active field with that name (“Delivery note”).',
+    );
+  });
+
+  it('names the active field that already uses the key', () => {
+    expect(
+      customFieldRestoreConflictMessage(deliveryNote, { sameKey: 'Deliveries' }, 'Project'),
+    ).toBe(
+      'Cannot restore “Delivery note”: the key “deliveryNote” is already used by the active field “Deliveries” on Project.',
+    );
+  });
+
+  it('reports the name conflict first when both the name and the key collide', () => {
+    expect(
+      customFieldRestoreConflictMessage(
+        deliveryNote,
+        { sameName: 'Delivery notes', sameKey: 'Deliveries' },
+        'Project',
+      ),
+    ).toBe(
+      'Cannot restore “Delivery note”: the Project already has an active field with that name (“Delivery notes”).',
+    );
   });
 });
 

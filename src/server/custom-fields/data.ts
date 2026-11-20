@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { getDb, type Db } from '@/db/client';
 import { customFields, customFieldValues, type CustomField } from '@/db/schema';
 import {
@@ -140,4 +140,63 @@ export async function saveCustomFieldValues(
         updatedAt: new Date(),
       },
     });
+}
+
+/** A stored custom-field row known to be archived, so its timestamp is present. */
+export type ArchivedFieldRow = CustomField & { archivedAt: Date };
+
+/** An archived definition plus what a restore would bring back into view (#72). */
+export interface ArchivedCustomField extends CustomFieldDefinition {
+  archivedAt: Date;
+  archivedReason: string;
+  /** Number of records of this entity that hold a non-empty value for the field. */
+  recordsWithValue: number;
+}
+
+/**
+ * Archived registry entries, newest archive first, optionally scoped to one
+ * entity. Each row carries the number of records that still hold a value for
+ * it, so the admin screen can show what a restore would bring back (#72).
+ *
+ * The value rows are keyed by field id, so a restore never needs to rewrite
+ * data: counting is a membership check on each record's stored object.
+ */
+export async function listArchivedCustomFields(
+  entityType?: CustomFieldEntityType,
+): Promise<ArchivedCustomField[]> {
+  const archived = isNotNull(customFields.archivedAt);
+  const rows = await getDb()
+    .select()
+    .from(customFields)
+    .where(entityType ? and(archived, eq(customFields.entityType, entityType)) : archived)
+    .orderBy(desc(customFields.archivedAt), asc(customFields.name));
+
+  // The where clause already guarantees a timestamp; the filter only carries
+  // that guarantee into the row type.
+  const scoped = rows.filter((row): row is ArchivedFieldRow => row.archivedAt !== null);
+  if (scoped.length === 0) return [];
+
+  const entityTypes = [...new Set(scoped.map((row) => row.entityType as CustomFieldEntityType))];
+  const valuesByEntity = new Map<CustomFieldEntityType, Map<string, CustomFieldValues>>();
+  for (const type of entityTypes) {
+    valuesByEntity.set(type, await readAllCustomFieldValues(type));
+  }
+
+  return scoped.map((row) => {
+    const stored = valuesByEntity.get(row.entityType as CustomFieldEntityType);
+    let recordsWithValue = 0;
+    if (stored) {
+      for (const values of stored.values()) {
+        const value = values[row.id];
+        // Same emptiness rule as customFieldSnapshot: a stored blank is no value.
+        if (value !== undefined && value !== '') recordsWithValue += 1;
+      }
+    }
+    return {
+      ...toCustomFieldDefinition(row),
+      archivedAt: row.archivedAt,
+      archivedReason: row.archivedReason ?? '',
+      recordsWithValue,
+    };
+  });
 }

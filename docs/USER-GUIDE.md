@@ -540,9 +540,13 @@ detailed exportable sources.
   filter**, and the export lets you choose which extra columns to include. The filter narrows the
   rows on screen; the totals and the export always cover the whole report.
 - Custom fields are metadata: they never change budgets, remaining amounts, flags, allocations or
-  report totals. Removing a field archives it, so it disappears from forms, record pages, reports
-  and exports and its name can be reused; the values already recorded are kept but no longer shown,
-  and the audit trail records what was recorded.
+  report totals. Removing a field archives it: it disappears from forms, record pages, reports and
+  exports, its recorded values are kept but hidden, and its name can be reused. The same screen
+  lists **Archived fields** with the name, key, type, archived date, reason and how many records
+  hold a value. Restoring a field (with a reason, recorded in the audit trail) brings it back on
+  forms, record pages, reports and exports, and the recorded values show again. A restore is
+  refused while an active field on that record type already uses the same name or key; the message
+  names the conflict.
 - The opening-balance import includes the entity's custom fields as extra template columns and
   stores their values on the imported records. A required field missing from a row fails that row
   with its line number; a number field follows the form rule (whole digits, optional minus), not the

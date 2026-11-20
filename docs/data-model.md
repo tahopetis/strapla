@@ -110,11 +110,16 @@ a tenant dimension.
 - Values are parsed and validated by type in `src/domain/custom-fields.ts`; the forms, record panels,
   reports, exports and the opening-import parser (for registry columns) all use that module, so the
   surfaces cannot drift.
-- Create, edit and remove are audited (`custom_field_create`, `custom_field_update`,
-  `custom_field_remove`). Removal follows the no-delete convention: the definition is archived
-  (`archived_at` + `archived_reason`), the field leaves every surface, and its recorded values are
-  kept (values for an archived field are preserved when the record is edited). The audit `before`
-  snapshot records the values that were held.
+- Create, edit, remove and restore are audited (`custom_field_create`, `custom_field_update`,
+  `custom_field_remove`, `custom_field_restore`). Removal follows the no-delete convention: the
+  definition is archived (`archived_at` + `archived_reason`), the field leaves every surface, and its
+  recorded values are kept (values for an archived field are preserved when the record is edited).
+  The audit `before` snapshot records the values that were held.
+- Administration → Custom fields lists an entity's archived fields with their key, type, archive date,
+  reason and how many records still hold a value. Restoring (with a reason) clears the archive state
+  and writes `custom_field_restore`; because values are keyed by field id, the recorded values show
+  again on forms, record panels, reports and exports. A restore is refused while an active field on
+  the same entity uses the name or the key.
 - The `required` flag is enforced when a record is saved through the app forms. The opening import
   reads the registry too: a row that does not supply a required field fails with its line number,
   and nothing is written, so every imported record stays editable. The parsed row keeps the field's

@@ -485,7 +485,10 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await removeFieldDialog.locator('textarea[name="reason"]').fill('No longer needed.');
   await removeFieldDialog.getByRole('button', { name: 'Remove field' }).click();
   await expect(page.getByText(/Custom field “Delivery note” removed\./)).toBeVisible();
-  await expect(page.locator('li').getByText('Delivery note')).toHaveCount(0);
+  // the archived row is an li too, so the removal is proven against the active list
+  await expect(
+    page.getByRole('list', { name: 'Active fields' }).getByText('Delivery note'),
+  ).toHaveCount(0);
 
   await page.goto('/plan/projects');
   await page
@@ -496,6 +499,148 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(projectEditForm.getByLabel('Delivery note')).toHaveCount(0);
   await page.goto('/reports/project-register');
   await expect(page.getByText('Delivery note')).toHaveCount(0);
+
+  // --------------------------------------------- archived fields (#72)
+  // Removing archives the field instead of deleting it: the archived row keeps
+  // the metadata and the count of records that still hold a value, and a
+  // restore puts the definition and the old values back everywhere.
+  await page.goto('/admin/custom-fields');
+  await expect(page.getByRole('heading', { name: 'Custom fields', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Archived fields', exact: true })).toBeVisible();
+  const archivedFieldRow = projectFieldCard
+    .getByRole('list', { name: 'Archived fields' })
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  await expect(archivedFieldRow).toHaveCount(1);
+  await expect(archivedFieldRow.getByText('Delivery note', { exact: true })).toBeVisible();
+  await expect(archivedFieldRow.getByText('key: deliveryNote', { exact: true })).toBeVisible();
+  await expect(archivedFieldRow.getByText('Text', { exact: true })).toBeVisible();
+  await expect(archivedFieldRow.getByText(/Archived .+ — No longer needed\./)).toBeVisible();
+  // exactly the two records that held a value: the imported project and the
+  // manually edited one
+  await expect(archivedFieldRow.getByText('2 records with a value')).toBeVisible();
+
+  // restoring with a reason brings the field back from the archived list
+  await archivedFieldRow.getByRole('button', { name: 'Restore field' }).click();
+  const restoreFieldDialog = page.getByRole('dialog');
+  await expect(restoreFieldDialog).toBeVisible();
+  await restoreFieldDialog.locator('textarea[name="reason"]').fill('Needed again.');
+  await restoreFieldDialog.getByRole('button', { name: 'Restore field' }).click();
+  await expect(page.getByText(/Custom field “Delivery note” restored\./)).toBeVisible();
+  // no archived row remains, and the active list carries the field again
+  await expect(projectFieldCard.getByRole('list', { name: 'Archived fields' })).toHaveCount(0);
+  await expect(
+    projectFieldCard
+      .getByRole('list', { name: 'Active fields' })
+      .getByText('Delivery note', { exact: true }),
+  ).toBeVisible();
+
+  // the restored field and the value recorded before the removal are visible again
+  await page.goto('/plan/projects');
+  await page
+    .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'PRJ-2027-001 · Device Refresh 2027' })).toBeVisible();
+  await expect(page.getByText('Additional fields')).toBeVisible();
+  await expect(page.locator('dd', { hasText: 'Phased rollout' })).toBeVisible();
+  await expect(projectEditForm.getByLabel('Delivery note')).toHaveValue('Phased rollout');
+
+  await page.goto('/reports/project-register');
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Phased rollout' })).toBeVisible();
+  // the export carries the restored column and value again
+  const restoredReportOrigin = new URL(page.url()).origin;
+  const restoredCsv = await page.request.get(
+    `${restoredReportOrigin}/reports/export/project-register?format=csv`,
+  );
+  expect(await restoredCsv.text()).toContain('Delivery note');
+  expect(await restoredCsv.text()).toContain('Phased rollout');
+
+  // remove it again, then let a new active field reuse the freed name: the
+  // active conflict blocks the restore of the archived one
+  await page.goto('/admin/custom-fields');
+  const activeDeliveryField = page
+    .getByRole('list', { name: 'Active fields' })
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  await activeDeliveryField.getByRole('button', { name: 'Remove field' }).click();
+  const secondRemoveDialog = activeDeliveryField.getByRole('dialog');
+  await expect(secondRemoveDialog).toBeVisible();
+  await secondRemoveDialog.locator('textarea[name="reason"]').fill('Second removal.');
+  await secondRemoveDialog.getByRole('button', { name: 'Remove field' }).click();
+  await expect(page.getByText(/Custom field “Delivery note” removed\./)).toBeVisible();
+
+  await projectFieldCard.getByText('Add a field').click();
+  await addFieldForm.locator('input[name="name"]').fill('Delivery note');
+  await addFieldForm.locator('select[name="type"]').selectOption('text');
+  await addFieldForm
+    .locator('textarea[name="description"]')
+    .fill('Recreated while the old field is archived.');
+  await addFieldForm.getByRole('button', { name: 'Add field' }).click();
+  await expect(page.getByText(/Custom field “Delivery note” added\./)).toBeVisible();
+
+  const archivedAgain = projectFieldCard
+    .getByRole('list', { name: 'Archived fields' })
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  await expect(archivedAgain.getByText(/Archived .+ — Second removal\./)).toBeVisible();
+  await archivedAgain.getByRole('button', { name: 'Restore field' }).click();
+  const restoreConflictDialog = page.getByRole('dialog');
+  await expect(restoreConflictDialog).toBeVisible();
+  await restoreConflictDialog.locator('textarea[name="reason"]').fill('Recreated conflict.');
+  await restoreConflictDialog.getByRole('button', { name: 'Restore field' }).click();
+  // both the name and the key collide; the name conflict is the message shown
+  await expect(
+    restoreConflictDialog.getByText(
+      'Cannot restore “Delivery note”: the Project already has an active field with that name (“Delivery note”).',
+    ),
+  ).toBeVisible();
+  await restoreConflictDialog.getByRole('button', { name: 'Cancel' }).click();
+  // the refused restore left the archived field exactly where it was
+  await expect(archivedAgain.getByText('key: deliveryNote', { exact: true })).toBeVisible();
+
+  // Rename the recreated field: the name is free again but the key is not (a
+  // key survives renames), which proves the key half of the guard.
+  const recreatedField = page
+    .getByRole('list', { name: 'Active fields' })
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  await recreatedField.getByText('Edit field').click();
+  const recreatedFieldForm = recreatedField
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save field' }) });
+  await recreatedFieldForm.locator('input[name="name"]').fill('Delivery note (renamed)');
+  await recreatedFieldForm.locator('textarea[name="reason"]').fill('Free the old name.');
+  await recreatedFieldForm.getByRole('button', { name: 'Save field' }).click();
+  await expect(page.getByText(/Custom field “Delivery note \(renamed\)” updated\./)).toBeVisible();
+
+  await archivedAgain.getByRole('button', { name: 'Restore field' }).click();
+  const keyConflictDialog = page.getByRole('dialog');
+  await expect(keyConflictDialog).toBeVisible();
+  await keyConflictDialog.locator('textarea[name="reason"]').fill('Key conflict now.');
+  await keyConflictDialog.getByRole('button', { name: 'Restore field' }).click();
+  await expect(
+    keyConflictDialog.getByText(
+      'Cannot restore “Delivery note”: the key “deliveryNote” is already used by the active field “Delivery note (renamed)” on Project.',
+    ),
+  ).toBeVisible();
+  await keyConflictDialog.getByRole('button', { name: 'Cancel' }).click();
+  // the refused restore left the archived field exactly where it was
+  await expect(archivedAgain.getByText('key: deliveryNote', { exact: true })).toBeVisible();
+
+  // the successful restore is audited with its reason
+  await page.goto('/admin/audit?action=custom_field_restore');
+  await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible();
+  await expect(
+    page
+      .locator('tbody tr')
+      .filter({ hasText: 'custom_field_restore' })
+      .filter({ hasText: 'Needed again.' })
+      .first(),
+  ).toBeVisible();
 
   // ------------------------------------------------------ reports and exports
   await page.goto('/reports');

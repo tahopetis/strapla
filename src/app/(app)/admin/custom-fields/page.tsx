@@ -20,13 +20,19 @@ import {
   type CustomFieldDefinition,
   type CustomFieldEntityType,
 } from '@/domain/custom-fields';
+import { formatDate } from '@/lib/format';
 import { requireUser } from '@/server/auth/session';
 import {
   createCustomFieldAction,
   removeCustomFieldAction,
+  restoreCustomFieldAction,
   updateCustomFieldAction,
 } from '@/server/custom-fields/actions';
-import { listCustomFieldDefinitions } from '@/server/custom-fields/data';
+import {
+  listArchivedCustomFields,
+  listCustomFieldDefinitions,
+  type ArchivedCustomField,
+} from '@/server/custom-fields/data';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Custom fields' };
@@ -80,6 +86,8 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
           <summary className="cursor-pointer text-sm font-medium text-slate-700">Edit field</summary>
           <Form action={updateCustomFieldAction} className="mt-4 grid gap-3 sm:grid-cols-2">
             <HiddenField name="id" value={field.id} />
+            {/* The update schema extends the create schema, which requires the entity type. */}
+            <HiddenField name="entityType" value={field.entityType} />
             <TextField label="Field name" name="name" defaultValue={field.name} required maxLength={80} />
             <SelectField
               label="Type"
@@ -107,7 +115,7 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
             action={removeCustomFieldAction}
             triggerLabel="Remove field"
             title={`Remove “${field.name}”?`}
-            consequence="Removing the field archives it, so it leaves forms, record pages, reports and exports while the values already recorded stay in place but are no longer shown."
+            consequence="Removing the field archives it, so it leaves forms, record pages, reports and exports while the values already recorded stay in place; it can be restored from the Archived fields section."
             confirmLabel="Remove field"
             pendingLabel="Removing…"
           >
@@ -120,12 +128,52 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
   );
 }
 
+/** What a restore would bring back into view: the count of records holding a value. */
+function archivedUsageLabel(recordsWithValue: number): string {
+  if (recordsWithValue === 0) return 'No recorded values';
+  return `${recordsWithValue} ${recordsWithValue === 1 ? 'record' : 'records'} with a value`;
+}
+
+function ArchivedFieldRow({ field }: { field: ArchivedCustomField }) {
+  return (
+    <li className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium">{field.name}</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">key: {field.key}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Archived {formatDate(field.archivedAt)} — {field.archivedReason}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">{archivedUsageLabel(field.recordsWithValue)}</p>
+        </div>
+        <Badge>{customFieldTypeLabel(field.type)}</Badge>
+      </div>
+
+      <div className="mt-4">
+        <ConfirmDialog
+          action={restoreCustomFieldAction}
+          triggerLabel="Restore field"
+          title={`Restore “${field.name}”?`}
+          consequence="Restoring puts the field back on forms, record pages, reports and exports; the recorded values show again."
+          confirmLabel="Restore field"
+          pendingLabel="Restoring…"
+        >
+          <HiddenField name="id" value={field.id} />
+          <ReasonField hint="Required: recorded in the audit trail." />
+        </ConfirmDialog>
+      </div>
+    </li>
+  );
+}
+
 function EntityCard({
   entityType,
   fields,
+  archivedFields,
 }: {
   entityType: CustomFieldEntityType;
   fields: CustomFieldDefinition[];
+  archivedFields: ArchivedCustomField[];
 }) {
   return (
     <Card
@@ -134,14 +182,33 @@ function EntityCard({
       actions={<Badge>{fields.length}</Badge>}
     >
       {fields.length === 0 ? (
-        <EmptyState>No extra fields on this record type yet.</EmptyState>
+        <EmptyState>
+          {archivedFields.length === 0
+            ? 'No extra fields on this record type yet.'
+            : 'No active fields on this record type; the archived ones are below.'}
+        </EmptyState>
       ) : (
-        <ul className="space-y-3">
+        <ul aria-label="Active fields" className="space-y-3">
           {fields.map((field) => (
             <FieldRow key={field.id} field={field} />
           ))}
         </ul>
       )}
+
+      {archivedFields.length > 0 ? (
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Archived fields</h3>
+            <Badge>{archivedFields.length}</Badge>
+          </div>
+          <ul aria-label="Archived fields" className="mt-3 space-y-3">
+            {archivedFields.map((field) => (
+              <ArchivedFieldRow key={field.id} field={field} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <AddFieldForm entityType={entityType} />
     </Card>
   );
@@ -154,7 +221,10 @@ export default async function CustomFieldsPage({
 }) {
   const { error, message } = await searchParams;
   await requireUser();
-  const fields = await listCustomFieldDefinitions();
+  const [fields, archived] = await Promise.all([
+    listCustomFieldDefinitions(),
+    listArchivedCustomFields(),
+  ]);
 
   return (
     <div>
@@ -173,7 +243,11 @@ export default async function CustomFieldsPage({
         <Card title="What custom fields are" description="Metadata that never touches the money rules.">
           <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
             <li>Each field has a name, a type (text, number or date), a required flag and a description.</li>
-            <li>Every definition, change and removal is recorded in the audit trail.</li>
+            <li>Every definition, change, removal and restore is recorded in the audit trail.</li>
+            <li>
+              Removing a field archives it; its recorded values stay and it can be restored from
+              Archived fields.
+            </li>
             <li>
               Custom fields never change budgets, remaining amounts, flags, allocations or any existing
               report total. They are extra information, not extra accounting.
@@ -187,6 +261,7 @@ export default async function CustomFieldsPage({
             key={entity.type}
             entityType={entity.type}
             fields={fields.filter((field) => field.entityType === entity.type)}
+            archivedFields={archived.filter((field) => field.entityType === entity.type)}
           />
         ))}
       </div>

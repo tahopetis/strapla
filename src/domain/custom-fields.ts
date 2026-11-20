@@ -280,3 +280,34 @@ export function resolveCustomExportFields(
     .filter((value) => value.length > 0);
   return selectCustomExportFields(fields, ids);
 }
+
+/** Conflicts that block un-archiving a custom field (issue #72). */
+export interface CustomFieldRestoreConflict {
+  /** Display name of the active field that already uses the archived field's name. */
+  sameName?: string;
+  /** Display name of the active field that already uses the archived field's key. */
+  sameKey?: string;
+}
+
+/**
+ * The refusal shown when restoring an archived field would collide with an
+ * active field on the same entity, or null when nothing collides. The message
+ * names the blocking field, so the administrator knows what to rename or remove
+ * (issue #72).
+ *
+ * A collision on both name and key reports the name first: renaming either
+ * field is the obvious remedy, and one message is enough.
+ */
+export function customFieldRestoreConflictMessage(
+  field: Pick<CustomFieldDefinition, 'name' | 'key'>,
+  conflict: CustomFieldRestoreConflict,
+  entityLabel: string,
+): string | null {
+  if (conflict.sameName !== undefined) {
+    return `Cannot restore “${field.name}”: the ${entityLabel} already has an active field with that name (“${conflict.sameName}”).`;
+  }
+  if (conflict.sameKey !== undefined) {
+    return `Cannot restore “${field.name}”: the key “${field.key}” is already used by the active field “${conflict.sameKey}” on ${entityLabel}.`;
+  }
+  return null;
+}
