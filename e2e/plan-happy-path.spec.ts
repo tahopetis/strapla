@@ -650,10 +650,13 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // the filter values keep the machine tokens, so an existing link still works.
   await page.goto('/admin/audit?action=custom_field_restore');
   await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible();
+  // An <option> in a closed <select> is hidden to Playwright, so assert its text.
   await expect(
-    page.getByRole('option', { name: 'Custom field restored', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole('option', { name: 'Custom field', exact: true })).toBeVisible();
+    page.locator('select[name="action"] option[value="custom_field_restore"]'),
+  ).toHaveText('Custom field restored');
+  await expect(
+    page.locator('select[name="entityType"] option[value="custom_field"]'),
+  ).toHaveText('Custom field');
   await expect(
     page
       .locator('tbody tr')
