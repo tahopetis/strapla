@@ -60,9 +60,11 @@ export async function saveOpeningReconciliationAction(
   const parsed = validateForm(previous, openingReconciliationSaveSchema, formData);
   if (!parsed.ok) return parsed.state;
   const input = parsed.data;
+  let priorYear = 0;
 
   try {
-    await requirePlan(input.planId);
+    const plan = await requirePlan(input.planId);
+    priorYear = plan.startFiscalYear;
 
     const existing = await getOpeningReconciliation(input.planId);
     if (existing?.signedOffAt) {
@@ -105,7 +107,10 @@ export async function saveOpeningReconciliationAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(LANDING, 'Control totals saved; compare the differences below.');
+  finishWith(
+    LANDING,
+    `Control totals saved for the FY${priorYear} opening balances; compare the differences below.`,
+  );
 }
 
 export async function signOffOpeningBalancesAction(
@@ -116,9 +121,11 @@ export async function signOffOpeningBalancesAction(
   const parsed = validateForm(previous, openingReconciliationSignOffSchema, formData);
   if (!parsed.ok) return parsed.state;
   const input = parsed.data;
+  let priorYear = 0;
 
   try {
-    await requirePlan(input.planId);
+    const plan = await requirePlan(input.planId);
+    priorYear = plan.startFiscalYear;
 
     const existing = await getOpeningReconciliation(input.planId);
     if (!existing) {
@@ -152,5 +159,5 @@ export async function signOffOpeningBalancesAction(
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
-  finishWith(LANDING, 'Opening balances signed off.');
+  finishWith(LANDING, `Opening balances for FY${priorYear} signed off.`);
 }

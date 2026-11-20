@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { errorFormState, type FormState } from '@/lib/form-state';
-import { validateForm } from '@/server/actions/common';
+import { failureState, validateForm } from '@/server/actions/common';
 import { validatePasswordPolicy, verifyPassword } from './password';
 import { clearAttempts, isRateLimited, recordFailedAttempt } from './rate-limit';
 import { createSession, destroyCurrentSession } from './session';
@@ -70,8 +70,9 @@ export async function setupAction(previous: FormState, formData: FormData): Prom
     const created = await createUser({ name, email, password, actorUserId: null });
     userId = created.id;
   } catch (error) {
-    console.error('setup: failed to create the first administrator', error);
-    return errorFormState(previous, 'Could not create the account. Please try again.', parsed.values);
+    // A constraint refusal comes back beside the form; a real outage (database
+    // down) is rethrown so the styled error page renders instead.
+    return failureState(previous, error, parsed.values);
   }
 
   await createSession(userId);

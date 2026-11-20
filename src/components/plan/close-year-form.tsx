@@ -344,11 +344,14 @@ export function CloseYearForm({
               value={reference}
               onChange={(event) => setReference(event.target.value)}
               aria-invalid={referenceError ? true : undefined}
+              aria-describedby={referenceError ? 'close-reference-error' : undefined}
               placeholder="Board approval or memo reference"
               className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
             />
             {referenceError ? (
-              <span className="mt-1 block text-xs font-medium text-red-700">{referenceError}</span>
+              <span id="close-reference-error" className="mt-1 block text-xs font-medium text-red-700">
+                {referenceError}
+              </span>
             ) : null}
           </label>
           <label className="block text-sm font-medium text-slate-700">
@@ -364,13 +367,16 @@ export function CloseYearForm({
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
               aria-invalid={confirmationError ? true : undefined}
+              aria-describedby={confirmationError ? 'close-confirmation-error' : undefined}
               className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
             />
             <span className="mt-1 block text-xs font-normal text-slate-500">
               Type <code className="font-mono">{confirmationPhrase}</code> exactly to confirm.
             </span>
             {confirmationError ? (
-              <span className="mt-1 block text-xs font-medium text-red-700">{confirmationError}</span>
+              <span id="close-confirmation-error" className="mt-1 block text-xs font-medium text-red-700">
+                {confirmationError}
+              </span>
             ) : null}
           </label>
           <div className="flex items-end sm:col-span-2">

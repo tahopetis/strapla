@@ -44,8 +44,20 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.locator('input[name="email"]').fill(ADMIN.email);
   await page.locator('input[name="password"]').fill(ADMIN.password);
   await page.locator('input[name="confirm"]').fill(ADMIN.password);
-  await page.getByRole('button', { name: 'Create administrator' }).click();
+  // W5b acceptance: a slow save visibly disables the button and relabels it, so
+  // a second click is impossible. Hold the action POST briefly to observe it.
+  await page.route('**/setup', async (route) => {
+    if (route.request().method() === 'POST') {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    }
+    await route.continue();
+  });
+  const setupSubmit = page.locator('form button[type="submit"]');
+  await setupSubmit.click();
+  await expect(setupSubmit).toBeDisabled();
+  await expect(setupSubmit).toHaveText('Creating…');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await page.unroute('**/setup');
 
   // W8a timing: first plan step starts after first-run setup (UAT-01 is not timed).
   const firstPlanStepStartedAt = performance.now();
@@ -350,14 +362,14 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   }
   await controlForm.locator('input[name="reason"]').fill('E2E control totals.');
   await page.getByRole('button', { name: 'Save control totals' }).click();
-  await expect(page.getByText('Control totals saved; compare the differences below.')).toBeVisible();
+  await expect(page.getByText(/Control totals saved for the FY2026 opening balances/)).toBeVisible();
 
   const signOffForm = page
     .locator('form')
     .filter({ has: page.getByRole('button', { name: 'Sign off opening balances' }) });
   await signOffForm.locator('input[name="reason"]').fill('E2E opening balances sign-off.');
   await page.getByRole('button', { name: 'Sign off opening balances' }).click();
-  await expect(page.getByText('Opening balances signed off.')).toBeVisible();
+  await expect(page.getByText(/Opening balances for FY2026 signed off\./)).toBeVisible();
   await expect(page.getByText('signed off', { exact: true })).toBeVisible();
 
   // ------------------------------------------------------ custom fields (#46)
