@@ -42,7 +42,7 @@ The gate above is not the only check. Each workflow below has one job and one di
 | Workflow | Covers | Disposition |
 |---|---|---|
 | `security-gate` | gitleaks, osv-scanner, semgrep, Trivy config, one decider | **Blocking** at `medium` |
-| `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Blocking** (required check) |
+| `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Required check** (the analysis must succeed); findings appear as alerts and do not fail the job |
 | `dependency-review` | the PR's own dependency and action changes (`fail-on-severity: high`) | **Blocking** (required check) |
 | `image-scan` | Trivy CVEs in the published container, triggered by the `docker` workflow's completion and weekly; SARIF to the Security tab | **Report-only** for now (`exit-code: 0`); promote once the baseline is triaged |
 | GitHub secret scanning | full repository history plus push protection | **Blocking** (push protection) |
@@ -120,6 +120,12 @@ security gate runs four scanners and reports **0 findings at any severity**, wit
 The threshold is `medium`; the gate passes on its own merits rather than shadow mode. CodeQL and
 dependency review are required on pull requests; the image scan is report-only while its baseline is
 triaged.
+
+The first CodeQL analysis (20 November 2026) flagged two `js/xss-through-dom` warnings on the import
+wizard's template links. The links now take their `dataSet` from the declared option list instead of
+the select's DOM value, so the next analysis closes them. The report-only image scan of
+`sha-fadc98d` currently reports 30 CRITICAL/HIGH CVEs, mostly in npm's bundled tooling inside the
+base image; that is a triage backlog, not a merge gate yet.
 
 On 17 November 2026 a new upstream advisory (CVE-2026-112366, picomatch ReDoS) arrived with no patched
 release published (GHSA-fc5q-39xc-vjpf: `first_patched_version` null). It is waived in
