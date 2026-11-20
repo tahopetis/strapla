@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { Badge, Card, Money, PageHeader, Stat, StatusBadge } from '@/components/ui';
+import { AnnualPlanBadge, Badge, Card, Money, PageHeader, Stat, StatusBadge } from '@/components/ui';
 import { getDb } from '@/db/client';
 import {
   annualPlans,
@@ -172,11 +172,17 @@ export default async function DashboardPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             {currentYear ? (
-              <Badge tone="success">FY{currentYear.annualPlan.fiscalYear} active</Badge>
+              <AnnualPlanBadge annualPlanId={currentYear.annualPlan.id} tone="success">
+                FY{currentYear.annualPlan.fiscalYear} active
+              </AnnualPlanBadge>
             ) : (
               <Badge tone="warning">no active fiscal year</Badge>
             )}
-            {closedYear ? <Badge tone="info">FY{closedYear.annualPlan.fiscalYear} closed</Badge> : null}
+            {closedYear ? (
+              <AnnualPlanBadge annualPlanId={closedYear.annualPlan.id} tone="info">
+                FY{closedYear.annualPlan.fiscalYear} closed
+              </AnnualPlanBadge>
+            ) : null}
           </div>
         }
       />

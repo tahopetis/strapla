@@ -9,7 +9,7 @@ import {
   SubmitButton,
   TextAreaField,
 } from '@/components/form';
-import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import { AnnualPlanBadge, Badge, Card, EmptyState, Money } from '@/components/ui';
 import type {
   AllocationProgramOptions,
   ProjectAllocationRow,
@@ -119,7 +119,9 @@ function AllocationCard({
       description={`Allocation status: ${annualPlan.status}`}
       actions={
         <div className="flex flex-wrap gap-1">
-          <Badge tone="info">FY{annualPlan.fiscalYear}</Badge>
+          <AnnualPlanBadge annualPlanId={annualPlan.id} tone="info">
+            FY{annualPlan.fiscalYear}
+          </AnnualPlanBadge>
           {row.br11Capex ? <Badge tone="danger">capex spend above commitment</Badge> : null}
           {row.br11Opex ? <Badge tone="danger">opex spend above commitment</Badge> : null}
         </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
+import { PlanHeaderActions } from '@/components/plan/plan-header-actions';
 import {
   Form,
   HiddenField,
@@ -11,7 +12,7 @@ import {
   TextField,
 } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
-import { Badge, Card, EmptyState, Flash, Money, PageHeader, StatusBadge } from '@/components/ui';
+import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { StrategicPlan } from '@/db/schema';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { InitiativeEnvelopeRow } from '@/server/plan/queries';
@@ -54,6 +55,18 @@ export default async function StrategicPlanPage({
       <PageHeader
         title="Strategic plan & initiatives"
         description="The five-year horizon and the initiatives that carry the budget envelopes."
+        actions={
+          plan ? (
+            <PlanHeaderActions
+              status={plan.status}
+              activation={{
+                action: activatePlanAction,
+                id: plan.id,
+                label: 'Activate plan',
+              }}
+            />
+          ) : undefined
+        }
       />
       <PlanNav />
       <Flash error={error} message={message} />
@@ -118,7 +131,7 @@ function CreatePlanCard() {
 
 function PlanDetailsCard({ plan, editable }: { plan: StrategicPlan; editable: boolean }) {
   return (
-    <Card title="Plan details" actions={<StatusBadge status={plan.status} />}>
+    <Card title="Plan details">
       <dl className="grid gap-4 text-sm sm:grid-cols-3">
         <div>
           <dt className="text-slate-500">Name</dt>
@@ -129,10 +142,6 @@ function PlanDetailsCard({ plan, editable }: { plan: StrategicPlan; editable: bo
           <dd className="mt-1 font-medium">
             {plan.startFiscalYear}–{plan.endFiscalYear}
           </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Status</dt>
-          <dd className="mt-1 font-medium capitalize">{plan.status}</dd>
         </div>
       </dl>
 
@@ -167,17 +176,6 @@ function PlanDetailsCard({ plan, editable }: { plan: StrategicPlan; editable: bo
               </div>
             </Form>
           </details>
-
-          {plan.status === 'draft' ? (
-            <details>
-              <summary className={summaryClass}>Activate plan</summary>
-              <Form action={activatePlanAction} className="mt-4 space-y-3">
-                <HiddenField name="id" value={plan.id} />
-                <ReasonField />
-                <SubmitButton>Activate plan</SubmitButton>
-              </Form>
-            </details>
-          ) : null}
 
           {plan.status === 'active' ? (
             <ConfirmDialog

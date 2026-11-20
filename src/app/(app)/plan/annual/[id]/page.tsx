@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { PlanHeaderActions } from '@/components/plan/plan-header-actions';
 import {
   Form,
   HiddenField,
@@ -15,7 +16,7 @@ import {
 } from '@/components/form';
 import { RecurringOpsSection } from '@/components/plan/recurring-ops-section';
 import { PlanNav } from '@/components/plan-nav';
-import { Badge, Card, EmptyState, Flash, Money, PageHeader, StatusBadge } from '@/components/ui';
+import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { AnnualPlanDetail, ProgramRow } from '@/server/plan/annual-queries';
 import { getAnnualPlanDetail } from '@/server/plan/annual-queries';
@@ -68,7 +69,19 @@ export default async function AnnualPlanPage({
         title={`FY${detail.annualPlan.fiscalYear} annual plan`}
         description={detail.strategicPlan.name}
         actions={
-          <div className="flex items-center gap-4">
+          <PlanHeaderActions
+            status={detail.annualPlan.status}
+            activation={
+              canActivate
+                ? {
+                    action: activateAnnualPlanAction,
+                    id: detail.annualPlan.id,
+                    label: 'Activate annual plan',
+                    hint: 'Activation is audited; programs stay editable until the Year Close.',
+                  }
+                : undefined
+            }
+          >
             {detail.annualPlan.status === 'active' ? (
               <Link
                 href={`/plan/annual/${detail.annualPlan.id}/close`}
@@ -80,14 +93,14 @@ export default async function AnnualPlanPage({
             <Link href="/plan/annual" className="text-sm text-slate-600 hover:text-slate-900">
               ← All annual plans
             </Link>
-          </div>
+          </PlanHeaderActions>
         }
       />
       <PlanNav />
       <Flash error={error} message={message} />
 
       <div className="space-y-6">
-        <Card title="Annual plan" actions={<StatusBadge status={detail.annualPlan.status} />}>
+        <Card title="Annual plan">
           <dl className="grid gap-4 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-slate-500">Fiscal year</dt>
@@ -97,27 +110,12 @@ export default async function AnnualPlanPage({
               <dt className="text-slate-500">Strategic plan</dt>
               <dd className="mt-1 font-medium">{detail.strategicPlan.name}</dd>
             </div>
-            <div>
-              <dt className="text-slate-500">Status</dt>
-              <dd className="mt-1 font-medium capitalize">{detail.annualPlan.status}</dd>
-            </div>
           </dl>
 
           {detail.annualPlan.status === 'closed' ? (
             <p className="mt-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
               This fiscal year is closed and read-only.
             </p>
-          ) : null}
-
-          {canActivate ? (
-            <details className="mt-4 border-t border-slate-100 pt-4">
-              <summary className={summaryClass}>Activate annual plan</summary>
-              <Form action={activateAnnualPlanAction} className="mt-4 space-y-3">
-                <HiddenField name="id" value={detail.annualPlan.id} />
-                <ReasonField hint="Activation is audited; programs stay editable until the yearly close." />
-                <SubmitButton>Activate annual plan</SubmitButton>
-              </Form>
-            </details>
           ) : null}
         </Card>
 

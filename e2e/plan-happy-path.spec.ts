@@ -59,6 +59,16 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.unroute('**/setup');
 
+  // W1a: activation lives in the page header. This helper proves the form is
+  // the header form and keeps the two activation steps from duplicating.
+  const activateFromHeader = async (buttonName: string, reason: string) => {
+    const form = page
+      .locator('form')
+      .filter({ has: page.getByRole('button', { name: buttonName }) });
+    await form.locator('textarea[name="reason"]').fill(reason);
+    await form.getByRole('button', { name: buttonName }).click();
+  };
+
   // W8a timing: first plan step starts after first-run setup (UAT-01 is not timed).
   const firstPlanStepStartedAt = performance.now();
   await page.goto('/plan/strategic');
@@ -69,11 +79,12 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Create plan' }).click();
   await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” created\./)).toBeVisible();
 
-  const activatePlan = page.locator('details').filter({ hasText: 'Activate plan' });
-  await activatePlan.locator('summary').click();
-  await activatePlan.locator('textarea[name="reason"]').fill('Approved by the directors.');
-  await activatePlan.getByRole('button', { name: 'Activate plan' }).click();
+  // W1a: the status and the activation form are in the page header, not a
+  // closed disclosure. A fresh draft plan is activatable without opening one.
+  await expect(page.getByText('draft', { exact: true })).toBeVisible();
+  await activateFromHeader('Activate plan', 'Approved by the directors.');
   await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” activated\./)).toBeVisible();
+  await expect(page.getByText('active', { exact: true })).toBeVisible();
   endTiming('first-plan-step', firstPlanStepStartedAt);
 
   const initiativeForm = page
@@ -98,11 +109,17 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
-  const activateAnnualPlan = page.locator('details').filter({ hasText: 'Activate annual plan' });
-  await activateAnnualPlan.locator('summary').click();
-  await activateAnnualPlan.locator('textarea[name="reason"]').fill('FY2027 budget approved.');
-  await activateAnnualPlan.getByRole('button', { name: 'Activate annual plan' }).click();
+  // W1a: the annual plan activation is in the page header too.
+  await expect(page.getByText('draft', { exact: true })).toBeVisible();
+  await activateFromHeader('Activate annual plan', 'FY2027 budget approved.');
   await expect(page.getByText(/Annual plan FY2027 activated\./)).toBeVisible();
+
+  // W1a: the fiscal-year badge on the dashboard links to the annual plan page.
+  await page.goto('/dashboard');
+  const activeFiscalYear = page.getByRole('link', { name: 'FY2027 active annual plan' });
+  await expect(activeFiscalYear).toBeVisible();
+  await activeFiscalYear.click();
+  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
   const programForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
   await programForm.locator('input[name="code"]').fill('PRG-2027-001');
