@@ -14,6 +14,9 @@ FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6
 # 1.3.2-r1, which the image scan reports as MEDIUM although the repository
 # already has 3.5.9-r1 and 1.4-r0. Upgrade only the flagged packages, by name,
 # so the change is auditable and becomes a no-op once the base catches up.
+# Named, not version-pinned: Alpine drops superseded releases from the branch
+# repository, so an exact-version pin would fail the next build; the image scan
+# re-verifies the resolved versions on every PR and publish.
 RUN apk upgrade --no-cache libcrypto3 libssl3 zlib \
  && apk add --no-cache libc6-compat
 WORKDIR /app

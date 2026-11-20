@@ -18,12 +18,10 @@ name: image-scan
 #                      the gate was proven to fail on an older, vulnerable
 #                      image (see docs/agents/security.md).
 #
-# The scan runs twice on purpose. The SARIF pass records every severity in the
-# Security tab and never fails; the gate pass is scoped to CRITICAL/HIGH and
-# owns the exit code. trivy-action couples --severity to both the report and
-# the exit code for SARIF output (it unsets --severity for SARIF unless
-# limit-severities-for-sarif is set), so one pass cannot both keep the medium
-# findings visible and fail only on the high ones.
+# The scan runs twice on purpose — an unfiltered SARIF pass that records every
+# severity, and a CRITICAL/HIGH pass that owns the exit code. Why one pass
+# cannot do both, and how waivers work, is in docs/agents/security.md
+# ("Image scan policy").
 
 on:
   workflow_run:
@@ -97,7 +95,8 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
-          tags: strapla:pr-scan
+          # Same value the scan resolves: one place names the tag.
+          tags: ${{ steps.image.outputs.ref }}
           # Its own cache scope: the docker workflow builds the same Dockerfile
           # on every pull request, and two writers in one scope fight.
           cache-from: type=gha,scope=image-scan
@@ -125,6 +124,9 @@ jobs:
           image-ref: ${{ steps.image.outputs.ref }}
           severity: CRITICAL,HIGH
           ignore-unfixed: false
+          # Dated waivers, this pass only: the record pass above still reports
+          # them, so a waiver silences the gate and never the Security tab.
+          trivyignores: ci/image-scan-waivers.yaml
           exit-code: "1"
 
       - name: Upload SARIF

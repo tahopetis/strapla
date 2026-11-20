@@ -67,3 +67,9 @@ Host, domain, TLS and SSH ownership are deferred (charter §11); images and comp
   `node:24-alpine`, with pnpm installed at the version declared in
   `package.json` because Node no longer bundles Corepack. The deployment shape
   above is unchanged; see [ADR-0001](0001-stack.md) for why Node 25 was rejected.
+- **2026-11-20 — no package manager in the runtime image:** the runtime stage
+  removes npm and pnpm; they are build-stage tools only. The server starts with
+  `node scripts/migrate.mjs && node node_modules/next/dist/bin/next start`,
+  which is still "migrations run on app start" above, and nothing in the
+  container installs packages at runtime. The image scan therefore no longer
+  carries npm's bundled toolchain as a CVE source.

@@ -14,7 +14,7 @@ Single-context layout: `GLOSSARY.md` plus `docs/adr/` at the repo root. See `doc
 
 ### Security
 
-Every pull request runs `security-gate` (secrets, dependencies, SAST, IaC misconfiguration) beside `ci`, CodeQL, `dependency-review` and a blocking Trivy image scan of the PR build; after a merge the published image is scanned again at CRITICAL/HIGH. Never merge with a red gate; only `SECURITY: PASS` is green, and `ERROR`/`SETUP`/`OFF` are red too. Waivers live in `ci/security-baseline.json` with a reason and an expiry — never edit a scanner to go green. `FAIL_ON` is a repository variable, set to `medium`: findings at medium and above block a merge. The repository is public; GitHub secret scanning and push protection are enabled. Full contract: `docs/agents/security.md`.
+Every pull request runs `security-gate` (secrets, dependencies, SAST, IaC misconfiguration) beside `ci`, CodeQL, `dependency-review` and a blocking Trivy image scan of the PR build; after a merge the published image is scanned again at CRITICAL/HIGH. Never merge with a red gate; only `SECURITY: PASS` is green, and `ERROR`/`SETUP`/`OFF` are red too. Waivers live in `ci/security-baseline.json` (security gate) or `ci/image-scan-waivers.yaml` (image scan), each with a reason and an expiry — never edit a scanner to go green. `FAIL_ON` is a repository variable, set to `medium`: findings at medium and above block a merge. The repository is public; GitHub secret scanning and push protection are enabled. Full contract: `docs/agents/security.md`.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

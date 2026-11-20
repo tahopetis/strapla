@@ -1,0 +1,23 @@
+# Image-scan waivers: a CRITICAL/HIGH finding that cannot be fixed yet may be
+# accepted here, with a reason and an expiry.
+#
+# This file is not discovered by Trivy by accident. The blocking step in
+# .github/workflows/image-scan.yml passes it explicitly, and only to that step
+# (`trivyignores: ci/image-scan-waivers.yaml`). The recording pass does not get
+# it, so a waived finding still appears in the Security tab until it is fixed:
+# a waiver silences the gate, never the record.
+#
+# Trivy stops honouring an entry after `expired_at`, so the finding returns to
+# the gate by itself. Use this format:
+#
+#   vulnerabilities:
+#     - id: CVE-2026-00000
+#       statement: Why this is accepted, and what would remove it.
+#       expired_at: 2027-01-31
+#
+# Empty today: the first triage fixed every finding rather than waiving it (see
+# docs/agents/security.md). The security gate's own waivers are a different
+# store, ci/security-baseline.json. Trivy marks the YAML ignore format
+# experimental upstream; if its shape changes, update this file and the workflow
+# together (the CI run is the test).
+vulnerabilities: []
