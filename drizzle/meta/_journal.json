@@ -50,6 +50,13 @@
       "when": 1795076975561,
       "tag": "0006_chief_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795183153566,
+      "tag": "0007_cold_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

@@ -17,7 +17,6 @@ import {
   CUSTOM_FIELD_TYPES,
   customFieldEntityLabel,
   customFieldTypeLabel,
-  type CustomFieldDefinition,
   type CustomFieldEntityType,
 } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
@@ -30,8 +29,9 @@ import {
 } from '@/server/custom-fields/actions';
 import {
   listArchivedCustomFields,
-  listCustomFieldDefinitions,
+  listCustomFieldDefinitionsWithUsage,
   type ArchivedCustomField,
+  type CustomFieldWithUsage,
 } from '@/server/custom-fields/data';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +51,13 @@ function AddFieldForm({ entityType }: { entityType: CustomFieldEntityType }) {
         <TextField label="Field name" name="name" required maxLength={80} placeholder="Procurement method" />
         <SelectField label="Type" name="type" options={typeOptions} defaultValue="text" required />
         <CheckboxField label="Required" name="required" />
+        <TextField
+          label="Example value"
+          name="example"
+          maxLength={200}
+          placeholder="Open tender"
+          hint="Optional: must match the field type. Shown in the field row and as the opening-import template example."
+        />
         <div className="sm:col-span-2 lg:col-span-4">
           <TextAreaField
             label="Description"
@@ -68,7 +75,7 @@ function AddFieldForm({ entityType }: { entityType: CustomFieldEntityType }) {
   );
 }
 
-function FieldRow({ field }: { field: CustomFieldDefinition }) {
+function FieldRow({ field }: { field: CustomFieldWithUsage }) {
   return (
     <li className="rounded border border-slate-200 px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -77,6 +84,11 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
             {field.name} {field.required ? <Badge tone="warning">required</Badge> : null}
           </p>
           <p className="mt-1 text-sm text-slate-600">{field.description}</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">key: {field.key}</p>
+          {field.example ? (
+            <p className="mt-1 text-sm text-slate-600">Example: {field.example}</p>
+          ) : null}
+          <p className="mt-1 text-sm text-slate-600">{activeUsageLabel(field.recordsWithValue)}</p>
         </div>
         <Badge>{customFieldTypeLabel(field.type)}</Badge>
       </div>
@@ -98,6 +110,13 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
               hint="The type can only change while every recorded value stays valid."
             />
             <CheckboxField label="Required" name="required" defaultChecked={field.required} />
+            <TextField
+              label="Example value"
+              name="example"
+              defaultValue={field.example}
+              maxLength={200}
+              hint="Must match the field type. Shown in the field row and the import template."
+            />
             <div className="sm:col-span-2">
               <TextAreaField label="Description" name="description" defaultValue={field.description} required rows={2} />
             </div>
@@ -115,7 +134,7 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
             action={removeCustomFieldAction}
             triggerLabel="Remove field"
             title={`Remove “${field.name}”?`}
-            consequence="Removing the field archives it, so it leaves forms, record pages, reports and exports while the values already recorded stay in place; it can be restored from the Archived fields section."
+            consequence={`${activeUsageLabel(field.recordsWithValue)}. Removing the field archives it, so it leaves forms, record pages, reports and exports while the values already recorded stay in place; it can be restored from the Archived fields section.`}
             confirmLabel="Remove field"
             pendingLabel="Removing…"
           >
@@ -128,10 +147,21 @@ function FieldRow({ field }: { field: CustomFieldDefinition }) {
   );
 }
 
+/** "1 record" / "2 records": the noun the two usage sentences share. */
+function recordCount(count: number): string {
+  return `${count} ${count === 1 ? 'record' : 'records'}`;
+}
+
+/** How many records currently hold a value; repeated in the remove confirmation (#76). */
+function activeUsageLabel(recordsWithValue: number): string {
+  if (recordsWithValue === 0) return 'Used by no records';
+  return `Used by ${recordCount(recordsWithValue)}`;
+}
+
 /** What a restore would bring back into view: the count of records holding a value. */
 function archivedUsageLabel(recordsWithValue: number): string {
   if (recordsWithValue === 0) return 'No recorded values';
-  return `${recordsWithValue} ${recordsWithValue === 1 ? 'record' : 'records'} with a value`;
+  return `${recordCount(recordsWithValue)} with a value`;
 }
 
 function ArchivedFieldRow({ field }: { field: ArchivedCustomField }) {
@@ -172,7 +202,7 @@ function EntityCard({
   archivedFields,
 }: {
   entityType: CustomFieldEntityType;
-  fields: CustomFieldDefinition[];
+  fields: CustomFieldWithUsage[];
   archivedFields: ArchivedCustomField[];
 }) {
   return (
@@ -222,7 +252,7 @@ export default async function CustomFieldsPage({
   const { error, message } = await searchParams;
   await requireUser();
   const [fields, archived] = await Promise.all([
-    listCustomFieldDefinitions(),
+    listCustomFieldDefinitionsWithUsage(),
     listArchivedCustomFields(),
   ]);
 
@@ -242,7 +272,10 @@ export default async function CustomFieldsPage({
       <div className="space-y-6">
         <Card title="What custom fields are" description="Metadata that never touches the money rules.">
           <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
-            <li>Each field has a name, a type (text, number or date), a required flag and a description.</li>
+            <li>
+              Each field has a name, a stable machine key, a type (text, number or date), a required
+              flag, a description and an optional example value.
+            </li>
             <li>Every definition, change, removal and restore is recorded in the audit trail.</li>
             <li>
               Removing a field archives it; its recorded values stay and it can be restored from

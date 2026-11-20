@@ -103,7 +103,7 @@ a tenant dimension.
 
 | Table | Holds |
 | --- | --- |
-| `custom_fields` | The administrator-defined registry: entity type, name, stable machine `key` (derived once from the name; the W9 field list's identifier), type (`text`, `number`, `date`), required flag, description, archive state and the audit references. Active names and keys are unique per entity; archiving frees both. |
+| `custom_fields` | The administrator-defined registry: entity type, name, stable machine `key` (derived once from the name; the W9 field list's identifier), type (`text`, `number`, `date`), required flag, description, optional example value, archive state and the audit references. Active names and keys are unique per entity; archiving frees both. |
 | `custom_field_values` | One row per record that has extra values, keyed by entity type and record id, holding one JSON object keyed by **field id** (so renaming a field never rewrites recorded data). |
 
 - Supported entities: `strategic_initiative`, `annual_program`, `project`, `recurring_ops_item`.
@@ -114,10 +114,13 @@ a tenant dimension.
   `custom_field_remove`, `custom_field_restore`). Removal follows the no-delete convention: the
   definition is archived (`archived_at` + `archived_reason`), the field leaves every surface, and its
   recorded values are kept (values for an archived field are preserved when the record is edited).
-  The audit `before` snapshot records the values that were held.
-- Administration → Custom fields lists an entity's archived fields with their key, type, archive date,
-  reason and how many records still hold a value. Restoring (with a reason) clears the archive state
-  and writes `custom_field_restore`; because values are keyed by field id, the recorded values show
+  The audit `before` snapshot records the values that were held. The audit view labels the four
+  custom-field actions and the `custom_field` entity in words while keeping the machine tokens as
+  filter values, so a saved audit link still filters the same rows.
+- Administration → Custom fields shows every active field's stable key and how many records hold a
+  value for it (the remove confirmation repeats the count); the archived list shows the key, type,
+  archive date, reason and how many records still hold a value. Restoring (with a reason) clears the
+  archive state and writes `custom_field_restore`; because values are keyed by field id, the recorded values show
   again on forms, record panels, reports and exports. A restore is refused while an active field on
   the same entity uses the name or the key.
 - The `required` flag is enforced when a record is saved through the app forms. The opening import
@@ -130,10 +133,11 @@ a tenant dimension.
 - Custom fields never change `remaining`, flags, allocations or any existing report total (G1).
   Reports add them as extra columns, with a custom-field filter and per-export column selection.
 - **Forward-only migration:** `0006` adds the two tables and seeds the W9 owner column
-  (`project` / `Procurement method`, key `procurementMethod`) from the December field list. Existing financial tables are
-  untouched. From then on the registry is the runtime source of truth for record forms, record
+  (`project` / `Procurement method`, key `procurementMethod`) from the December field list.
+  Existing financial tables are untouched. From then on the registry is the runtime source of truth for record forms, record
   panels, reports, exports and the opening import; the headless opening-import tooling keeps its
-  committed field list.
+  committed field list. `0007` adds the optional `example` column, a display hint for the
+  administration row and the opening-import template example; it is never stored on a record.
 
 ## Invariants
 

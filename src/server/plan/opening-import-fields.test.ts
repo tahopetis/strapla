@@ -17,6 +17,7 @@ function definition(overrides: Partial<CustomFieldDefinition> = {}): CustomField
     type: 'text',
     required: false,
     description: 'How the delivery is staged.',
+    example: '',
     ...overrides,
   };
 }
@@ -85,6 +86,24 @@ describe('openingFieldsFromRegistry', () => {
     for (const example of examples) expect(example ?? '').not.toBe('');
     expect(new Set(examples).size).toBe(3);
     expect(examples[2]).toBe('2026-01-01');
+  });
+
+  it('carries the administrator example into the template column', () => {
+    const { columns } = openingFieldsFromRegistry(
+      'projects',
+      [definition({ example: 'Open tender' })],
+      CLOSING_YEAR,
+    );
+    expect(columns[0]?.example).toBe('Open tender');
+  });
+
+  it('keeps a multi-line example on one template line', () => {
+    const { columns } = openingFieldsFromRegistry(
+      'projects',
+      [definition({ example: 'First line\nsecond line' })],
+      CLOSING_YEAR,
+    );
+    expect(columns[0]?.example).toBe('First line second line');
   });
 
   it('makes a display name that repeats an app-owned header unique instead of rejecting it', () => {

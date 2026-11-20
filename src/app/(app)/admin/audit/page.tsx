@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Card, PageHeader } from '@/components/ui';
+import { auditActionLabel, auditEntityTypeLabel } from '@/domain/audit-labels';
 import { formatDateTime } from '@/lib/format';
 import {
   listAuditActions,
@@ -83,7 +84,7 @@ export default async function AuditTrailPage({
                 <option value="">All entity types</option>
                 {entityTypes.map((type) => (
                   <option key={type} value={type}>
-                    {type}
+                    {auditEntityTypeLabel(type)}
                   </option>
                 ))}
               </select>
@@ -92,9 +93,9 @@ export default async function AuditTrailPage({
               Action
               <select name="action" defaultValue={action ?? ''} className={selectClass}>
                 <option value="">All actions</option>
-                {actions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                {actions.map((actionValue) => (
+                  <option key={actionValue} value={actionValue}>
+                    {auditActionLabel(actionValue)}
                   </option>
                 ))}
               </select>
@@ -155,9 +156,11 @@ export default async function AuditTrailPage({
                           <p className="text-xs text-slate-500">{row.actorEmail}</p>
                         ) : null}
                       </td>
-                      <td className="py-3 pr-4 whitespace-nowrap font-medium">{row.entry.action}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap font-medium">
+                        {auditActionLabel(row.entry.action)}
+                      </td>
                       <td className="py-3 pr-4">
-                        <p>{row.entry.entityType}</p>
+                        <p>{auditEntityTypeLabel(row.entry.entityType)}</p>
                         <p className="break-all font-mono text-[11px] text-slate-500">{row.entry.entityId}</p>
                       </td>
                       <td className="py-3 pr-4 text-slate-600">{row.entry.reason ?? '—'}</td>

@@ -15,6 +15,7 @@ import {
   customFieldTypeLabel,
   deriveCustomFieldKey,
   parseCustomFieldValue,
+  type CustomFieldDefinition,
   type CustomFieldEntityType,
   type CustomFieldRestoreConflict,
   type CustomFieldType,
@@ -32,14 +33,15 @@ import type { ArchivedFieldRow } from './data';
 
 const PAGE = '/admin/custom-fields';
 
-function fieldSnapshot(field: {
-  entityType: string;
-  name: string;
-  key: string;
-  type: string;
-  required: boolean;
-  description: string;
-}): Record<string, unknown> {
+/** Everything the administrator edits; the id and the derived key are app-owned. */
+type CustomFieldContent = Omit<CustomFieldDefinition, 'id' | 'key'>;
+
+function fieldSnapshot(
+  field: Pick<
+    CustomField,
+    'entityType' | 'name' | 'key' | 'type' | 'required' | 'description' | 'example'
+  >,
+): Record<string, unknown> {
   return {
     entityType: field.entityType,
     name: field.name,
@@ -47,6 +49,7 @@ function fieldSnapshot(field: {
     type: field.type,
     required: field.required,
     description: field.description,
+    example: field.example,
   };
 }
 
@@ -155,13 +158,7 @@ async function assertNameFree(
 
 async function createCustomField(
   actorId: string,
-  input: {
-    entityType: CustomFieldEntityType;
-    name: string;
-    type: CustomFieldType;
-    required: boolean;
-    description: string;
-  },
+  input: CustomFieldContent,
 ): Promise<CustomField> {
   await assertNameFree(input.entityType, input.name);
 
@@ -185,6 +182,7 @@ async function createCustomField(
         type: input.type,
         required: input.required,
         description: input.description,
+        example: input.example,
         createdBy: actorId,
         updatedBy: actorId,
       })
@@ -238,14 +236,7 @@ async function assertTypeChangeKeepsValues(
 
 async function updateCustomField(
   actorId: string,
-  input: {
-    id: string;
-    name: string;
-    type: CustomFieldType;
-    required: boolean;
-    description: string;
-    reason: string;
-  },
+  input: CustomFieldContent & { id: string; reason: string },
 ): Promise<CustomField> {
   const existing = await requireField(input.id);
   await assertNameFree(existing.entityType, input.name, existing.id);
@@ -260,6 +251,7 @@ async function updateCustomField(
         type: input.type,
         required: input.required,
         description: input.description,
+        example: input.example,
         updatedBy: actorId,
         updatedAt: new Date(),
       })
@@ -391,7 +383,11 @@ export async function createCustomFieldAction(previous: FormState, formData: For
 
   let created: CustomField;
   try {
-    created = await createCustomField(actor.id, parsed.data);
+    // The form encodes "no example" as blank; the registry stores an empty string.
+    created = await createCustomField(actor.id, {
+      ...parsed.data,
+      example: parsed.data.example ?? '',
+    });
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
@@ -405,7 +401,10 @@ export async function updateCustomFieldAction(previous: FormState, formData: For
 
   let updated: CustomField;
   try {
-    updated = await updateCustomField(actor.id, parsed.data);
+    updated = await updateCustomField(actor.id, {
+      ...parsed.data,
+      example: parsed.data.example ?? '',
+    });
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }

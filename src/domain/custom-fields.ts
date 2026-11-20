@@ -37,6 +37,11 @@ export interface CustomFieldDefinition {
   type: CustomFieldType;
   required: boolean;
   description: string;
+  /**
+   * An optional sample value the administrator supplies, shown in the field row
+   * and used as the opening-import template example. Never stored on a record.
+   */
+  example: string;
 }
 
 /** Field values are keyed by field id so renaming a field never rewrites data. */
@@ -198,6 +203,17 @@ export function parseCustomFieldValues(
 }
 
 /**
+ * Whether a stored entry is a real value. A blank is not a value; zero is a
+ * recorded number and counts. Shared by the audit snapshot and the usage count
+ * so "has a value" means the same thing on every surface.
+ */
+function hasCustomFieldValue(
+  value: CustomFieldValue | null | undefined,
+): value is CustomFieldValue {
+  return value !== undefined && value !== null && value !== '';
+}
+
+/**
  * The audit-trail view of a record's values: readable names instead of ids,
  * dropped when the record has no values so every audit entry stays small.
  */
@@ -208,10 +224,26 @@ export function customFieldSnapshot(
   const snapshot: Record<string, CustomFieldValue> = {};
   for (const field of fields) {
     const value = values[field.id];
-    if (value === undefined || value === null || value === '') continue;
+    if (!hasCustomFieldValue(value)) continue;
     snapshot[field.name] = value;
   }
   return Object.keys(snapshot).length > 0 ? snapshot : null;
+}
+
+/**
+ * How many records hold a value for one field, for the administration screen and
+ * the remove confirmation. The emptiness rule is shared with
+ * `customFieldSnapshot`, so usage reads the same before and after archiving.
+ */
+export function countCustomFieldUsage(
+  valuesByRecord: Iterable<CustomFieldValues>,
+  fieldId: string,
+): number {
+  let count = 0;
+  for (const values of valuesByRecord) {
+    if (hasCustomFieldValue(values[fieldId])) count += 1;
+  }
+  return count;
 }
 
 /** Adds the custom-field snapshot to an audit before/after record. */
