@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
+  Form,
   HiddenField,
   MoneyField,
   ReasonField,
@@ -47,7 +49,7 @@ export function RecurringOpsSection({
           title="Add recurring ops item"
           description="The annual opex budget is the ceiling; carry-in comes from an opening balance or a prior-year carry-over."
         >
-          <form action={createRecurringOpsAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createRecurringOpsAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="annualPlanId" value={detail.annualPlan.id} />
             <TextField label="Name" name="name" required maxLength={160} />
             <SelectField
@@ -66,7 +68,7 @@ export function RecurringOpsSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add recurring ops item</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 
@@ -149,7 +151,7 @@ function RecurringOpsCard({
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit item</summary>
-            <form action={updateRecurringOpsAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Form action={updateRecurringOpsAction} className="mt-4 grid gap-3 sm:grid-cols-2">
               <HiddenField name="id" value={item.id} />
               <TextField label="Name" name="name" defaultValue={item.name} required maxLength={160} />
               <SelectField
@@ -172,17 +174,21 @@ function RecurringOpsCard({
               <div className="sm:col-span-2">
                 <SubmitButton>Save changes</SubmitButton>
               </div>
-            </form>
+            </Form>
           </details>
 
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-red-700">Void item</summary>
-            <form action={voidRecurringOpsAction} className="mt-4 space-y-3">
+          <div className="flex items-start">
+            <ConfirmDialog
+              action={voidRecurringOpsAction}
+              triggerLabel="Void item"
+              title="Void this recurring ops item?"
+              consequence="Voiding keeps the record and its history; the item leaves the active annual plan."
+              confirmLabel="Void item"
+            >
               <HiddenField name="id" value={item.id} />
-              <ReasonField hint="Voiding keeps the record and its history." />
-              <SubmitButton variant="danger">Void item</SubmitButton>
-            </form>
-          </details>
+              <ReasonField hint="Recorded in the audit trail." />
+            </ConfirmDialog>
+          </div>
         </div>
       ) : null}
     </Card>

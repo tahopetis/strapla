@@ -27,17 +27,19 @@ import {
   spendUpdateSchema,
   spendVoidSchema,
   type CommitmentCreateInput,
+  type CommitmentUpdateInput,
   type SpendCreateInput,
+  type SpendUpdateInput,
 } from '@/domain/inputs';
-import { parseRupiah } from '@/domain/money';
+import { formatRupiah, parseRupiah } from '@/domain/money';
 import { validateSettlementSplits } from '@/domain/settlement';
+import { invalidFormState, type FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 
@@ -204,16 +206,17 @@ async function loadSpend(id: string): Promise<{ spend: SpendEntry; context: Pare
 
 // ---------------------------------------------------------------- commitments
 
-async function createCommitment(actorId: string, input: CommitmentCreateInput): Promise<void> {
-  const context = await loadParent({
-    allocationId: input.allocationId,
-    recurringOpsItemId: input.recurringOpsItemId,
-  });
+async function createCommitment(
+  actorId: string,
+  input: CommitmentCreateInput,
+  context: ParentContext,
+): Promise<CommitmentEntry> {
   requireEditable(context);
   requireComponentAllowed(context, input.component);
 
+  let created: CommitmentEntry | undefined;
   await getDb().transaction(async (tx) => {
-    const [created] = await tx
+    [created] = await tx
       .insert(commitmentEntries)
       .values({
         projectYearAllocationId: context.allocation?.id ?? null,
@@ -236,25 +239,29 @@ async function createCommitment(actorId: string, input: CommitmentCreateInput): 
       after: commitmentSnapshot(created),
     });
   });
+  if (!created) throw new Error('failed to create the commitment entry');
+  return created;
 }
 
 async function updateCommitment(
   actorId: string,
-  input: { id: string; reason: string; component: 'capex' | 'opex'; amount: number; commitmentDate: string; reference: string | null; description: string | null },
-): Promise<void> {
-  const { commitment, context } = await loadCommitment(input.id);
+  input: CommitmentUpdateInput,
+  commitment: CommitmentEntry,
+  context: ParentContext,
+): Promise<CommitmentEntry> {
   if (commitment.voidedAt) throw new FormError('This commitment is voided and read-only.');
   requireEditable(context);
   requireComponentAllowed(context, input.component);
   const settled = await settledAmount(commitment.id);
   if (input.amount < settled) {
     throw new FormError(
-      `The commitment cannot be reduced below the already settled amount (Rp ${settled.toLocaleString('id-ID')}).`,
+      `The commitment cannot be reduced below the already settled amount (${formatRupiah(settled)}).`,
     );
   }
 
+  let updated: CommitmentEntry | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(commitmentEntries)
       .set({
         component: input.component,
@@ -265,47 +272,56 @@ async function updateCommitment(
         updatedBy: actorId,
         updatedAt: new Date(),
       })
-      .where(eq(commitmentEntries.id, input.id))
+      .where(eq(commitmentEntries.id, commitment.id))
       .returning();
     if (!updated) throw new FormError('Commitment entry not found.');
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'update',
       entityType: 'commitment_entry',
-      entityId: input.id,
+      entityId: commitment.id,
       before: commitmentSnapshot(commitment),
       after: commitmentSnapshot(updated),
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Commitment entry not found.');
+  return updated;
 }
 
-async function voidCommitment(actorId: string, id: string, reason: string): Promise<void> {
-  const { commitment, context } = await loadCommitment(id);
+async function voidCommitment(
+  actorId: string,
+  commitment: CommitmentEntry,
+  context: ParentContext,
+  reason: string,
+): Promise<CommitmentEntry> {
   if (commitment.voidedAt) throw new FormError('This commitment is already voided.');
   requireEditable(context);
-  const settled = await settledAmount(id);
+  const settled = await settledAmount(commitment.id);
   if (settled > 0) {
     throw new FormError('This commitment has settlements. Void the settling spend entries first.');
   }
 
+  let updated: CommitmentEntry | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(commitmentEntries)
       .set({ voidedAt: new Date(), voidedReason: reason, updatedBy: actorId, updatedAt: new Date() })
-      .where(eq(commitmentEntries.id, id))
+      .where(eq(commitmentEntries.id, commitment.id))
       .returning();
     if (!updated) throw new FormError('Commitment entry not found.');
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'void',
       entityType: 'commitment_entry',
-      entityId: id,
+      entityId: commitment.id,
       before: commitmentSnapshot(commitment),
       after: commitmentSnapshot(updated),
       reason,
     });
   });
+  if (!updated) throw new FormError('Commitment entry not found.');
+  return updated;
 }
 
 // ---------------------------------------------------------------- spend
@@ -315,36 +331,46 @@ interface ParsedSplits {
   amount: number;
 }
 
-function parseSettlementSplits(formData: FormData): ParsedSplits[] {
+const SETTLEMENT_AMOUNT_ERROR = 'Settlement amounts must be whole Rupiah numbers.';
+const SETTLEMENT_ROW_ERROR = 'Use a whole Rupiah amount (digits only).';
+
+interface SettlementSplits {
+  splits: ParsedSplits[];
+  errors: Record<string, string>;
+}
+
+/**
+ * Settlement amounts are optional raw inputs (`settle_<commitmentId>`) sitting
+ * beside the spend form, outside the Zod schema. A bad amount is attached to
+ * the row that typed it so it renders under that input; the form-level
+ * sentence stays as the summary.
+ */
+function readSettlementSplits(formData: FormData): SettlementSplits {
   const splits: ParsedSplits[] = [];
+  const errors: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
     if (!key.startsWith('settle_') || typeof value !== 'string') continue;
     const trimmed = value.trim();
     if (!trimmed) continue;
-    const commitmentId = key.slice('settle_'.length);
     try {
       const amount = parseRupiah(trimmed);
-      if (amount > 0) splits.push({ commitmentId, amount });
+      if (amount > 0) splits.push({ commitmentId: key.slice('settle_'.length), amount });
     } catch {
-      throw new FormError('Settlement amounts must be whole Rupiah numbers.');
+      errors[key] = SETTLEMENT_ROW_ERROR;
     }
   }
-  return splits;
+  return { splits, errors };
 }
 
 async function createSpend(
   actorId: string,
   input: SpendCreateInput,
-  formData: FormData,
-): Promise<void> {
-  const context = await loadParent({
-    allocationId: input.allocationId,
-    recurringOpsItemId: input.recurringOpsItemId,
-  });
+  context: ParentContext,
+  splits: ParsedSplits[],
+): Promise<SpendEntry> {
   requireEditable(context);
   requireComponentAllowed(context, input.component);
 
-  const splits = parseSettlementSplits(formData);
   if (context.annualPlan.status === 'closed' && splits.length === 0 && input.settlementKind !== 'prior_year_opening') {
     throw new FormError(
       'This fiscal year is closed: only spend entries settling existing commitments can be recorded.',
@@ -426,8 +452,9 @@ async function createSpend(
     splits: validationSplits,
   });
 
+  let created: SpendEntry | undefined;
   await getDb().transaction(async (tx) => {
-    const [created] = await tx
+    [created] = await tx
       .insert(spendEntries)
       .values({
         projectYearAllocationId: context.allocation?.id ?? null,
@@ -474,23 +501,16 @@ async function createSpend(
       });
     }
   });
+  if (!created) throw new Error('failed to create the spend entry');
+  return created;
 }
 
 async function updateSpend(
   actorId: string,
-  input: {
-    id: string;
-    reason: string;
-    amount: number;
-    spentOn: string;
-    categoryId: string | null;
-    vendor: string | null;
-    reference: string | null;
-    description: string | null;
-    settlementKind: 'current' | 'prior_year_opening';
-  },
-): Promise<void> {
-  const { spend, context } = await loadSpend(input.id);
+  input: SpendUpdateInput,
+  spend: SpendEntry,
+  context: ParentContext,
+): Promise<SpendEntry> {
   if (spend.voidedAt) throw new FormError('This spend entry is voided and read-only.');
   requireSpendLifecycle(context);
 
@@ -506,8 +526,9 @@ async function updateSpend(
     throw new FormError('Void the spend entry and re-enter it to change its settlement classification.');
   }
 
+  let updated: SpendEntry | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(spendEntries)
       .set({
         amount: input.amount,
@@ -520,133 +541,195 @@ async function updateSpend(
         updatedBy: actorId,
         updatedAt: new Date(),
       })
-      .where(eq(spendEntries.id, input.id))
+      .where(eq(spendEntries.id, spend.id))
       .returning();
     if (!updated) throw new FormError('Spend entry not found.');
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'update',
       entityType: 'spend_entry',
-      entityId: input.id,
+      entityId: spend.id,
       before: spendSnapshot(spend),
       after: spendSnapshot(updated),
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Spend entry not found.');
+  return updated;
 }
 
-async function voidSpend(actorId: string, id: string, reason: string): Promise<void> {
-  const { spend, context } = await loadSpend(id);
+async function voidSpend(
+  actorId: string,
+  spend: SpendEntry,
+  context: ParentContext,
+  reason: string,
+): Promise<SpendEntry> {
   if (spend.voidedAt) throw new FormError('This spend entry is already voided.');
   requireSpendLifecycle(context);
 
+  let updated: SpendEntry | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(spendEntries)
       .set({ voidedAt: new Date(), voidedReason: reason, updatedBy: actorId, updatedAt: new Date() })
-      .where(eq(spendEntries.id, id))
+      .where(eq(spendEntries.id, spend.id))
       .returning();
     if (!updated) throw new FormError('Spend entry not found.');
     await recordAudit(tx, {
       actorUserId: actorId,
       action: 'void',
       entityType: 'spend_entry',
-      entityId: id,
+      entityId: spend.id,
       before: spendSnapshot(spend),
       after: spendSnapshot(updated),
       reason,
     });
   });
+  if (!updated) throw new FormError('Spend entry not found.');
+  return updated;
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createCommitmentAction(formData: FormData): Promise<void> {
+function recordLabel(
+  noun: 'Commitment' | 'Spend entry',
+  record: Pick<CommitmentEntry | SpendEntry, 'reference' | 'amount'>,
+): string {
+  return record.reference ? `${noun} ${record.reference}` : `${noun} of ${formatRupiah(record.amount)}`;
+}
+
+export async function createCommitmentAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, commitmentCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
   let redirectTo = '/plan/projects';
+  let created: CommitmentEntry;
   try {
-    const input = parseForm(commitmentCreateSchema, formData);
     const context = await loadParent({
-      allocationId: input.allocationId,
-      recurringOpsItemId: input.recurringOpsItemId,
+      allocationId: parsed.data.allocationId,
+      recurringOpsItemId: parsed.data.recurringOpsItemId,
     });
     redirectTo = context.redirectTo;
-    await createCommitment(actor.id, input);
+    created = await createCommitment(actor.id, parsed.data, context);
   } catch (error) {
-    failWith(redirectTo, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, 'Commitment recorded.');
+  finishWith(redirectTo, `${recordLabel('Commitment', created)} recorded.`);
 }
 
-export async function updateCommitmentAction(formData: FormData): Promise<void> {
+export async function updateCommitmentAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, commitmentUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
   let redirectTo = '/plan/projects';
+  let updated: CommitmentEntry;
   try {
-    const input = parseForm(commitmentUpdateSchema, formData);
-    const loaded = await loadCommitment(input.id);
-    redirectTo = loaded.context.redirectTo;
-    await updateCommitment(actor.id, input);
+    const { commitment, context } = await loadCommitment(parsed.data.id);
+    redirectTo = context.redirectTo;
+    updated = await updateCommitment(actor.id, parsed.data, commitment, context);
   } catch (error) {
-    failWith(redirectTo, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, 'Commitment updated.');
+  finishWith(redirectTo, `${recordLabel('Commitment', updated)} updated.`);
 }
 
-export async function voidCommitmentAction(formData: FormData): Promise<void> {
+export async function voidCommitmentAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, commitmentVoidSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
   let redirectTo = '/plan/projects';
+  let voided: CommitmentEntry;
   try {
-    const input = parseForm(commitmentVoidSchema, formData);
-    const loaded = await loadCommitment(input.id);
-    redirectTo = loaded.context.redirectTo;
-    await voidCommitment(actor.id, input.id, input.reason);
+    const { commitment, context } = await loadCommitment(parsed.data.id);
+    redirectTo = context.redirectTo;
+    voided = await voidCommitment(actor.id, commitment, context, parsed.data.reason);
   } catch (error) {
-    failWith(redirectTo, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, 'Commitment voided.');
+  finishWith(redirectTo, `${recordLabel('Commitment', voided)} voided.`);
 }
 
-export async function createSpendAction(formData: FormData): Promise<void> {
+export async function createSpendAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, spendCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const settlements = readSettlementSplits(formData);
+  if (Object.keys(settlements.errors).length > 0) {
+    return invalidFormState(
+      previous,
+      settlements.errors,
+      parsed.values,
+      SETTLEMENT_AMOUNT_ERROR,
+    );
+  }
+
   let redirectTo = '/plan/projects';
+  let created: SpendEntry;
   try {
-    const input = parseForm(spendCreateSchema, formData);
     const context = await loadParent({
-      allocationId: input.allocationId,
-      recurringOpsItemId: input.recurringOpsItemId,
+      allocationId: parsed.data.allocationId,
+      recurringOpsItemId: parsed.data.recurringOpsItemId,
     });
     redirectTo = context.redirectTo;
-    await createSpend(actor.id, input, formData);
+    created = await createSpend(actor.id, parsed.data, context, settlements.splits);
   } catch (error) {
-    failWith(redirectTo, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, 'Spend entry recorded.');
+  finishWith(redirectTo, `${recordLabel('Spend entry', created)} recorded.`);
 }
 
-export async function updateSpendAction(formData: FormData): Promise<void> {
+export async function updateSpendAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, spendUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
   let redirectTo = '/plan/projects';
+  let updated: SpendEntry;
   try {
-    const input = parseForm(spendUpdateSchema, formData);
-    const loaded = await loadSpend(input.id);
-    redirectTo = loaded.context.redirectTo;
-    await updateSpend(actor.id, input);
+    const { spend, context } = await loadSpend(parsed.data.id);
+    redirectTo = context.redirectTo;
+    updated = await updateSpend(actor.id, parsed.data, spend, context);
   } catch (error) {
-    failWith(redirectTo, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, 'Spend entry updated.');
+  finishWith(redirectTo, `${recordLabel('Spend entry', updated)} updated.`);
 }
 
-export async function voidSpendAction(formData: FormData): Promise<void> {
+export async function voidSpendAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, spendVoidSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
   let redirectTo = '/plan/projects';
+  let voided: SpendEntry;
   try {
-    const input = parseForm(spendVoidSchema, formData);
-    const loaded = await loadSpend(input.id);
-    redirectTo = loaded.context.redirectTo;
-    await voidSpend(actor.id, input.id, input.reason);
+    const { spend, context } = await loadSpend(parsed.data.id);
+    redirectTo = context.redirectTo;
+    voided = await voidSpend(actor.id, spend, context, parsed.data.reason);
   } catch (error) {
-    failWith(redirectTo, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(redirectTo, 'Spend entry voided.');
+  finishWith(redirectTo, `${recordLabel('Spend entry', voided)} voided.`);
 }

@@ -10,13 +10,13 @@ import {
   openingReconciliationSaveSchema,
   openingReconciliationSignOffSchema,
 } from '@/domain/inputs';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 import { getOpeningReconciliation } from './opening-queries';
@@ -52,15 +52,21 @@ async function requirePlan(planId: string) {
   return plan;
 }
 
-export async function saveOpeningReconciliationAction(formData: FormData): Promise<void> {
+export async function saveOpeningReconciliationAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let planId = '';
-  try {
-    const input = parseForm(openingReconciliationSaveSchema, formData);
-    planId = input.planId;
-    await requirePlan(planId);
+  const parsed = validateForm(previous, openingReconciliationSaveSchema, formData);
+  if (!parsed.ok) return parsed.state;
+  const input = parsed.data;
+  let priorYear = 0;
 
-    const existing = await getOpeningReconciliation(planId);
+  try {
+    const plan = await requirePlan(input.planId);
+    priorYear = plan.startFiscalYear;
+
+    const existing = await getOpeningReconciliation(input.planId);
     if (existing?.signedOffAt) {
       throw new FormError('Opening balances are signed off; correct records with audited edits.');
     }
@@ -81,7 +87,7 @@ export async function saveOpeningReconciliationAction(formData: FormData): Promi
     await getDb().transaction(async (tx) => {
       const [row] = await tx
         .insert(openingBalanceReconciliations)
-        .values({ planId, ...values, createdBy: user.id })
+        .values({ planId: input.planId, ...values, createdBy: user.id })
         .onConflictDoUpdate({
           target: openingBalanceReconciliations.planId,
           set: values,
@@ -99,20 +105,29 @@ export async function saveOpeningReconciliationAction(formData: FormData): Promi
       });
     });
   } catch (error) {
-    failWith(LANDING, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(LANDING, 'Control totals saved; compare the differences below.');
+  finishWith(
+    LANDING,
+    `Control totals saved for the FY${priorYear} opening balances; compare the differences below.`,
+  );
 }
 
-export async function signOffOpeningBalancesAction(formData: FormData): Promise<void> {
+export async function signOffOpeningBalancesAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let planId = '';
-  try {
-    const input = parseForm(openingReconciliationSignOffSchema, formData);
-    planId = input.planId;
-    await requirePlan(planId);
+  const parsed = validateForm(previous, openingReconciliationSignOffSchema, formData);
+  if (!parsed.ok) return parsed.state;
+  const input = parsed.data;
+  let priorYear = 0;
 
-    const existing = await getOpeningReconciliation(planId);
+  try {
+    const plan = await requirePlan(input.planId);
+    priorYear = plan.startFiscalYear;
+
+    const existing = await getOpeningReconciliation(input.planId);
     if (!existing) {
       throw new FormError('Save the control totals before signing off the opening balances.');
     }
@@ -128,7 +143,7 @@ export async function signOffOpeningBalancesAction(formData: FormData): Promise<
           updatedBy: user.id,
           updatedAt: new Date(),
         })
-        .where(eq(openingBalanceReconciliations.planId, planId))
+        .where(eq(openingBalanceReconciliations.planId, input.planId))
         .returning();
       if (!row) throw new FormError('Opening-balance reconciliation not found.');
       await recordAudit(tx, {
@@ -142,8 +157,7 @@ export async function signOffOpeningBalancesAction(formData: FormData): Promise<
       });
     });
   } catch (error) {
-    failWith(LANDING, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(LANDING, 'Opening balances signed off.');
+  finishWith(LANDING, `Opening balances for FY${priorYear} signed off.`);
 }
-

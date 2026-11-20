@@ -25,16 +25,20 @@ import {
 } from '@/domain/inputs';
 import { withCustomFields } from '@/domain/custom-fields';
 import { formatEntityCode, validateProjectYears } from '@/domain/plan';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  invalidCustomFieldState,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
-import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
+import {
+  readCustomFieldPayloadState,
+  type CustomFieldPayload,
+} from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 
 const PROJECTS_PAGE = '/plan/projects';
@@ -161,7 +165,7 @@ async function createProject(
   userId: string,
   input: ProjectCreateInput,
   custom: CustomFieldPayload,
-): Promise<void> {
+): Promise<Project> {
   const context = await loadProgramContext(input.originatingProgramId);
   if (context.program.voidedAt) throw new FormError('The originating program is voided.');
   requireActiveStrategicPlan(context);
@@ -173,6 +177,7 @@ async function createProject(
     horizon: context.strategicPlan,
   });
 
+  let created: Project | undefined;
   await getDb().transaction(async (tx) => {
     const code = input.code ?? (await nextProjectCode(input.startFiscalYear));
     const duplicate = await tx
@@ -182,7 +187,7 @@ async function createProject(
       .limit(1);
     if (duplicate.length > 0) throw new FormError(`Project code ${code} is already used.`);
 
-    const [created] = await tx
+    const [row] = await tx
       .insert(projects)
       .values({
         originatingProgramId: context.program.id,
@@ -203,10 +208,11 @@ async function createProject(
         updatedBy: userId,
       })
       .returning();
-    if (!created) throw new Error('failed to create the project');
+    if (!row) throw new Error('failed to create the project');
+    created = row;
     await saveCustomFieldValues(tx, {
       entityType: 'project',
-      entityId: created.id,
+      entityId: row.id,
       fields: custom.fields,
       values: custom.values,
       userId,
@@ -215,17 +221,19 @@ async function createProject(
       actorUserId: userId,
       action: 'create',
       entityType: 'project',
-      entityId: created.id,
-      after: withCustomFields(projectSnapshot(created), custom.fields, custom.values),
+      entityId: row.id,
+      after: withCustomFields(projectSnapshot(row), custom.fields, custom.values),
     });
   });
+  if (!created) throw new Error('failed to create the project');
+  return created;
 }
 
 async function updateProject(
   userId: string,
   input: ProjectUpdateInput,
   custom: CustomFieldPayload,
-): Promise<void> {
+): Promise<Project> {
   const context = await loadProjectContext(input.id);
   if (context.project.status === 'cancelled') {
     throw new FormError('This project is cancelled and read-only.');
@@ -238,6 +246,7 @@ async function updateProject(
     horizon: context.strategicPlan,
   });
 
+  let updated: Project | undefined;
   await getDb().transaction(async (tx) => {
     const beforeValues = await readCustomFieldValues('project', input.id, tx);
     const duplicate = await tx
@@ -247,7 +256,7 @@ async function updateProject(
       .limit(1);
     if (duplicate.length > 0) throw new FormError(`Project code ${input.code} is already used.`);
 
-    const [updated] = await tx
+    const [row] = await tx
       .update(projects)
       .set({
         code: input.code,
@@ -268,7 +277,8 @@ async function updateProject(
       })
       .where(eq(projects.id, input.id))
       .returning();
-    if (!updated) throw new FormError('Project not found.');
+    if (!row) throw new FormError('Project not found.');
+    updated = row;
     await saveCustomFieldValues(tx, {
       entityType: 'project',
       entityId: input.id,
@@ -282,19 +292,22 @@ async function updateProject(
       entityType: 'project',
       entityId: input.id,
       before: withCustomFields(projectSnapshot(context.project), custom.fields, beforeValues),
-      after: withCustomFields(projectSnapshot(updated), custom.fields, custom.values),
+      after: withCustomFields(projectSnapshot(row), custom.fields, custom.values),
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Project not found.');
+  return updated;
 }
 
-async function cancelProject(userId: string, id: string, reason: string): Promise<void> {
+async function cancelProject(userId: string, id: string, reason: string): Promise<Project> {
   const context = await loadProjectContext(id);
   if (context.project.status === 'cancelled') throw new FormError('This project is already cancelled.');
   requireEditableContext(context);
 
+  let updated: Project | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    const [row] = await tx
       .update(projects)
       .set({
         status: 'cancelled',
@@ -305,20 +318,23 @@ async function cancelProject(userId: string, id: string, reason: string): Promis
       })
       .where(eq(projects.id, id))
       .returning();
-    if (!updated) throw new FormError('Project not found.');
+    if (!row) throw new FormError('Project not found.');
+    updated = row;
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'void',
       entityType: 'project',
       entityId: id,
       before: projectSnapshot(context.project),
-      after: projectSnapshot(updated),
+      after: projectSnapshot(row),
       reason,
     });
   });
+  if (!updated) throw new FormError('Project not found.');
+  return updated;
 }
 
-async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Promise<void> {
+async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Promise<string> {
   const context = await loadProjectContext(input.projectId);
   if (context.project.status === 'cancelled') {
     throw new FormError('This project is cancelled and read-only.');
@@ -380,57 +396,74 @@ async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Pro
       after: ijinSnapshot(created),
     });
   });
+  return context.project.code;
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createProjectAction(formData: FormData): Promise<void> {
+export async function createProjectAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, projectCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const custom = await readCustomFieldPayloadState('project', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
+  let created: Project;
   try {
-    const custom = await readCustomFieldPayload('project', formData);
-    await createProject(user.id, parseForm(projectCreateSchema, formData), custom);
+    created = await createProject(user.id, parsed.data, custom);
   } catch (error) {
-    failWith(PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PROJECTS_PAGE, 'Project created.');
+  finishWith(PROJECTS_PAGE, `Project ${created.code} created.`);
 }
 
-export async function updateProjectAction(formData: FormData): Promise<void> {
+export async function updateProjectAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
-  let projectId = '';
+  const parsed = validateForm(previous, projectUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const custom = await readCustomFieldPayloadState('project', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
+  let updated: Project;
   try {
-    const input = parseForm(projectUpdateSchema, formData);
-    projectId = input.id;
-    const custom = await readCustomFieldPayload('project', formData);
-    await updateProject(user.id, input, custom);
+    updated = await updateProject(user.id, parsed.data, custom);
   } catch (error) {
-    failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${PROJECTS_PAGE}/${projectId}`, 'Project updated.');
+  finishWith(`${PROJECTS_PAGE}/${parsed.data.id}`, `Project ${updated.code} updated.`);
 }
 
-export async function cancelProjectAction(formData: FormData): Promise<void> {
+export async function cancelProjectAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
-  let projectId = '';
+  const parsed = validateForm(previous, projectCancelSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let cancelled: Project;
   try {
-    const input = parseForm(projectCancelSchema, formData);
-    projectId = input.id;
-    await cancelProject(user.id, input.id, input.reason);
+    cancelled = await cancelProject(user.id, parsed.data.id, parsed.data.reason);
   } catch (error) {
-    failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${PROJECTS_PAGE}/${projectId}`, 'Project cancelled.');
+  finishWith(`${PROJECTS_PAGE}/${parsed.data.id}`, `Project ${cancelled.code} cancelled.`);
 }
 
-export async function saveIjinPrinsipAction(formData: FormData): Promise<void> {
+export async function saveIjinPrinsipAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
-  let projectId = '';
+  const parsed = validateForm(previous, ijinPrinsipSaveSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let projectCode: string;
   try {
-    const input = parseForm(ijinPrinsipSaveSchema, formData);
-    projectId = input.projectId;
-    await saveIjinPrinsip(user.id, input);
+    projectCode = await saveIjinPrinsip(user.id, parsed.data);
   } catch (error) {
-    failWith(projectId ? `${PROJECTS_PAGE}/${projectId}` : PROJECTS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${PROJECTS_PAGE}/${projectId}`, 'Ijin prinsip saved.');
+  finishWith(
+    `${PROJECTS_PAGE}/${parsed.data.projectId}`,
+    `Ijin prinsip for ${projectCode} saved.`,
+  );
 }

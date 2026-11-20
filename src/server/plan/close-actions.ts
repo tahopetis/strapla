@@ -7,6 +7,7 @@ import {
   annualPrograms,
   carryOverEntries,
   projectYearAllocations,
+  type AnnualPlan,
 } from '@/db/schema';
 import { closeFiscalYearSchema } from '@/domain/inputs';
 import {
@@ -15,13 +16,13 @@ import {
   validateCarryOverAmount,
 } from '@/domain/close';
 import { carryOverFieldName, readCarryOverField } from '@/lib/close-form';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 import { getCloseState } from './close-queries';
@@ -67,7 +68,7 @@ async function closeFiscalYear(
   userId: string,
   input: { annualPlanId: string; reference: string; confirmation: string },
   formData: FormData,
-): Promise<void> {
+): Promise<AnnualPlan> {
   const state = await getCloseState(input.annualPlanId);
   if (!state) throw new FormError('Annual plan not found.');
   if (state.plan.status === 'closed') throw new FormError('This fiscal year is already closed.');
@@ -177,6 +178,7 @@ async function closeFiscalYear(
     }
   }
 
+  let closed: AnnualPlan | undefined;
   await getDb().transaction(async (tx) => {
     const targetProgramsById = new Map(
       (
@@ -327,7 +329,7 @@ async function closeFiscalYear(
       }
     }
 
-    const [closed] = await tx
+    const [row] = await tx
       .update(annualPlans)
       .set({
         status: 'closed',
@@ -339,7 +341,8 @@ async function closeFiscalYear(
       })
       .where(eq(annualPlans.id, state.plan.id))
       .returning();
-    if (!closed) throw new FormError('Annual plan not found.');
+    if (!row) throw new FormError('Annual plan not found.');
+    closed = row;
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'close',
@@ -355,20 +358,26 @@ async function closeFiscalYear(
       reason: input.reference,
     });
   });
+  if (!closed) throw new FormError('Annual plan not found.');
+  return closed;
 }
 
-export async function closeFiscalYearAction(formData: FormData): Promise<void> {
+export async function closeFiscalYearAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const actor = await actionUser();
-  let planId: string | null = null;
+  const parsed = validateForm(previous, closeFiscalYearSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let closed: AnnualPlan;
   try {
-    const input = parseForm(closeFiscalYearSchema, formData);
-    planId = input.annualPlanId;
-    await closeFiscalYear(actor.id, input, formData);
+    closed = await closeFiscalYear(actor.id, parsed.data, formData);
   } catch (error) {
-    failWith(planId ? `/plan/annual/${planId}/close` : '/plan/annual', describeError(error));
+    return failureState(previous, error, parsed.values);
   }
   finishWith(
-    planId ? `/plan/annual/${planId}` : '/plan/annual',
-    'Fiscal year closed and carry-over recorded.',
+    `/plan/annual/${closed.id}`,
+    `Fiscal year FY${closed.fiscalYear} closed and carry-over recorded.`,
   );
 }

@@ -14,13 +14,13 @@ import {
   type MemberCreateInput,
   type MemberPasswordResetInput,
 } from '@/domain/inputs';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 import { hashPassword, validatePasswordPolicy } from '@/server/auth/password';
@@ -54,7 +54,7 @@ async function revokeSessionsInTransaction(tx: Tx, userId: string): Promise<numb
   return revoked.length;
 }
 
-async function createMember(actorId: string, input: MemberCreateInput): Promise<void> {
+async function createMember(actorId: string, input: MemberCreateInput): Promise<User> {
   const email = input.email.toLowerCase();
   const existing = await getDb()
     .select({ id: users.id })
@@ -63,7 +63,7 @@ async function createMember(actorId: string, input: MemberCreateInput): Promise<
     .limit(1);
   if (existing.length > 0) throw new FormError('An account with that email already exists.');
 
-  await createUser({
+  return createUser({
     name: input.name,
     email,
     password: input.password,
@@ -71,7 +71,7 @@ async function createMember(actorId: string, input: MemberCreateInput): Promise<
   });
 }
 
-async function deactivateMember(actorId: string, userId: string, reason: string): Promise<void> {
+async function deactivateMember(actorId: string, userId: string, reason: string): Promise<User> {
   const member = await requireMember(userId);
   if (member.id === actorId) {
     throw new FormError('You cannot deactivate your own account.');
@@ -82,8 +82,9 @@ async function deactivateMember(actorId: string, userId: string, reason: string)
     throw new FormError('The last active account cannot be deactivated.');
   }
 
+  let updated: User | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(users)
       .set({ isActive: false, updatedAt: new Date() })
       .where(eq(users.id, userId))
@@ -100,14 +101,17 @@ async function deactivateMember(actorId: string, userId: string, reason: string)
       reason,
     });
   });
+  if (!updated) throw new FormError('Account not found.');
+  return updated;
 }
 
-async function activateMember(actorId: string, userId: string, reason: string): Promise<void> {
+async function activateMember(actorId: string, userId: string, reason: string): Promise<User> {
   const member = await requireMember(userId);
   if (member.isActive) throw new FormError('That account is already active.');
 
+  let updated: User | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(users)
       .set({ isActive: true, updatedAt: new Date() })
       .where(eq(users.id, userId))
@@ -123,19 +127,22 @@ async function activateMember(actorId: string, userId: string, reason: string): 
       reason,
     });
   });
+  if (!updated) throw new FormError('Account not found.');
+  return updated;
 }
 
 async function resetMemberPassword(
   actorId: string,
   input: MemberPasswordResetInput,
-): Promise<void> {
+): Promise<User> {
   const member = await requireMember(input.userId);
   const policyError = validatePasswordPolicy(input.password);
   if (policyError) throw new FormError(policyError);
   const passwordHash = await hashPassword(input.password);
 
+  let updated: User | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(users)
       .set({ passwordHash, updatedAt: new Date() })
       .where(eq(users.id, input.userId))
@@ -152,9 +159,11 @@ async function resetMemberPassword(
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Account not found.');
+  return updated;
 }
 
-async function revokeMemberSessions(actorId: string, userId: string, reason: string): Promise<void> {
+async function revokeMemberSessions(actorId: string, userId: string, reason: string): Promise<User> {
   const member = await requireMember(userId);
 
   await getDb().transaction(async (tx) => {
@@ -169,60 +178,77 @@ async function revokeMemberSessions(actorId: string, userId: string, reason: str
       reason,
     });
   });
+  return member;
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createMemberAction(formData: FormData): Promise<void> {
+export async function createMemberAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, memberCreateSchema, formData, { omit: ['password'] });
+  if (!parsed.ok) return parsed.state;
+
+  let created: User;
   try {
-    await createMember(actor.id, parseForm(memberCreateSchema, formData));
+    created = await createMember(actor.id, parsed.data);
   } catch (error) {
-    failWith(MEMBERS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(MEMBERS_PAGE, 'Member created.');
+  finishWith(MEMBERS_PAGE, `Member ${created.name} created.`);
 }
 
-export async function deactivateMemberAction(formData: FormData): Promise<void> {
+export async function deactivateMemberAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, memberReasonSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: User;
   try {
-    const input = parseForm(memberReasonSchema, formData);
-    await deactivateMember(actor.id, input.userId, input.reason);
+    updated = await deactivateMember(actor.id, parsed.data.userId, parsed.data.reason);
   } catch (error) {
-    failWith(MEMBERS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(MEMBERS_PAGE, 'Member deactivated.');
+  finishWith(MEMBERS_PAGE, `Member ${updated.name} deactivated.`);
 }
 
-export async function activateMemberAction(formData: FormData): Promise<void> {
+export async function activateMemberAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, memberReasonSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: User;
   try {
-    const input = parseForm(memberReasonSchema, formData);
-    await activateMember(actor.id, input.userId, input.reason);
+    updated = await activateMember(actor.id, parsed.data.userId, parsed.data.reason);
   } catch (error) {
-    failWith(MEMBERS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(MEMBERS_PAGE, 'Member activated.');
+  finishWith(MEMBERS_PAGE, `Member ${updated.name} activated.`);
 }
 
-export async function resetMemberPasswordAction(formData: FormData): Promise<void> {
+export async function resetMemberPasswordAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, memberPasswordResetSchema, formData, { omit: ['password'] });
+  if (!parsed.ok) return parsed.state;
+
+  let updated: User;
   try {
-    const input = parseForm(memberPasswordResetSchema, formData);
-    await resetMemberPassword(actor.id, input);
+    updated = await resetMemberPassword(actor.id, parsed.data);
   } catch (error) {
-    failWith(MEMBERS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(MEMBERS_PAGE, 'Password reset.');
+  finishWith(MEMBERS_PAGE, `Password reset for ${updated.email}.`);
 }
 
-export async function revokeMemberSessionsAction(formData: FormData): Promise<void> {
+export async function revokeMemberSessionsAction(previous: FormState, formData: FormData): Promise<FormState> {
   const actor = await actionUser();
+  const parsed = validateForm(previous, memberReasonSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let member: User;
   try {
-    const input = parseForm(memberReasonSchema, formData);
-    await revokeMemberSessions(actor.id, input.userId, input.reason);
+    member = await revokeMemberSessions(actor.id, parsed.data.userId, parsed.data.reason);
   } catch (error) {
-    failWith(MEMBERS_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(MEMBERS_PAGE, 'Sessions revoked.');
+  finishWith(MEMBERS_PAGE, `Sessions revoked for ${member.email}.`);
 }

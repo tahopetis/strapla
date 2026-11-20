@@ -23,16 +23,20 @@ import {
 } from '@/domain/inputs';
 import { withCustomFields } from '@/domain/custom-fields';
 import { validatePlanYears } from '@/domain/plan';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  invalidCustomFieldState,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
-import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
+import {
+  readCustomFieldPayloadState,
+  type CustomFieldPayload,
+} from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 import { getStrategicPlan } from './queries';
 
@@ -83,16 +87,17 @@ async function requireInitiative(id: string): Promise<StrategicInitiative> {
 
 // ---------------------------------------------------------------- strategic plan
 
-async function createPlan(userId: string, input: PlanCreateInput): Promise<void> {
+async function createPlan(userId: string, input: PlanCreateInput): Promise<StrategicPlan> {
   const yearError = validatePlanYears(input.startFiscalYear, input.endFiscalYear);
   if (yearError) throw new FormError(yearError);
 
+  let created: StrategicPlan | undefined;
   await getDb().transaction(async (tx) => {
     const existing = await tx.select({ id: strategicPlans.id }).from(strategicPlans).limit(1);
     if (existing.length > 0) {
       throw new FormError('A strategic plan already exists. Archive it before creating a new one.');
     }
-    const [created] = await tx
+    [created] = await tx
       .insert(strategicPlans)
       .values({
         name: input.name,
@@ -111,15 +116,18 @@ async function createPlan(userId: string, input: PlanCreateInput): Promise<void>
       after: planSnapshot(created),
     });
   });
+  if (!created) throw new Error('failed to create the strategic plan');
+  return created;
 }
 
-async function updatePlan(userId: string, input: PlanUpdateInput): Promise<void> {
+async function updatePlan(userId: string, input: PlanUpdateInput): Promise<StrategicPlan> {
   const current = await requireEditablePlan(input.id);
   const yearError = validatePlanYears(input.startFiscalYear, input.endFiscalYear);
   if (yearError) throw new FormError(yearError);
 
+  let updated: StrategicPlan | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(strategicPlans)
       .set({
         name: input.name,
@@ -141,6 +149,8 @@ async function updatePlan(userId: string, input: PlanUpdateInput): Promise<void>
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Strategic plan not found.');
+  return updated;
 }
 
 async function setPlanStatus(
@@ -148,15 +158,16 @@ async function setPlanStatus(
   id: string,
   reason: string,
   status: 'active' | 'archived',
-): Promise<void> {
+): Promise<StrategicPlan> {
   const current = await requireEditablePlan(id);
   if (status === 'archived' && current.status === 'draft') {
     throw new FormError('Activate the plan before archiving it.');
   }
   if (current.status === status) throw new FormError(`The plan is already ${status}.`);
 
+  let updated: StrategicPlan | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(strategicPlans)
       .set({ status, updatedBy: userId, updatedAt: new Date() })
       .where(eq(strategicPlans.id, id))
@@ -172,6 +183,8 @@ async function setPlanStatus(
       reason,
     });
   });
+  if (!updated) throw new FormError('Strategic plan not found.');
+  return updated;
 }
 
 // ---------------------------------------------------------------- strategic initiative
@@ -180,10 +193,11 @@ async function createInitiative(
   userId: string,
   input: InitiativeCreateInput,
   custom: CustomFieldPayload,
-): Promise<void> {
+): Promise<StrategicInitiative> {
   await requireEditablePlan(input.planId);
+  let created: StrategicInitiative | undefined;
   await getDb().transaction(async (tx) => {
-    const [created] = await tx
+    [created] = await tx
       .insert(strategicInitiatives)
       .values({
         planId: input.planId,
@@ -214,19 +228,22 @@ async function createInitiative(
       after: withCustomFields(initiativeSnapshot(created), custom.fields, custom.values),
     });
   });
+  if (!created) throw new Error('failed to create the strategic initiative');
+  return created;
 }
 
 async function updateInitiative(
   userId: string,
   input: InitiativeUpdateInput,
   custom: CustomFieldPayload,
-): Promise<void> {
+): Promise<StrategicInitiative> {
   const current = await requireInitiative(input.id);
   await requireEditablePlan(current.planId);
 
+  let updated: StrategicInitiative | undefined;
   await getDb().transaction(async (tx) => {
     const beforeValues = await readCustomFieldValues('strategic_initiative', input.id, tx);
-    const [updated] = await tx
+    [updated] = await tx
       .update(strategicInitiatives)
       .set({
         code: input.code,
@@ -259,9 +276,14 @@ async function updateInitiative(
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Strategic initiative not found.');
+  return updated;
 }
 
-async function voidInitiative(userId: string, input: { id: string; reason: string }): Promise<void> {
+async function voidInitiative(
+  userId: string,
+  input: { id: string; reason: string },
+): Promise<StrategicInitiative> {
   const current = await requireInitiative(input.id);
   await requireEditablePlan(current.planId);
 
@@ -274,8 +296,9 @@ async function voidInitiative(userId: string, input: { id: string; reason: strin
     throw new FormError('This initiative has annual programs. Void its programs first.');
   }
 
+  let updated: StrategicInitiative | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(strategicInitiatives)
       .set({
         voidedAt: new Date(),
@@ -296,81 +319,118 @@ async function voidInitiative(userId: string, input: { id: string; reason: strin
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Strategic initiative not found.');
+  return updated;
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createPlanAction(formData: FormData): Promise<void> {
-  const user = await actionUser();
-  try {
-    await createPlan(user.id, parseForm(planCreateSchema, formData));
-  } catch (error) {
-    failWith(PAGE, describeError(error));
-  }
-  finishWith(PAGE, 'Strategic plan created.');
+function planName(plan: StrategicPlan): string {
+  return `“${plan.name}”`;
 }
 
-export async function updatePlanAction(formData: FormData): Promise<void> {
+export async function createPlanAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, planCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let created: StrategicPlan;
   try {
-    await updatePlan(user.id, parseForm(planUpdateSchema, formData));
+    created = await createPlan(user.id, parsed.data);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Strategic plan updated.');
+  finishWith(PAGE, `Strategic plan ${planName(created)} created.`);
 }
 
-export async function activatePlanAction(formData: FormData): Promise<void> {
+export async function updatePlanAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, planUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: StrategicPlan;
   try {
-    const input = parseForm(planStatusSchema, formData);
-    await setPlanStatus(user.id, input.id, input.reason, 'active');
+    updated = await updatePlan(user.id, parsed.data);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Strategic plan activated.');
+  finishWith(PAGE, `Strategic plan ${planName(updated)} updated.`);
 }
 
-export async function archivePlanAction(formData: FormData): Promise<void> {
+export async function activatePlanAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, planStatusSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: StrategicPlan;
   try {
-    const input = parseForm(planStatusSchema, formData);
-    await setPlanStatus(user.id, input.id, input.reason, 'archived');
+    updated = await setPlanStatus(user.id, parsed.data.id, parsed.data.reason, 'active');
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Strategic plan archived.');
+  finishWith(PAGE, `Strategic plan ${planName(updated)} activated.`);
 }
 
-export async function createInitiativeAction(formData: FormData): Promise<void> {
+export async function archivePlanAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, planStatusSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: StrategicPlan;
   try {
-    const custom = await readCustomFieldPayload('strategic_initiative', formData);
-    await createInitiative(user.id, parseForm(initiativeCreateSchema, formData), custom);
+    updated = await setPlanStatus(user.id, parsed.data.id, parsed.data.reason, 'archived');
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Strategic initiative created.');
+  finishWith(PAGE, `Strategic plan ${planName(updated)} archived.`);
 }
 
-export async function updateInitiativeAction(formData: FormData): Promise<void> {
+export async function createInitiativeAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, initiativeCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const custom = await readCustomFieldPayloadState('strategic_initiative', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
+  let created: StrategicInitiative;
   try {
-    const custom = await readCustomFieldPayload('strategic_initiative', formData);
-    await updateInitiative(user.id, parseForm(initiativeUpdateSchema, formData), custom);
+    created = await createInitiative(user.id, parsed.data, custom);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Strategic initiative updated.');
+  finishWith(PAGE, `Strategic initiative ${created.code} created.`);
 }
 
-export async function voidInitiativeAction(formData: FormData): Promise<void> {
+export async function updateInitiativeAction(previous: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, initiativeUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const custom = await readCustomFieldPayloadState('strategic_initiative', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
+  let updated: StrategicInitiative;
   try {
-    const input = parseForm(initiativeVoidSchema, formData);
-    await voidInitiative(user.id, input);
+    updated = await updateInitiative(user.id, parsed.data, custom);
   } catch (error) {
-    failWith(PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(PAGE, 'Strategic initiative voided.');
+  finishWith(PAGE, `Strategic initiative ${updated.code} updated.`);
+}
+
+export async function voidInitiativeAction(previous: FormState, formData: FormData): Promise<FormState> {
+  const user = await actionUser();
+  const parsed = validateForm(previous, initiativeVoidSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: StrategicInitiative;
+  try {
+    updated = await voidInitiative(user.id, parsed.data);
+  } catch (error) {
+    return failureState(previous, error, parsed.values);
+  }
+  finishWith(PAGE, `Strategic initiative ${updated.code} voided.`);
 }

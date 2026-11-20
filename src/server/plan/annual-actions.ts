@@ -24,16 +24,20 @@ import {
 } from '@/domain/inputs';
 import { withCustomFields } from '@/domain/custom-fields';
 import { planContainsFiscalYear } from '@/domain/plan';
+import type { FormState } from '@/lib/form-state';
 import {
   FormError,
   actionUser,
-  describeError,
-  failWith,
+  invalidCustomFieldState,
+  failureState,
   finishWith,
-  parseForm,
+  validateForm,
 } from '@/server/actions/common';
 import { readCustomFieldValues, saveCustomFieldValues } from '@/server/custom-fields/data';
-import { readCustomFieldPayload, type CustomFieldPayload } from '@/server/custom-fields/form';
+import {
+  readCustomFieldPayloadState,
+  type CustomFieldPayload,
+} from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
 import { getStrategicPlan } from './queries';
 
@@ -89,7 +93,10 @@ async function requireEditableAnnualPlan(
   return loaded;
 }
 
-async function createAnnualPlan(userId: string, input: AnnualPlanCreateInput): Promise<void> {
+async function createAnnualPlan(
+  userId: string,
+  input: AnnualPlanCreateInput,
+): Promise<AnnualPlan> {
   const strategicPlan = await getStrategicPlan(input.planId);
   if (!strategicPlan) throw new FormError('Strategic plan not found.');
   if (strategicPlan.status === 'archived') {
@@ -104,6 +111,7 @@ async function createAnnualPlan(userId: string, input: AnnualPlanCreateInput): P
     );
   }
 
+  let created: AnnualPlan | undefined;
   await getDb().transaction(async (tx) => {
     const existing = await tx
       .select({ id: annualPlans.id })
@@ -113,7 +121,7 @@ async function createAnnualPlan(userId: string, input: AnnualPlanCreateInput): P
     if (existing.length > 0) {
       throw new FormError(`An annual plan for FY${input.fiscalYear} already exists.`);
     }
-    const [created] = await tx
+    [created] = await tx
       .insert(annualPlans)
       .values({
         planId: input.planId,
@@ -132,9 +140,15 @@ async function createAnnualPlan(userId: string, input: AnnualPlanCreateInput): P
       after: annualPlanSnapshot(created),
     });
   });
+  if (!created) throw new Error('failed to create the annual plan');
+  return created;
 }
 
-async function activateAnnualPlan(userId: string, id: string, reason: string): Promise<void> {
+async function activateAnnualPlan(
+  userId: string,
+  id: string,
+  reason: string,
+): Promise<AnnualPlan> {
   const loaded = await loadAnnualPlan(id);
   if (loaded.strategicPlan.status !== 'active') {
     throw new FormError('Activate the strategic plan before activating an annual plan.');
@@ -144,8 +158,9 @@ async function activateAnnualPlan(userId: string, id: string, reason: string): P
     throw new FormError('This annual plan is already active.');
   }
 
+  let updated: AnnualPlan | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(annualPlans)
       .set({ status: 'active', updatedBy: userId, updatedAt: new Date() })
       .where(eq(annualPlans.id, id))
@@ -161,6 +176,8 @@ async function activateAnnualPlan(userId: string, id: string, reason: string): P
       reason,
     });
   });
+  if (!updated) throw new FormError('Annual plan not found.');
+  return updated;
 }
 
 async function validateInitiative(
@@ -227,7 +244,7 @@ async function createProgram(
   userId: string,
   input: ProgramCreateInput,
   custom: CustomFieldPayload,
-): Promise<void> {
+): Promise<AnnualProgram> {
   const { annualPlan, strategicPlan } = await requireEditableAnnualPlan(input.annualPlanId);
   await validateInitiative(input.siId, strategicPlan.id);
   await validateContinuation({
@@ -237,6 +254,7 @@ async function createProgram(
     strategicPlanId: strategicPlan.id,
   });
 
+  let created: AnnualProgram | undefined;
   await getDb().transaction(async (tx) => {
     const existing = await tx
       .select({ id: annualPrograms.id })
@@ -252,7 +270,7 @@ async function createProgram(
     if (existing.length > 0) {
       throw new FormError(`Program code ${input.code} is already used in FY${annualPlan.fiscalYear}.`);
     }
-    const [created] = await tx
+    [created] = await tx
       .insert(annualPrograms)
       .values({
         annualPlanId: annualPlan.id,
@@ -285,6 +303,8 @@ async function createProgram(
       after: withCustomFields(programSnapshot(created), custom.fields, custom.values),
     });
   });
+  if (!created) throw new Error('failed to create the annual program');
+  return created;
 }
 
 async function loadProgram(id: string): Promise<{
@@ -312,7 +332,7 @@ async function updateProgram(
   userId: string,
   input: ProgramUpdateInput,
   custom: CustomFieldPayload,
-): Promise<void> {
+): Promise<AnnualProgram> {
   const loaded = await loadProgram(input.id);
   if (loaded.program.voidedAt) throw new FormError('This program is voided and read-only.');
   await requireEditableAnnualPlan(loaded.annualPlan.id);
@@ -325,9 +345,10 @@ async function updateProgram(
     strategicPlanId: loaded.strategicPlan.id,
   });
 
+  let updated: AnnualProgram | undefined;
   await getDb().transaction(async (tx) => {
     const beforeValues = await readCustomFieldValues('annual_program', input.id, tx);
-    const [updated] = await tx
+    [updated] = await tx
       .update(annualPrograms)
       .set({
         siId: input.siId,
@@ -362,9 +383,11 @@ async function updateProgram(
       reason: input.reason,
     });
   });
+  if (!updated) throw new FormError('Annual program not found.');
+  return updated;
 }
 
-async function voidProgram(userId: string, id: string, reason: string): Promise<void> {
+async function voidProgram(userId: string, id: string, reason: string): Promise<AnnualProgram> {
   const loaded = await loadProgram(id);
   if (loaded.program.voidedAt) throw new FormError('This program is already voided.');
   await requireEditableAnnualPlan(loaded.annualPlan.id);
@@ -386,8 +409,9 @@ async function voidProgram(userId: string, id: string, reason: string): Promise<
     throw new FormError('This program has projects and cannot be voided.');
   }
 
+  let updated: AnnualProgram | undefined;
   await getDb().transaction(async (tx) => {
-    const [updated] = await tx
+    [updated] = await tx
       .update(annualPrograms)
       .set({ voidedAt: new Date(), voidedReason: reason, updatedBy: userId, updatedAt: new Date() })
       .where(eq(annualPrograms.id, id))
@@ -403,72 +427,113 @@ async function voidProgram(userId: string, id: string, reason: string): Promise<
       reason,
     });
   });
+  if (!updated) throw new FormError('Annual program not found.');
+  return updated;
 }
 
 // ---------------------------------------------------------------- actions
 
-export async function createAnnualPlanAction(formData: FormData): Promise<void> {
+export async function createAnnualPlanAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
+  const parsed = validateForm(previous, annualPlanCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let created: AnnualPlan;
   try {
-    await createAnnualPlan(user.id, parseForm(annualPlanCreateSchema, formData));
+    created = await createAnnualPlan(user.id, parsed.data);
   } catch (error) {
-    failWith(ANNUAL_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(ANNUAL_PAGE, 'Annual plan created.');
+  finishWith(ANNUAL_PAGE, `Annual plan FY${created.fiscalYear} created.`);
 }
 
-export async function activateAnnualPlanAction(formData: FormData): Promise<void> {
+export async function activateAnnualPlanAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let id = '';
+  const parsed = validateForm(previous, annualPlanStatusSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: AnnualPlan;
   try {
-    const input = parseForm(annualPlanStatusSchema, formData);
-    id = input.id;
-    await activateAnnualPlan(user.id, input.id, input.reason);
+    updated = await activateAnnualPlan(user.id, parsed.data.id, parsed.data.reason);
   } catch (error) {
-    failWith(id ? `${ANNUAL_PAGE}/${id}` : ANNUAL_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${ANNUAL_PAGE}/${id}`, 'Annual plan activated.');
+  finishWith(
+    `${ANNUAL_PAGE}/${updated.id}`,
+    `Annual plan FY${updated.fiscalYear} activated.`,
+  );
 }
 
-export async function createProgramAction(formData: FormData): Promise<void> {
+export async function createProgramAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let annualPlanId = '';
+  const parsed = validateForm(previous, programCreateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const custom = await readCustomFieldPayloadState('annual_program', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
+  let created: AnnualProgram;
   try {
-    const input = parseForm(programCreateSchema, formData);
-    annualPlanId = input.annualPlanId;
-    const custom = await readCustomFieldPayload('annual_program', formData);
-    await createProgram(user.id, input, custom);
+    created = await createProgram(user.id, parsed.data, custom);
   } catch (error) {
-    failWith(annualPlanId ? `${ANNUAL_PAGE}/${annualPlanId}` : ANNUAL_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${ANNUAL_PAGE}/${annualPlanId}`, 'Annual program created.');
+  finishWith(
+    `${ANNUAL_PAGE}/${created.annualPlanId}`,
+    `Annual program ${created.code} created.`,
+  );
 }
 
-export async function updateProgramAction(formData: FormData): Promise<void> {
+export async function updateProgramAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let annualPlanId = '';
+  const parsed = validateForm(previous, programUpdateSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  const custom = await readCustomFieldPayloadState('annual_program', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
+  let updated: AnnualProgram;
   try {
-    const input = parseForm(programUpdateSchema, formData);
-    const loaded = await loadProgram(input.id);
-    annualPlanId = loaded.annualPlan.id;
-    const custom = await readCustomFieldPayload('annual_program', formData);
-    await updateProgram(user.id, input, custom);
+    updated = await updateProgram(user.id, parsed.data, custom);
   } catch (error) {
-    failWith(annualPlanId ? `${ANNUAL_PAGE}/${annualPlanId}` : ANNUAL_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${ANNUAL_PAGE}/${annualPlanId}`, 'Annual program updated.');
+  finishWith(
+    `${ANNUAL_PAGE}/${updated.annualPlanId}`,
+    `Annual program ${updated.code} updated.`,
+  );
 }
 
-export async function voidProgramAction(formData: FormData): Promise<void> {
+export async function voidProgramAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await actionUser();
-  let annualPlanId = '';
+  const parsed = validateForm(previous, programVoidSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let updated: AnnualProgram;
   try {
-    const input = parseForm(programVoidSchema, formData);
-    const loaded = await loadProgram(input.id);
-    annualPlanId = loaded.annualPlan.id;
-    await voidProgram(user.id, input.id, input.reason);
+    updated = await voidProgram(user.id, parsed.data.id, parsed.data.reason);
   } catch (error) {
-    failWith(annualPlanId ? `${ANNUAL_PAGE}/${annualPlanId}` : ANNUAL_PAGE, describeError(error));
+    return failureState(previous, error, parsed.values);
   }
-  finishWith(`${ANNUAL_PAGE}/${annualPlanId}`, 'Annual program voided.');
+  finishWith(
+    `${ANNUAL_PAGE}/${updated.annualPlanId}`,
+    `Annual program ${updated.code} voided.`,
+  );
 }

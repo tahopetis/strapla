@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
+  Form,
   HiddenField,
   MoneyField,
   ReasonField,
@@ -82,7 +84,7 @@ function CreatePlanCard() {
       title="Create the strategic plan"
       description={`One plan at a time in v1: the five-year horizon, for example ${currentYear} to ${horizonEnd}.`}
     >
-      <form action={createPlanAction} className="grid gap-4 sm:grid-cols-2">
+      <Form action={createPlanAction} className="grid gap-4 sm:grid-cols-2">
         <TextField
           label="Plan name"
           name="name"
@@ -109,7 +111,7 @@ function CreatePlanCard() {
         <div className="sm:col-span-2">
           <SubmitButton>Create plan</SubmitButton>
         </div>
-      </form>
+      </Form>
     </Card>
   );
 }
@@ -138,7 +140,7 @@ function PlanDetailsCard({ plan, editable }: { plan: StrategicPlan; editable: bo
         <div className="mt-5 space-y-3 border-t border-slate-100 pt-4">
           <details>
             <summary className={summaryClass}>Edit plan</summary>
-            <form action={updatePlanAction} className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Form action={updatePlanAction} className="mt-4 grid gap-4 sm:grid-cols-2">
               <HiddenField name="id" value={plan.id} />
               <TextField label="Plan name" name="name" defaultValue={plan.name} required maxLength={160} />
               <div className="grid grid-cols-2 gap-4">
@@ -163,29 +165,31 @@ function PlanDetailsCard({ plan, editable }: { plan: StrategicPlan; editable: bo
               <div className="sm:col-span-2">
                 <SubmitButton>Save changes</SubmitButton>
               </div>
-            </form>
+            </Form>
           </details>
 
           {plan.status === 'draft' ? (
             <details>
               <summary className={summaryClass}>Activate plan</summary>
-              <form action={activatePlanAction} className="mt-4 space-y-3">
+              <Form action={activatePlanAction} className="mt-4 space-y-3">
                 <HiddenField name="id" value={plan.id} />
                 <ReasonField />
                 <SubmitButton>Activate plan</SubmitButton>
-              </form>
+              </Form>
             </details>
           ) : null}
 
           {plan.status === 'active' ? (
-            <details>
-              <summary className={summaryClass}>Archive plan</summary>
-              <form action={archivePlanAction} className="mt-4 space-y-3">
-                <HiddenField name="id" value={plan.id} />
-                <ReasonField hint="Archiving is final: the plan becomes read-only." />
-                <SubmitButton variant="danger">Archive plan</SubmitButton>
-              </form>
-            </details>
+            <ConfirmDialog
+              action={archivePlanAction}
+              triggerLabel="Archive plan"
+              title="Archive the strategic plan?"
+              consequence="Archiving is final: the plan and everything under it become read-only."
+              confirmLabel="Archive plan"
+            >
+              <HiddenField name="id" value={plan.id} />
+              <ReasonField hint="Recorded in the audit trail." />
+            </ConfirmDialog>
           ) : null}
         </div>
       ) : (
@@ -219,7 +223,7 @@ function InitiativesSection({
 
       {editable ? (
         <Card title="Add initiative" description="An initiative has one five-year envelope; the initiative code is per plan.">
-          <form action={createInitiativeAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Form action={createInitiativeAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="planId" value={plan.id} />
             <TextField label="Code" name="code" required placeholder="SI-01" maxLength={20} />
             <TextField label="Name" name="name" required maxLength={160} />
@@ -238,7 +242,7 @@ function InitiativesSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add initiative</SubmitButton>
             </div>
-          </form>
+          </Form>
         </Card>
       ) : null}
 
@@ -316,7 +320,7 @@ function InitiativeCard({
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit initiative</summary>
-            <form action={updateInitiativeAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Form action={updateInitiativeAction} className="mt-4 grid gap-3 sm:grid-cols-2">
               <HiddenField name="id" value={initiative.id} />
               <TextField label="Code" name="code" defaultValue={initiative.code} required maxLength={20} />
               <TextField label="Name" name="name" defaultValue={initiative.name} required maxLength={160} />
@@ -338,17 +342,21 @@ function InitiativeCard({
               <div className="sm:col-span-2">
                 <SubmitButton>Save changes</SubmitButton>
               </div>
-            </form>
+            </Form>
           </details>
 
-          <details>
-            <summary className="cursor-pointer text-sm font-medium text-red-700">Void initiative</summary>
-            <form action={voidInitiativeAction} className="mt-4 space-y-3">
+          <div className="flex items-start">
+            <ConfirmDialog
+              action={voidInitiativeAction}
+              triggerLabel="Void initiative"
+              title="Void this initiative?"
+              consequence="Voiding keeps the record and its history but removes it from the active plan."
+              confirmLabel="Void initiative"
+            >
               <HiddenField name="id" value={initiative.id} />
-              <ReasonField hint="The record and its history are kept; voiding only hides it from active lists." />
-              <SubmitButton variant="danger">Void initiative</SubmitButton>
-            </form>
-          </details>
+              <ReasonField hint="Recorded in the audit trail." />
+            </ConfirmDialog>
+          </div>
         </div>
       ) : null}
     </Card>
