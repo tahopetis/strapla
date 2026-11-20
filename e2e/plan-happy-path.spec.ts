@@ -307,6 +307,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await addFieldForm.locator('input[name="name"]').fill('Delivery note');
   await addFieldForm.locator('select[name="type"]').selectOption('text');
   await addFieldForm.locator('textarea[name="description"]').fill('How the delivery is staged.');
+  await addFieldForm.locator('input[name="example"]').fill('Phased rollout');
   await addFieldForm.getByRole('button', { name: 'Add field' }).click();
   await expect(page.getByText(/Custom field “Delivery note” added\./)).toBeVisible();
   await expect(page.getByText('Delivery note').first()).toBeVisible();
@@ -324,6 +325,8 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   const templateCsv = await templateResponse.text();
   expect(templateCsv).toContain('Procurement method');
   expect(templateCsv).toContain('Delivery note');
+  // #76: the administrator's example becomes the template's example for the column.
+  expect(templateCsv).toContain('Phased rollout');
 
   // malformed file: row-level errors by line, nothing written
   await page.locator('select[name="dataSet"]').selectOption('projects');
@@ -478,10 +481,22 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
 
   // removing the field archives it, frees the name and drops it from forms and reports
   await page.goto('/admin/custom-fields');
-  const deliveryField = page.locator('li').filter({ hasText: 'Delivery note' });
-  await deliveryField.getByRole('button', { name: 'Remove field' }).click();
-  const removeFieldDialog = deliveryField.getByRole('dialog');
+  const activeDeliveryField = projectFieldCard
+    .getByRole('list', { name: 'Active fields' })
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  // #76: the row shows the stable machine key, the example and the live usage count.
+  await expect(activeDeliveryField.getByText('key: deliveryNote', { exact: true })).toBeVisible();
+  await expect(
+    activeDeliveryField.getByText('Example: Phased rollout', { exact: true }),
+  ).toBeVisible();
+  // two records hold a value: the imported project and the manually edited one.
+  await expect(activeDeliveryField.getByText('Used by 2 records', { exact: true })).toBeVisible();
+  await activeDeliveryField.getByRole('button', { name: 'Remove field' }).click();
+  const removeFieldDialog = activeDeliveryField.getByRole('dialog');
   await expect(removeFieldDialog).toBeVisible();
+  // #76: the confirmation repeats how many records hold a value.
+  await expect(removeFieldDialog.getByText(/Used by 2 records/)).toBeVisible();
   await removeFieldDialog.locator('textarea[name="reason"]').fill('No longer needed.');
   await removeFieldDialog.getByRole('button', { name: 'Remove field' }).click();
   await expect(page.getByText(/Custom field “Delivery note” removed\./)).toBeVisible();
@@ -562,12 +577,12 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // remove it again, then let a new active field reuse the freed name: the
   // active conflict blocks the restore of the archived one
   await page.goto('/admin/custom-fields');
-  const activeDeliveryField = page
+  const restoredDeliveryField = page
     .getByRole('list', { name: 'Active fields' })
     .locator('li')
     .filter({ hasText: 'Delivery note' });
-  await activeDeliveryField.getByRole('button', { name: 'Remove field' }).click();
-  const secondRemoveDialog = activeDeliveryField.getByRole('dialog');
+  await restoredDeliveryField.getByRole('button', { name: 'Remove field' }).click();
+  const secondRemoveDialog = restoredDeliveryField.getByRole('dialog');
   await expect(secondRemoveDialog).toBeVisible();
   await secondRemoveDialog.locator('textarea[name="reason"]').fill('Second removal.');
   await secondRemoveDialog.getByRole('button', { name: 'Remove field' }).click();
@@ -631,13 +646,18 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // the refused restore left the archived field exactly where it was
   await expect(archivedAgain.getByText('key: deliveryNote', { exact: true })).toBeVisible();
 
-  // the successful restore is audited with its reason
+  // the successful restore is audited with its reason, under a readable label (#76);
+  // the filter values keep the machine tokens, so an existing link still works.
   await page.goto('/admin/audit?action=custom_field_restore');
   await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible();
   await expect(
+    page.getByRole('option', { name: 'Custom field restored', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Custom field', exact: true })).toBeVisible();
+  await expect(
     page
       .locator('tbody tr')
-      .filter({ hasText: 'custom_field_restore' })
+      .filter({ hasText: 'Custom field restored' })
       .filter({ hasText: 'Needed again.' })
       .first(),
   ).toBeVisible();

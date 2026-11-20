@@ -6,7 +6,6 @@ import {
 import type {
   CustomFieldDefinition,
   CustomFieldEntityType,
-  CustomFieldType,
 } from '@/domain/custom-fields';
 import { listCustomFieldDefinitions } from '@/server/custom-fields/data';
 import type { OpeningCustomField } from './opening-load';
@@ -94,10 +93,10 @@ function toOpeningColumn(
     // Custom fields are metadata, never money (G1): their number columns use
     // the form's signed-integer rule, not the Rupiah rule.
     numberRule: field.type === 'number' ? 'integer' : undefined,
-    // The template renders the description in a one-line CSV comment, so keep
-    // the administrator's free text on one line.
-    description: field.description.replace(/\s+/g, ' ').trim(),
-    example: exampleFor(field.type, closingFiscalYear),
+    // The template renders both values on one line (a CSV comment and the
+    // example row), so collapse any free-text line breaks.
+    description: oneLine(field.description),
+    example: oneLine(exampleFor(field, closingFiscalYear)),
   };
 }
 
@@ -123,10 +122,21 @@ function uniqueLabel(label: string, taken: ReadonlySet<string>): string {
   return candidate;
 }
 
-function exampleFor(type: CustomFieldType, closingFiscalYear: number): string {
-  if (type === 'number') return '0';
-  if (type === 'date') return `${closingFiscalYear}-01-01`;
+/**
+ * The template's example row uses the administrator's example when there is one,
+ * so the owner sees a value that belongs to this deployment; otherwise fall back
+ * to a type-appropriate placeholder. The value stays on one line because the CSV
+ * template renders it as a comment.
+ */
+function exampleFor(field: CustomFieldDefinition, closingFiscalYear: number): string {
+  if (field.example.trim().length > 0) return field.example;
+  if (field.type === 'number') return '0';
+  if (field.type === 'date') return `${closingFiscalYear}-01-01`;
   return 'Example text';
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 /** Loads the active registry for one data set and projects it onto import columns. */

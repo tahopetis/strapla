@@ -25,6 +25,7 @@ function field(
     key: overrides.id,
     required: false,
     description: 'Registered for the report tests.',
+    example: '',
     ...overrides,
   };
 }

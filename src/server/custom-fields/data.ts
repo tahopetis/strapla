@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { getDb, type Db } from '@/db/client';
 import { customFields, customFieldValues, type CustomField } from '@/db/schema';
 import {
+  countCustomFieldUsage,
   type CustomFieldDefinition,
   type CustomFieldEntityType,
   type CustomFieldType,
@@ -28,6 +29,7 @@ export function toCustomFieldDefinition(row: CustomField): CustomFieldDefinition
     type: row.type as CustomFieldType,
     required: row.required,
     description: row.description,
+    example: row.example,
   };
 }
 
@@ -145,6 +147,48 @@ export async function saveCustomFieldValues(
 /** A stored custom-field row known to be archived, so its timestamp is present. */
 export type ArchivedFieldRow = CustomField & { archivedAt: Date };
 
+/** An active definition plus the number of records that hold a value for it (issue #76). */
+export interface CustomFieldWithUsage extends CustomFieldDefinition {
+  recordsWithValue: number;
+}
+
+/**
+ * Reads every record's stored values once per entity type, keyed by record id.
+ * One scan serves every field of that entity, whether active or archived.
+ */
+async function readValuesByEntityType(
+  entityTypes: Iterable<CustomFieldEntityType>,
+): Promise<Map<CustomFieldEntityType, Map<string, CustomFieldValues>>> {
+  const valuesByEntity = new Map<CustomFieldEntityType, Map<string, CustomFieldValues>>();
+  for (const type of entityTypes) {
+    valuesByEntity.set(type, await readAllCustomFieldValues(type));
+  }
+  return valuesByEntity;
+}
+
+/**
+ * The active registry with the number of records that hold a value for each
+ * field, for the administration screen and the remove confirmation. Counting
+ * uses the same `countCustomFieldUsage` rule as the archived list, so usage
+ * reads the same before and after a field is archived.
+ */
+export async function listCustomFieldDefinitionsWithUsage(): Promise<CustomFieldWithUsage[]> {
+  const definitions = await listCustomFieldDefinitions();
+  if (definitions.length === 0) return [];
+
+  const valuesByEntity = await readValuesByEntityType(
+    new Set(definitions.map((definition) => definition.entityType)),
+  );
+
+  return definitions.map((definition) => ({
+    ...definition,
+    recordsWithValue: countCustomFieldUsage(
+      valuesByEntity.get(definition.entityType)?.values() ?? [],
+      definition.id,
+    ),
+  }));
+}
+
 /** An archived definition plus what a restore would bring back into view (#72). */
 export interface ArchivedCustomField extends CustomFieldDefinition {
   archivedAt: Date;
@@ -176,27 +220,17 @@ export async function listArchivedCustomFields(
   const scoped = rows.filter((row): row is ArchivedFieldRow => row.archivedAt !== null);
   if (scoped.length === 0) return [];
 
-  const entityTypes = [...new Set(scoped.map((row) => row.entityType as CustomFieldEntityType))];
-  const valuesByEntity = new Map<CustomFieldEntityType, Map<string, CustomFieldValues>>();
-  for (const type of entityTypes) {
-    valuesByEntity.set(type, await readAllCustomFieldValues(type));
-  }
+  const valuesByEntity = await readValuesByEntityType(
+    new Set(scoped.map((row) => row.entityType as CustomFieldEntityType)),
+  );
 
-  return scoped.map((row) => {
-    const stored = valuesByEntity.get(row.entityType as CustomFieldEntityType);
-    let recordsWithValue = 0;
-    if (stored) {
-      for (const values of stored.values()) {
-        const value = values[row.id];
-        // Same emptiness rule as customFieldSnapshot: a stored blank is no value.
-        if (value !== undefined && value !== '') recordsWithValue += 1;
-      }
-    }
-    return {
-      ...toCustomFieldDefinition(row),
-      archivedAt: row.archivedAt,
-      archivedReason: row.archivedReason ?? '',
-      recordsWithValue,
-    };
-  });
+  return scoped.map((row) => ({
+    ...toCustomFieldDefinition(row),
+    archivedAt: row.archivedAt,
+    archivedReason: row.archivedReason ?? '',
+    recordsWithValue: countCustomFieldUsage(
+      valuesByEntity.get(row.entityType as CustomFieldEntityType)?.values() ?? [],
+      row.id,
+    ),
+  }));
 }

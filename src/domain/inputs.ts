@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { CUSTOM_FIELD_ENTITY_TYPES, CUSTOM_FIELD_TYPES } from './custom-fields';
+import {
+  CUSTOM_FIELD_ENTITY_TYPES,
+  CUSTOM_FIELD_TYPES,
+  parseCustomFieldValue,
+} from './custom-fields';
 import { parseRupiah } from './money';
 
 /**
@@ -426,13 +430,28 @@ export const customFieldTypeSchema = z.enum(CUSTOM_FIELD_TYPES);
 /** Hidden input + checkbox pair: 'off' when unchecked, 'on' when checked. */
 const customFieldRequiredSchema = z.enum(['on', 'off']).transform((value) => value === 'on');
 
-export const customFieldCreateSchema = z.object({
-  entityType: customFieldEntityTypeSchema,
-  name: requiredText('Field name', 80),
-  type: customFieldTypeSchema,
-  required: customFieldRequiredSchema,
-  description: requiredText('Description', 500),
-});
+export const customFieldCreateSchema = z
+  .object({
+    entityType: customFieldEntityTypeSchema,
+    name: requiredText('Field name', 80),
+    type: customFieldTypeSchema,
+    required: customFieldRequiredSchema,
+    description: requiredText('Description', 500),
+    /** Optional sample value: shown in the administration row and the import template. */
+    example: optionalText(200),
+  })
+  .superRefine((field, ctx) => {
+    // The template renders the example as a row the owner may copy, so it must be
+    // a value this field's own parser accepts; otherwise it teaches a bad value.
+    if (field.example === null) return;
+    const parsed = parseCustomFieldValue(
+      { name: 'Example value', type: field.type, required: false },
+      field.example,
+    );
+    if (!parsed.ok) {
+      ctx.addIssue({ code: 'custom', path: ['example'], message: parsed.message });
+    }
+  });
 
 export const customFieldUpdateSchema = customFieldCreateSchema.extend({
   id: idSchema,

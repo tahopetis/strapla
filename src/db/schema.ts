@@ -569,6 +569,8 @@ export const customFields = pgTable(
     type: text('type').notNull(),
     required: boolean('required').notNull().default(false),
     description: text('description').notNull(),
+    /** Optional sample value shown in the administration row and the import template. */
+    example: text('example').notNull().default(''),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedReason: text('archived_reason'),
     createdBy: uuid('created_by').references(() => users.id),

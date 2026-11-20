@@ -75,6 +75,56 @@ describe('custom field administration schemas', () => {
     expect(customFieldCreateSchema.safeParse({ ...definition, type: 'money' }).success).toBe(false);
   });
 
+  it('carries an optional example value, trimmed, with a blank meaning none', () => {
+    expect(
+      customFieldCreateSchema.parse({ ...definition, example: '  Open tender  ' }),
+    ).toMatchObject({ example: 'Open tender' });
+    expect(customFieldCreateSchema.parse({ ...definition, example: '   ' })).toMatchObject({
+      example: null,
+    });
+    expect(customFieldCreateSchema.parse(definition)).toMatchObject({ example: null });
+  });
+
+  it('accepts an example only when the field type parser accepts it', () => {
+    expect(
+      customFieldCreateSchema.safeParse({ ...definition, type: 'number', example: '-42' }).success,
+    ).toBe(true);
+    expect(
+      customFieldCreateSchema.safeParse({ ...definition, type: 'number', example: 'Open tender' })
+        .success,
+    ).toBe(false);
+    expect(
+      customFieldCreateSchema.safeParse({ ...definition, type: 'date', example: '2027-01-01' })
+        .success,
+    ).toBe(true);
+    expect(
+      customFieldCreateSchema.safeParse({ ...definition, type: 'date', example: '01/01/2027' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('applies the example rule when an existing field changes', () => {
+    const id = '00000000-0000-4000-8000-000000000000';
+    expect(
+      customFieldUpdateSchema.safeParse({
+        ...definition,
+        type: 'number',
+        example: 'Open tender',
+        id,
+        reason: 'Change the field type.',
+      }).success,
+    ).toBe(false);
+    expect(
+      customFieldUpdateSchema.safeParse({
+        ...definition,
+        type: 'number',
+        example: '42',
+        id,
+        reason: 'Change the field type.',
+      }).success,
+    ).toBe(true);
+  });
+
   it('requires a reason when an existing field changes', () => {
     const id = '00000000-0000-4000-8000-000000000000';
     expect(customFieldUpdateSchema.safeParse({ ...definition, id, reason: '' }).success).toBe(false);

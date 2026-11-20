@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CUSTOM_FIELD_ENTITIES,
+  countCustomFieldUsage,
   customFieldEntityLabel,
   customFieldRestoreConflictMessage,
   customFieldSnapshot,
@@ -13,6 +14,7 @@ import {
   selectCustomExportFields,
   withCustomFields,
   type CustomFieldDefinition,
+  type CustomFieldValues,
 } from './custom-fields';
 
 function field(
@@ -24,6 +26,7 @@ function field(
     key: 'fieldKey',
     required: false,
     description: '',
+    example: '',
     ...overrides,
   };
 }
@@ -237,6 +240,26 @@ describe('custom field snapshots', () => {
     expect(
       withCustomFields(snapshot, [procurementMethod], { 'field-procurement': 'Tender' }),
     ).toEqual({ name: 'Project one', customFields: { 'Procurement method': 'Tender' } });
+  });
+});
+
+describe('countCustomFieldUsage', () => {
+  it('counts the records that hold a non-empty value for the field', () => {
+    const records: CustomFieldValues[] = [
+      { 'field-text': 'Open tender', 'field-number': 4 },
+      { 'field-text': '', 'field-number': 0 },
+      { 'field-text': 'Framework agreement' },
+      {},
+    ];
+
+    expect(countCustomFieldUsage(records, 'field-text')).toBe(2);
+    // Zero is a recorded number, not an absence.
+    expect(countCustomFieldUsage(records, 'field-number')).toBe(2);
+  });
+
+  it('counts no records when no record holds the field', () => {
+    expect(countCustomFieldUsage([{ 'field-other': 'value' }], 'field-missing')).toBe(0);
+    expect(countCustomFieldUsage([], 'field-missing')).toBe(0);
   });
 });
 

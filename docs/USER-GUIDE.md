@@ -295,7 +295,8 @@ in this order:
 
 1. Download the generated **CSV/XLSX template** — headers, type rules, an example row and the load
    reason convention come from the committed field list plus the custom fields defined under
-   **Administration → Custom fields** (they appear as extra columns).
+   **Administration → Custom fields** (they appear as extra columns; a field's example value is used
+   in the template example row).
 2. Upload the file and choose **Validate file**. Every bad value and unknown column is reported by
    line, and nothing is written. A required custom field with no value fails that row.
 3. Choose **Validate and load**. The file is re-validated and the records are written in one
@@ -521,7 +522,10 @@ detailed exportable sources.
   entity type, action and actor. The screen shows the latest 200 matching entries.
 - **Export CSV** downloads the filtered trail (up to 5000 entries) for directors/finance.
 - **Custom fields**: when an administrator defines extra fields on a record type, they appear here in
-  the before/after values under `customFields`.
+  the before/after values under `customFields`. The four custom-field actions and the entity are
+  shown in readable words (**Custom field created / updated / removed / restored**, entity
+  **Custom field**); the filter keeps the machine token as its value, so a saved filter link still
+  works.
 - **Values** expands before/after JSON in place.
 - Most record pages (e.g. projects) also have a **Change history** card.
 
@@ -531,8 +535,14 @@ detailed exportable sources.
 
 - An administrator can add, edit and remove extra typed fields on four record types: **strategic
   initiatives, annual programs, projects** and **recurring ops items**.
-- A field has a **name**, a **type** (text, number or date), an optional **required** flag and a
-  **description**. Every change is audited; a reason is required when editing or removing.
+- A field has a **name**, a **type** (text, number or date), an optional **required** flag, a
+  **description** and an optional **example value**. Every change is audited; a reason is required
+  when editing or removing.
+- The administration list shows each active field's stable machine **key** (the identifier the import
+  uses) and **how many records hold a value** for it; the remove confirmation repeats that count.
+- The example value is stored on the field definition as a display hint, never on a record. It must
+  be a valid value for the field's type (a whole number, a real `YYYY-MM-DD` date, or text); it
+  appears in the field row and becomes the column example in the opening-import template.
 - Values appear on the create/edit form and in an **Additional fields** panel on the record. Text is
   free text, numbers are whole numbers (digits, with an optional minus) and dates are real calendar
   dates.
