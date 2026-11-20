@@ -59,18 +59,13 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.unroute('**/setup');
 
-  // W1a: activation lives in the page header. These helpers scope to the page
-  // header itself, so the assertions prove placement rather than just that a
-  // form exists somewhere on the page.
-  const pageHeader = (title: string) =>
-    page.getByRole('heading', { level: 1, name: title }).locator('..').locator('..');
+  // W1a: activation lives in the page header's action group. Scoping to that
+  // group proves placement instead of finding a form anywhere on the page.
+  const pageHeaderActions = page.getByRole('group', { name: 'Page header actions' });
 
-  const activateFromHeader = async (title: string, buttonName: string, reason: string) => {
-    const header = pageHeader(title);
-    await expect(header.getByText('draft', { exact: true })).toBeVisible();
-    const form = header
-      .locator('form')
-      .filter({ has: header.getByRole('button', { name: buttonName }) });
+  const activateFromHeader = async (buttonName: string, reason: string) => {
+    await expect(pageHeaderActions.getByText('draft', { exact: true })).toBeVisible();
+    const form = pageHeaderActions.locator('form');
     await form.locator('textarea[name="reason"]').fill(reason);
     await form.getByRole('button', { name: buttonName }).click();
   };
@@ -87,13 +82,9 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
 
   // W1a: the status and the activation form are in the page header, not a
   // closed disclosure.
-  await activateFromHeader(
-    'Strategic plan & initiatives',
-    'Activate plan',
-    'Approved by the directors.',
-  );
+  await activateFromHeader('Activate plan', 'Approved by the directors.');
   await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” activated\./)).toBeVisible();
-  await expect(pageHeader('Strategic plan & initiatives').getByText('active', { exact: true })).toBeVisible();
+  await expect(pageHeaderActions.getByText('active', { exact: true })).toBeVisible();
   endTiming('first-plan-step', firstPlanStepStartedAt);
 
   const initiativeForm = page
@@ -119,7 +110,7 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
   // W1a: the annual plan activation is in the page header too.
-  await activateFromHeader('FY2027 annual plan', 'Activate annual plan', 'FY2027 budget approved.');
+  await activateFromHeader('Activate annual plan', 'FY2027 budget approved.');
   await expect(page.getByText(/Annual plan FY2027 activated\./)).toBeVisible();
 
   // W1a: the fiscal-year badge on the dashboard links to the annual plan page.

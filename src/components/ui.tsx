@@ -31,7 +31,11 @@ export function PageHeader({
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description ? <div className="mt-1 text-sm text-slate-600">{description}</div> : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? (
+        <div role="group" aria-label="Page header actions" className="flex flex-wrap gap-2">
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }
