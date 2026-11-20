@@ -1,9 +1,5 @@
 import { inputClass, labelClass, secondaryButtonClass } from '@/components/ui';
-import {
-  customFieldTypeLabel,
-  type CustomFieldDefinition,
-  type CustomFieldValues,
-} from '@/domain/custom-fields';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 
 /**
@@ -12,39 +8,7 @@ import { formatDate } from '@/lib/format';
  * record panels and reports cannot disagree about a label, a type or a value.
  */
 
-export function CustomFieldInputs({
-  fields,
-  values,
-}: {
-  fields: readonly CustomFieldDefinition[];
-  values?: CustomFieldValues;
-}) {
-  if (fields.length === 0) return null;
-
-  return (
-    <>
-      {fields.map((field) => {
-        const value = values?.[field.id];
-        return (
-          <label key={field.id} className={`${labelClass} block`}>
-            {field.name}
-            <input
-              name={`custom.${field.id}`}
-              type={field.type === 'date' ? 'date' : 'text'}
-              inputMode={field.type === 'number' ? 'numeric' : undefined}
-              defaultValue={value === undefined ? undefined : String(value)}
-              required={field.required}
-              className={inputClass}
-            />
-            <span className="mt-1 block text-xs text-slate-500">
-              {field.description} ({customFieldTypeLabel(field.type)})
-            </span>
-          </label>
-        );
-      })}
-    </>
-  );
-}
+export { CustomFieldInputs } from './custom-field-inputs';
 
 /** Read-only display value; dates are shown in the app time zone like every other date. */
 export function customFieldDisplayValue(
