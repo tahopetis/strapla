@@ -1,0 +1,49 @@
+name: codeql
+
+# CodeQL code scanning (javascript-typescript) on every push and pull request,
+# plus a weekly baseline. Results land in the repository's Security tab, which
+# is available for free on a public repository. The security gate's semgrep
+# scanner stays the blocking SAST check; CodeQL adds the deeper data-flow view.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    # A pull request from a fork gets a read-only GITHUB_TOKEN, so it cannot
+    # upload SARIF. Same-repo PRs, pushes and the weekly schedule are covered;
+    # a maintainer can run this workflow from the Actions tab to analyse a fork
+    # PR after review.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          category: "/language:javascript-typescript"

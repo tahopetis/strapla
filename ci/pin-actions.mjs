@@ -80,7 +80,10 @@ const resolveRef = async (ownerRepo, ref) => {
 
 const isPinned = (ref) => /^[0-9a-f]{40}$/.test(ref) || /^[0-9a-f]{64}$/.test(ref);
 
-const LINE = /^(\s*(?:-\s*)?uses:\s*)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([^\s#]+)(\s*(?:#.*)?)$/;
+// `uses:` may name a sub-path action (github/codeql-action/init@v4); the repo to
+// resolve is the first two segments, the rest stays in the rewritten entry.
+const LINE =
+  /^(\s*(?:-\s*)?uses:\s*)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*)@([^\s#]+)(\s*(?:#.*)?)$/;
 
 let exitCode = 0;
 let changed = 0;
@@ -101,6 +104,7 @@ for (const target of targets) {
     const match = lines[i].match(LINE);
     if (!match) continue;
     const [, prefix, ownerRepo, ref, suffix] = match;
+    const ownerRepoApi = ownerRepo.split("/").slice(0, 2).join("/");
 
     if (isPinned(ref)) continue;
 
@@ -112,7 +116,7 @@ for (const target of targets) {
 
     let sha;
     try {
-      sha = await resolveRef(ownerRepo, ref);
+      sha = await resolveRef(ownerRepoApi, ref);
     } catch (error) {
       console.error(`error     ${ownerRepo}@${ref}: ${error.message}`);
       exitCode = 2;

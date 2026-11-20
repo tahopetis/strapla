@@ -4,6 +4,10 @@ Every pull request runs `security-gate` beside `ci`. It is **closed by default**
 missing scanner, a crashed install, unparseable output, a bad threshold, an expired waiver or no
 scanners at all is red — the gate never goes green because nothing ran.
 
+The repository is public and MIT-licensed. That makes GitHub's code-scanning features available
+for free, so secret scanning with push protection, CodeQL, dependency review and SARIF uploads run
+in addition to the gate below.
+
 ## What runs
 
 | Scanner | Covers | Report |
@@ -30,6 +34,24 @@ line per scanner as it completes — `scanner <name>: <status>, SARIF <bytes> by
 
 Only `PASS` is green. `ERROR` and `SETUP` mean the environment or the config is wrong, not that the
 code is clean; `OFF` means nothing was scanned. Re-running the same commit does not fix `ERROR`/`SETUP`.
+
+## Other security checks
+
+The gate above is not the only check. Each workflow below has one job and one disposition:
+
+| Workflow | Covers | Disposition |
+|---|---|---|
+| `security-gate` | gitleaks, osv-scanner, semgrep, Trivy config, one decider | **Blocking** at `medium` |
+| `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Blocking** (required check) |
+| `dependency-review` | the PR's own dependency and action changes (`fail-on-severity: high`) | **Blocking** (required check) |
+| `image-scan` | Trivy CVEs in the published container, triggered by the `docker` workflow's completion and weekly; SARIF to the Security tab | **Report-only** for now (`exit-code: 0`); promote once the baseline is triaged |
+| GitHub secret scanning | full repository history plus push protection | **Blocking** (push protection) |
+
+`image-scan` scans the exact image the `docker` run published (`sha-<commit>`) rather than
+`:latest`, so it can never analyse a stale image. On a scheduled or manual run it scans `:latest`.
+
+GitHub's dependency alerts and automated security fixes are enabled as well; Dependabot PRs pass
+through the same gate.
 
 ## Rules
 
@@ -69,7 +91,9 @@ subset is `SCANNERS=secrets`.
 1. Read the **last line** of the job log; it is the verdict. Download the `security-findings` artifact from the run (14 days) for the SARIF and per-scanner logs.
 2. `ERROR` / `SETUP` — fix what it names; the code is not on trial.
 3. `FAIL` — read `findings/summary.json` (counts, scanner, severity), then the SARIF for detail.
-4. Waive only what has been read: add `scanner:rule:path`, a reason and an expiry to
+4. For CodeQL, dependency review and image-scan findings, open the repository's **Security** tab; the
+   alert carries the rule, path and severity. The image scan is report-only, so it never blocks a merge.
+5. Waive only what has been read: add `scanner:rule:path`, a reason and an expiry to
    `ci/security-baseline.json`.
 
 The job summary carries counts, not paths. Keep it that way: a path list in a status is a map of
@@ -82,17 +106,20 @@ where to look.
 configuration; they are enabled for this repository. They open PRs; the gate decides whether they
 merge.
 
-## Required status check
+## Required status checks
 
-Branch protection is not available on this private repository on the current GitHub plan
-(`403: Upgrade to GitHub Pro or make this repository public`). Until the plan changes, the gate is
-enforced **by process**: every change lands through a pull request whose `ci` and `security-gate`
-checks are green. Treat a red or missing check as a stop.
+The repository is public, so branch protection on `main` is available on GitHub Free and is enabled
+with these required checks: `verify` (ci), `build` (docker), `security-gate`, `Dependency review`
+and `Analyze (javascript-typescript)` (CodeQL). A red or missing required check blocks the merge.
+`image-scan` is not required while it is report-only.
 
 ## Current state (November 2026)
 
-After the first triage: four scanners, **0 findings at any severity**, no waivers. The threshold is
-`medium`; the gate now passes on its own merits rather than shadow mode.
+The repository is public and MIT-licensed; secret scanning and push protection are enabled. The
+security gate runs four scanners and reports **0 findings at any severity**, with one open waiver.
+The threshold is `medium`; the gate passes on its own merits rather than shadow mode. CodeQL and
+dependency review are required on pull requests; the image scan is report-only while its baseline is
+triaged.
 
 On 17 November 2026 a new upstream advisory (CVE-2026-112366, picomatch ReDoS) arrived with no patched
 release published (GHSA-fc5q-39xc-vjpf: `first_patched_version` null). It is waived in
