@@ -21,6 +21,8 @@ GET /healthz -> {"status":"ok","database":"ok","latencyMs":14}
 
 Note: pulling the published GHCR image on another host requires a token with `read:packages`;
 the repository's current `gh` token only has `repo`, so the local drill used the local build.
+(Update 2026-11-20: the package is now public, so anonymous pulls work — the note above described
+the private package at drill time.)
 
 ## Backup and restore
 

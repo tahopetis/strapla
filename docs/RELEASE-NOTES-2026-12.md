@@ -5,7 +5,7 @@
 | Release | 2026.12 (first release) |
 | Status | Release candidate; UAT and go-live checklist outstanding |
 | Scope | Plan module, funding module, reports/exports, administrator accounts |
-| Deployment | Docker Compose (`app` + PostgreSQL 18 + nightly backup), private GHCR image |
+| Deployment | Docker Compose (`app` + PostgreSQL 18 + nightly backup), public GHCR image |
 | Image | `ghcr.io/tahopetis/strapla:v2026.12.0` (versioned) / `:latest` (current `main`) |
 | Charter | `docs/CHARTER.md` v0.2 |
 
@@ -48,7 +48,7 @@ December release manages the plan and the funding, not the execution.
 
 - Deploy by pinning an immutable image tag (`STRAPLA_TAG=sha-<commit>`) and running `docker compose up -d`; migrations run on start.
 - Required environment: `DATABASE_URL`, `APP_BASE_URL`; Compose also needs `POSTGRES_PASSWORD` and `STRAPLA_TAG`.
-- Pulling the image needs a GitHub token with `read:packages`.
+- Pulling the image needs no credentials: the GHCR package is public.
 - TLS terminates at a reverse proxy; `APP_BASE_URL=https://…` enables secure cookies.
 - Follow `docs/GO-LIVE-CHECKLIST.md`; data load per `docs/OPENING-BALANCE-LOAD.md`.
 

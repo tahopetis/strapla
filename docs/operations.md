@@ -16,7 +16,7 @@ docker compose ps            # app should become healthy
 ```
 
 - Pin a release with `STRAPLA_TAG=v2026.12.0` in `.env` (default is `latest`).
-- Pulling needs a GitHub token with `read:packages`: `echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin`.
+- Pulling needs no credentials: the GHCR package is public (`ghcr.io/tahopetis/strapla`).
 - `docker compose build app` remains available for local development; it tags the local image with
   `STRAPLA_TAG` and bakes `STRAPLA_VERSION`/`STRAPLA_COMMIT` from the build args.
 
@@ -33,19 +33,20 @@ Additional Compose variables: `POSTGRES_PASSWORD`, `STRAPLA_TAG`.
 
 ## Container images
 
-Multi-arch images are published to private GHCR by the `docker` workflow:
+Multi-arch images are published to public GHCR by the `docker` workflow:
 
 ```
 ghcr.io/tahopetis/strapla:latest            # latest main
 ghcr.io/tahopetis/strapla:sha-<shortsha>    # immutable per commit
 ```
 
-Pulling on a deployment host requires a GitHub token with `read:packages` (the repo token used during development does not have it):
+Pulling on a deployment host needs no registry login — the package is public:
 
 ```bash
-echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
 docker pull ghcr.io/tahopetis/strapla:sha-<shortsha>
 ```
+
+Pushes normally come only from the `docker` workflow (with its own `GITHUB_TOKEN`), so no host holds a registry credential.
 
 Pin `STRAPLA_TAG` to a `sha-` tag in production and promote by changing the tag, not by rebuilding on the host. Images are built for `linux/amd64` and `linux/arm64`; the deployment below was verified on arm64 (see [`docs/checkpoints/m0/deploy-restore-drill.md`](checkpoints/m0/deploy-restore-drill.md)).
 

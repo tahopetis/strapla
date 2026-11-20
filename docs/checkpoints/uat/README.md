@@ -50,7 +50,7 @@ observed: 9.5 s on the CI runner).
 
 ## Blocking external dependencies
 
-- Production host, domain/TLS and SSH/GHCR access (charter R9).
+- Production host, domain/TLS and SSH access (charter R9). The container image is public, so pulling it needs no registry credential.
 - FY2026 spreadsheet export for the opening-balance load.
 - Team account list for provisioning.
 

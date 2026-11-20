@@ -24,7 +24,7 @@
 6. **Validation:** Zod 4, shared by client forms and server actions.
 7. **Domain rules:** pure functions in `src/domain`, operating on plain objects with integer Rupiah values. The UI and database layers call the domain; they never re-implement a formula.
 8. **Testing:** Vitest 5 for domain unit and property tests (the funding math is exhaustively tested); Playwright 1.64 for critical end-to-end flows. No React component unit tests in v1.
-9. **Tooling:** pnpm, GitHub Actions CI (typecheck, lint, unit tests, build, E2E once stable), private GHCR images, Docker Compose deployment (`app` + `db` + backup).
+9. **Tooling:** pnpm, GitHub Actions CI (typecheck, lint, unit tests, build, E2E once stable), public GHCR images, Docker Compose deployment (`app` + `db` + backup).
 10. **Money:** whole Rupiah only. Postgres `bigint`; JavaScript `number` guarded by `Number.isSafeInteger`. No floating-point arithmetic on money, ever. No rounding in storage; display may round.
 
 ## Consequences
@@ -50,3 +50,8 @@
   Corepack, so the image now installs the pnpm version declared in `package.json`.
   Decision 2 and the context line above remain the historical record; nothing else in
   this ADR changed. The portfolio owner approved the Node 26 runtime on 2026-11-17.
+- **2026-11-20 — image visibility:** the container package `ghcr.io/tahopetis/strapla` is
+  **public**, so anonymous pulls work and a deployment host needs no registry credential.
+  Decision 9 said "private GHCR images" while the repository was private; that text now reads
+  public, matching the owner-approved public release in #80. Pushing still requires repository
+  write access (normally only the `docker` workflow's `GITHUB_TOKEN`).

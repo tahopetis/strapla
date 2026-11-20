@@ -9,7 +9,7 @@ is verifiable; do not tick an item without seeing the result.
 - [ ] Domain / subdomain chosen, DNS pointed at the host
 - [ ] TLS strategy agreed (Caddy or platform) and certificate reachability possible
 - [ ] Data-residency constraint confirmed (must the database stay in Indonesia?)
-- [ ] Who holds SSH access and the GHCR `read:packages` token
+- [ ] Who holds SSH access to the production host
 - [ ] Team account list (names + emails) for provisioning
 - [ ] Go/no-go date agreed for the FY2027 planning window
 
@@ -18,7 +18,7 @@ is verifiable; do not tick an item without seeing the result.
 - [ ] Docker Engine and Docker Compose installed; disk and memory checked (PostgreSQL + app need ~1 GB RAM headroom)
 - [ ] Repository checkout on the host with `docker-compose.yml` and `docs/operations.md`
 - [ ] `.env` written: `POSTGRES_PASSWORD` (strong, unique), `APP_BASE_URL=https://<host>`, `STRAPLA_TAG=sha-<release commit>`
-- [ ] GHCR login with a `read:packages` token; `docker compose pull` succeeds
+- [ ] `docker compose pull` succeeds without a registry login (the GHCR package is public)
 - [ ] Reverse proxy configured with TLS and forwarding to `127.0.0.1:3000` (Caddy recommended)
 - [ ] Firewall: only 80/443 (and SSH) exposed; PostgreSQL **not** exposed publicly
 - [ ] Backup service enabled (`backups` volume, nightly `pg_dump`, 30-day retention)
