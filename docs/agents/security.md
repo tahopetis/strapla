@@ -44,7 +44,7 @@ The gate above is not the only check. Each workflow below has one job and one di
 | `security-gate` | gitleaks, osv-scanner, semgrep, Trivy config, one decider | **Blocking** at `medium` |
 | `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Required check** (the analysis must succeed); findings appear as alerts and do not fail the job |
 | `dependency-review` | the PR's own dependency and action changes (`fail-on-severity: high`) | **Blocking** (required check) |
-| `image-scan` | Trivy CVEs in the container image: the PR build (linux/amd64, local) before merge, the `docker` run's published `sha-<commit>` image after it, and `:latest` weekly; SARIF to the Security tab at every severity | **Blocking** on CRITICAL/HIGH (required check) |
+| `image-scan` | Trivy CVEs in the container image: the PR build (linux/amd64, local) before merge, the `docker` run's published `sha-<commit>` image after it, and `:latest` weekly; SARIF to the Security tab at every severity (a fork/Dependabot PR or an ad-hoc `image_ref` run still blocks, but its token cannot publish) | **Blocking** on CRITICAL/HIGH (required check) |
 | GitHub secret scanning | full repository history plus push protection | **Blocking** (push protection) |
 
 `image-scan` runs on **pull requests** as well. There it builds the image locally (`linux/amd64`,
@@ -69,12 +69,13 @@ accepting the loss of medium/low tracking — the first iteration of this workfl
 `severity: CRITICAL,HIGH` and still uploaded 23 MEDIUM and 1 LOW alert because of that coupling.
 
 `ignore-unfixed: false` in both passes: an unfixable CRITICAL/HIGH is still a CRITICAL/HIGH, and the
-gate must see it. Accepting one is an explicit, dated decision: add the id to a committed
-`.trivyignore.yaml` with a `statement` and an `expired_at`, and pass it to the **decide pass only**
-(`trivyignores: .trivyignore.yaml`) in the same PR. Trivy stops honouring an entry after `expired_at`,
-so the finding returns to the gate by itself; the record pass keeps scanning without the ignore file,
-so the alert stays in the Security tab while the waiver is active. No wildcard ids, no broad ignore
-files, and never `ignore-unfixed: true` as a way to go green.
+gate must see it. Accepting one is an explicit, dated decision recorded in
+`ci/image-scan-waivers.yaml` (Trivy YAML: `id`, `statement`, `expired_at`). The workflow passes that
+file to the **decide pass only**, so the finding leaves the gate but stays in the Security tab until
+it is fixed — a waiver silences the gate, never the record. (The file is deliberately not named
+`.trivyignore.yaml`: Trivy plans to auto-load that name, which would silence the record pass too.)
+Trivy stops honouring an entry after `expired_at`, so the gate returns by itself. No wildcard ids, no
+broad ignore files, and never `ignore-unfixed: true` as a way to go green.
 
 The gate is proven, not assumed: a manual run with
 `image_ref=ghcr.io/tahopetis/strapla:sha-fadc98d` (a deliberately pre-fix image) fails on its 6 HIGH
@@ -86,9 +87,10 @@ through the same gate.
 ## Rules
 
 - **Never merge a red `security-gate`.** Fix the finding, or waive it with a reason.
-- **Waivers** live in `ci/security-baseline.json`, keyed `scanner:rule:path`, each with a non-empty
-  `reason` and an `expires` date. An expired waiver counts the finding again and prints
-  `expired-waiver`.
+- **Waivers** for the security gate live in `ci/security-baseline.json`, keyed `scanner:rule:path`,
+  each with a non-empty `reason` and an `expires` date. An expired waiver counts the finding again and
+  prints `expired-waiver`. The image scan has its own store, `ci/image-scan-waivers.yaml` (see
+  [Image scan policy](#image-scan-policy)); the two are not interchangeable.
 - **Never edit a scanner, the decider or the workflow to turn a check green.** A scanner that fails
   silently is the failure mode the gate exists to prevent.
 - **A secret finding is an incident**: remove the value from the code *and* rotate it. History counts.
@@ -125,8 +127,9 @@ subset is `SCANNERS=secrets`.
    carries the rule, path and severity. For the image scan, the failing check is authoritative — its
    `Fail on CRITICAL/HIGH` step prints the table (package, CVE, fixed version) — while the Security
    tab holds the complete record at every severity.
-5. Waive only what has been read: add `scanner:rule:path`, a reason and an expiry to
-   `ci/security-baseline.json`.
+5. Waive only what has been read: `scanner:rule:path` plus a reason and an expiry in
+   `ci/security-baseline.json` for the gate, or a dated entry in `ci/image-scan-waivers.yaml` for the
+   image scan.
 
 The job summary carries counts, not paths. Keep it that way: a path list in a status is a map of
 where to look.
@@ -168,7 +171,7 @@ any severity**:
 
 Base-image changes now arrive as a reviewable diff (the `FROM` line is pinned by digest and
 Dependabot's docker ecosystem moves it), and a new CRITICAL/HIGH finding fails the check with its own
-table.
+table. No image-scan waiver has been needed: `ci/image-scan-waivers.yaml` is empty.
 
 On 17 November 2026 a new upstream advisory (CVE-2026-112366, picomatch ReDoS) arrived with no patched
 release published (GHSA-fc5q-39xc-vjpf: `first_patched_version` null). It is waived in
