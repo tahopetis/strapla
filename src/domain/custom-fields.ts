@@ -19,6 +19,12 @@ export const CUSTOM_FIELD_ENTITY_TYPES = [
   'annual_program',
   'project',
   'recurring_ops_item',
+  // Added by #71: the owner selected these four record types; the strategic
+  // plan and annual plan are deliberately out (one record each, no variance).
+  'ijin_prinsip',
+  'project_year_allocation',
+  'commitment_entry',
+  'spend_entry',
 ] as const;
 export type CustomFieldEntityType = (typeof CUSTOM_FIELD_ENTITY_TYPES)[number];
 
@@ -42,6 +48,11 @@ export interface CustomFieldDefinition {
    * and used as the opening-import template example. Never stored on a record.
    */
   example: string;
+  /**
+   * The administrator-controlled order within the field's entity type (#73).
+   * The one registry read returns fields sorted by it, so every surface agrees.
+   */
+  position: number;
 }
 
 /** Field values are keyed by field id so renaming a field never rewrites data. */
@@ -59,6 +70,10 @@ const ENTITY_LABELS: Record<CustomFieldEntityType, string> = {
   annual_program: 'Annual program',
   project: 'Project',
   recurring_ops_item: 'Recurring Ops Item',
+  ijin_prinsip: 'Ijin prinsip',
+  project_year_allocation: 'Project year allocation',
+  commitment_entry: 'Commitment entry',
+  spend_entry: 'Spend entry',
 };
 
 export const CUSTOM_FIELD_ENTITIES: ReadonlyArray<{ type: CustomFieldEntityType; label: string }> =
@@ -311,6 +326,95 @@ export function resolveCustomExportFields(
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
   return selectCustomExportFields(fields, ids);
+}
+
+/**
+ * The remembered custom-column selection for one report (issue #75). An
+ * explicit `columns` parameter always wins for that view; otherwise a saved
+ * selection narrows the columns, and no saved row means every active field.
+ * Saved ids are resolved against the live registry, so an archived field drops
+ * out and a stale id cannot resurrect it.
+ */
+export function resolveReportColumnSelection(
+  fields: readonly CustomFieldDefinition[],
+  explicit: string | readonly string[] | undefined | null,
+  remembered: readonly string[] | null | undefined,
+): CustomFieldDefinition[] {
+  if (explicit !== undefined && explicit !== null) {
+    return resolveCustomExportFields(fields, explicit);
+  }
+  if (remembered === undefined || remembered === null) return [...fields];
+  return selectCustomExportFields(fields, remembered);
+}
+
+/** A query parameter as a list: repeated params stay in order, one value stays one. */
+function toParamList(raw: string | readonly string[] | undefined | null): string[] {
+  if (raw === undefined || raw === null) return [];
+  return typeof raw === 'string' ? [raw] : [...raw];
+}
+
+/** One active custom-field filter: a field from the registry and its typed query. */
+export interface CustomFieldFilter {
+  field: CustomFieldDefinition;
+  query: string;
+}
+
+/**
+ * The report's custom-field filters (#74), paired by index from the repeated
+ * `cf`/`cv` query parameters. Pairs with an unknown field id or a blank value
+ * are dropped, so a stale or half-filled link opens the unfiltered report
+ * instead of throwing; the order is the order the filters were added.
+ *
+ * `fields` may span the report's several tables (the annual plan lists annual
+ * programs and recurring ops items); each filter keeps its field, so the page
+ * applies only the filters belonging to that table.
+ */
+export function resolveCustomFieldFilters(
+  fields: readonly CustomFieldDefinition[],
+  rawFieldIds: string | readonly string[] | undefined | null,
+  rawQueries: string | readonly string[] | undefined | null,
+): CustomFieldFilter[] {
+  const ids = toParamList(rawFieldIds);
+  const queries = toParamList(rawQueries);
+  const byId = new Map(fields.map((field) => [field.id, field]));
+  const filters: CustomFieldFilter[] = [];
+
+  for (let index = 0; index < ids.length; index += 1) {
+    const field = byId.get((ids[index] ?? '').trim());
+    const query = (queries[index] ?? '').trim();
+    if (!field || query.length === 0) continue;
+    filters.push({ field, query });
+  }
+
+  return filters;
+}
+
+/**
+ * All filters for one table must match (AND composition, #74). A blank query is
+ * never a filter, and a table with no filters keeps every row.
+ */
+export function matchesAllCustomFieldFilters(
+  values: CustomFieldValues | undefined,
+  filters: readonly CustomFieldFilter[],
+): boolean {
+  return filters.every((filter) => matchesCustomFieldFilter(values, filter.field, filter.query));
+}
+
+/**
+ * The adjacent field a move-up/move-down swaps with (#73), or null at the edge.
+ * `fields` must be in registry order (the order the one registry read returns);
+ * the administration screen disables the control at the edge, so a null here is
+ * only a stale-page race.
+ */
+export function customFieldMoveNeighbour(
+  fields: readonly Pick<CustomFieldDefinition, 'id'>[],
+  fieldId: string,
+  direction: 'up' | 'down',
+): string | null {
+  const index = fields.findIndex((field) => field.id === fieldId);
+  if (index === -1) return null;
+  const neighbour = direction === 'up' ? index - 1 : index + 1;
+  return fields[neighbour]?.id ?? null;
 }
 
 /** Conflicts that block un-archiving a custom field (issue #72). */

@@ -103,26 +103,32 @@ a tenant dimension.
 
 | Table | Holds |
 | --- | --- |
-| `custom_fields` | The administrator-defined registry: entity type, name, stable machine `key` (derived once from the name; the W9 field list's identifier), type (`text`, `number`, `date`), required flag, description, optional example value, archive state and the audit references. Active names and keys are unique per entity; archiving frees both. |
+| `custom_fields` | The administrator-defined registry: entity type, name, stable machine `key` (derived once from the name; the W9 field list's identifier), type (`text`, `number`, `date`), required flag, description, optional example value, administrator-controlled `position`, archive state and the audit references. Active names and keys are unique per entity; archiving frees both. |
 | `custom_field_values` | One row per record that has extra values, keyed by entity type and record id, holding one JSON object keyed by **field id** (so renaming a field never rewrites recorded data). |
 
-- Supported entities: `strategic_initiative`, `annual_program`, `project`, `recurring_ops_item`.
+- Supported entities: `strategic_initiative`, `annual_program`, `project`, `recurring_ops_item`, and (#71) `ijin_prinsip`, `project_year_allocation`, `commitment_entry`, `spend_entry`. The strategic plan and annual plan are deliberately out: one record each, with no per-record variance to capture. The opening import covers SIs, programs and projects only, so the four added records are entered through their own forms.
 - Values are parsed and validated by type in `src/domain/custom-fields.ts`; the forms, record panels,
   reports, exports and the opening-import parser (for registry columns) all use that module, so the
   surfaces cannot drift.
-- Create, edit, remove and restore are audited (`custom_field_create`, `custom_field_update`,
-  `custom_field_remove`, `custom_field_restore`). Removal follows the no-delete convention: the
+- Create, edit, remove, restore and reorder are audited (`custom_field_create`,
+  `custom_field_update`, `custom_field_remove`, `custom_field_restore`, `custom_field_reorder`). Removal follows the no-delete convention: the
   definition is archived (`archived_at` + `archived_reason`), the field leaves every surface, and its
   recorded values are kept (values for an archived field are preserved when the record is edited).
-  The audit `before` snapshot records the values that were held. The audit view labels the four
-  custom-field actions and the `custom_field` entity in words while keeping the machine tokens as
-  filter values, so a saved audit link still filters the same rows.
+  The audit `before` snapshot records the values that were held. The audit view labels the five
+  custom-field actions (create, update, remove, restore, reorder) and the `custom_field` entity in
+  words while keeping the machine tokens as filter values, so a saved audit link still filters the
+  same rows.
 - Administration → Custom fields shows every active field's stable key and how many records hold a
   value for it (the remove confirmation repeats the count); the archived list shows the key, type,
   archive date, reason and how many records still hold a value. Restoring (with a reason) clears the
   archive state and writes `custom_field_restore`; because values are keyed by field id, the recorded values show
   again on forms, record panels, reports and exports. A restore is refused while an active field on
   the same entity uses the name or the key.
+- Field order is administrator-controlled (#73): `position` is one sequence per entity type, new
+  fields append at the end, archived fields drop out of every registry read, and the one ordered
+  read feeds the administration list, create/edit forms, record panels, report columns and export
+  checkboxes. A reorder swaps two positions and writes a `custom_field_reorder` audit entry
+  (actor, field, from/to position); it is a reversible display preference, so it needs no reason.
 - The `required` flag is enforced when a record is saved through the app forms. The opening import
   reads the registry too: a row that does not supply a required field fails with its line number,
   and nothing is written, so every imported record stays editable. The parsed row keeps the field's
@@ -131,13 +137,20 @@ a tenant dimension.
 - A created or updated record audits the extra values together with the record (`customFields` in the
   before/after snapshot), including the records created by the opening import.
 - Custom fields never change `remaining`, flags, allocations or any existing report total (G1).
-  Reports add them as extra columns, with a custom-field filter and per-export column selection.
+  Reports add them as extra columns. A report accepts more than one custom-field filter (repeated
+  `cf`/`cv` parameters, combined with AND) shown as removable chips, and remembers each user's
+  custom-column selection in `report_preferences` (#74, #75): the report and its export checkboxes
+  default to the saved selection, while an explicit `columns` parameter always wins for shareable
+  links. Filters and the remembered selection never change totals or the full-report export.
 - **Forward-only migration:** `0006` adds the two tables and seeds the W9 owner column
   (`project` / `Procurement method`, key `procurementMethod`) from the December field list.
   Existing financial tables are untouched. From then on the registry is the runtime source of truth for record forms, record
   panels, reports, exports and the opening import; the headless opening-import tooling keeps its
   committed field list. `0007` adds the optional `example` column, a display hint for the
   administration row and the opening-import template example; it is never stored on a record.
+  `0008` (#71, #73, #75) extends the entity-type checks to the four added records, adds the
+  `position` column and backfills one sequence per entity from creation order, and adds
+  `report_preferences` (one custom-column selection per user and report).
 
 ## Invariants
 
@@ -171,5 +184,7 @@ Domain functions in `src/domain` implement these; database constraints block the
 | Over-budget flags | all levels | The seven flags in ADR-0003 §6 |
 
 All reports export as CSV/XLSX and have a print-friendly route. Custom fields appear as extra
-columns on screen and in the export when selected. A custom-field filter narrows the rows on screen;
-the totals and the export always cover the whole report.
+columns on screen and in the export when selected. Multiple custom-field filters narrow the rows on
+screen, combined with AND and removable one at a time; the totals and the export always cover the
+whole report. Each user's custom-column selection is remembered per report (an explicit `columns`
+link still wins).

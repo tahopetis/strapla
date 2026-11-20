@@ -67,6 +67,8 @@ export default async function RecurringOpsFundingPage({
           editable={editable}
           allowCapex={false}
           today={today}
+          customFields={funding.customFields.commitmentFields}
+          customValues={funding.customFields.commitmentValues}
         />
 
         <SpendSection
@@ -79,6 +81,8 @@ export default async function RecurringOpsFundingPage({
           allowCapex={false}
           today={today}
           fiscalYear={funding.annualPlan.fiscalYear}
+          customFields={funding.customFields.spendFields}
+          customValues={funding.customFields.spendValues}
         />
       </div>
     </div>

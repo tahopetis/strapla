@@ -1,4 +1,6 @@
+import { Fragment } from 'react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
   Form,
   HiddenField,
@@ -10,6 +12,7 @@ import {
   TextField,
 } from '@/components/form';
 import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 import type { CommitmentRow, SettlementOption, SpendRow } from '@/server/plan/execution-queries';
 import {
@@ -23,6 +26,18 @@ import {
 import { SettlementInput } from './settlement-input';
 
 const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
+
+/**
+ * Whether the panel will render anything. `CustomFieldsPanel` hides itself for a
+ * record with no values; the table asks first so it does not leave an empty
+ * full-width row behind (#71).
+ */
+function hasRecordedCustomFields(
+  fields: readonly CustomFieldDefinition[],
+  values?: CustomFieldValues,
+): boolean {
+  return fields.some((field) => values?.[field.id] !== undefined);
+}
 
 function statusTone(status: CommitmentRow['status']): 'neutral' | 'info' | 'success' {
   if (status === 'settled') return 'success';
@@ -141,6 +156,8 @@ export function CommitmentsSection({
   editable,
   allowCapex,
   today,
+  customFields,
+  customValues,
 }: {
   parentKind: 'allocation' | 'recurring';
   parentId: string;
@@ -148,6 +165,8 @@ export function CommitmentsSection({
   editable: boolean;
   allowCapex: boolean;
   today: string;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: Map<string, CustomFieldValues>;
 }) {
   const parentField =
     parentKind === 'allocation' ? 'allocationId' : 'recurringOpsItemId';
@@ -185,6 +204,7 @@ export function CommitmentsSection({
             <div className="sm:col-span-2">
               <TextAreaField label="Description" name="description" rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add commitment</SubmitButton>
             </div>
@@ -212,95 +232,114 @@ export function CommitmentsSection({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => (
-                  <tr key={row.commitment.id}>
-                    <td className="py-3 pr-4 uppercase">{row.commitment.component}</td>
-                    <td className="py-3 pr-4 whitespace-nowrap">{formatDate(row.commitment.commitmentDate)}</td>
-                    <td className="py-3 pr-4">
-                      <p>{row.commitment.reference ?? '—'}</p>
-                      {row.commitment.description ? (
-                        <p className="text-xs text-slate-500">{row.commitment.description}</p>
-                      ) : null}
-                    </td>
-                    <td className="py-3 pr-4 whitespace-nowrap">
-                      <Money value={row.commitment.amount} />
-                    </td>
-                    <td className="py-3 pr-4 whitespace-nowrap">
-                      <Money value={row.settledAmount} />
-                    </td>
-                    <td className="py-3 pr-4 whitespace-nowrap">
-                      <Money value={row.openAmount} />
-                    </td>
-                    <td className="py-3 pr-4">
-                      <Badge tone={statusTone(row.status)}>{row.status.replace('_', ' ')}</Badge>
-                    </td>
-                    <td className="py-3">
-                      {editable ? (
-                        <details>
-                          <summary className={summaryClass}>Manage</summary>
-                          <div className="mt-3 grid gap-4 lg:grid-cols-2">
-                            <Form action={updateCommitmentAction} className="grid gap-2">
-                              <HiddenField name="id" value={row.commitment.id} />
-                              <SelectField
-                                label="Component"
-                                name="component"
-                                options={
-                                  allowCapex
-                                    ? [
-                                        { value: 'capex', label: 'Capex' },
-                                        { value: 'opex', label: 'Opex' },
-                                      ]
-                                    : [{ value: 'opex', label: 'Opex' }]
-                                }
-                                defaultValue={row.commitment.component}
-                              />
-                              <MoneyField
-                                label="Amount"
-                                name="amount"
-                                defaultValue={row.commitment.amount}
-                                required
-                              />
-                              <TextField
-                                label="Commitment date"
-                                name="commitmentDate"
-                                type="date"
-                                defaultValue={row.commitment.commitmentDate}
-                                required
-                              />
-                              <TextField
-                                label="Reference"
-                                name="reference"
-                                defaultValue={row.commitment.reference}
-                              />
-                              <TextAreaField
-                                label="Description"
-                                name="description"
-                                defaultValue={row.commitment.description}
-                                rows={2}
-                              />
-                              <ReasonField />
-                              <div>
-                                <SubmitButton>Save commitment</SubmitButton>
-                              </div>
-                            </Form>
-                            <div className="flex items-start">
-                              <ConfirmDialog
-                                action={voidCommitmentAction}
-                                triggerLabel="Void commitment"
-                                title="Void this commitment?"
-                                consequence="Voiding keeps the record and its history but takes it out of the open commitments; a commitment with settlements cannot be voided."
-                                confirmLabel="Void commitment"
-                              >
+                  <Fragment key={row.commitment.id}>
+                    <tr>
+                      <td className="py-3 pr-4 uppercase">{row.commitment.component}</td>
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(row.commitment.commitmentDate)}</td>
+                      <td className="py-3 pr-4">
+                        <p>{row.commitment.reference ?? '—'}</p>
+                        {row.commitment.description ? (
+                          <p className="text-xs text-slate-500">{row.commitment.description}</p>
+                        ) : null}
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.commitment.amount} />
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.settledAmount} />
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.openAmount} />
+                      </td>
+                      <td className="py-3 pr-4">
+                        <Badge tone={statusTone(row.status)}>{row.status.replace('_', ' ')}</Badge>
+                      </td>
+                      <td className="py-3">
+                        {editable ? (
+                          <details>
+                            <summary className={summaryClass}>Manage</summary>
+                            <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                              <Form action={updateCommitmentAction} className="grid gap-2">
                                 <HiddenField name="id" value={row.commitment.id} />
-                                <ReasonField hint="Recorded in the audit trail." />
-                              </ConfirmDialog>
+                                <SelectField
+                                  label="Component"
+                                  name="component"
+                                  options={
+                                    allowCapex
+                                      ? [
+                                          { value: 'capex', label: 'Capex' },
+                                          { value: 'opex', label: 'Opex' },
+                                        ]
+                                      : [{ value: 'opex', label: 'Opex' }]
+                                  }
+                                  defaultValue={row.commitment.component}
+                                />
+                                <MoneyField
+                                  label="Amount"
+                                  name="amount"
+                                  defaultValue={row.commitment.amount}
+                                  required
+                                />
+                                <TextField
+                                  label="Commitment date"
+                                  name="commitmentDate"
+                                  type="date"
+                                  defaultValue={row.commitment.commitmentDate}
+                                  required
+                                />
+                                <TextField
+                                  label="Reference"
+                                  name="reference"
+                                  defaultValue={row.commitment.reference}
+                                />
+                                <TextAreaField
+                                  label="Description"
+                                  name="description"
+                                  defaultValue={row.commitment.description}
+                                  rows={2}
+                                />
+                                <CustomFieldInputs
+                                  fields={customFields}
+                                  values={customValues.get(row.commitment.id)}
+                                />
+                                <ReasonField />
+                                <div>
+                                  <SubmitButton>Save commitment</SubmitButton>
+                                </div>
+                              </Form>
+                              <div className="flex items-start">
+                                <ConfirmDialog
+                                  action={voidCommitmentAction}
+                                  triggerLabel="Void commitment"
+                                  title="Void this commitment?"
+                                  consequence="Voiding keeps the record and its history but takes it out of the open commitments; a commitment with settlements cannot be voided."
+                                  confirmLabel="Void commitment"
+                                >
+                                  <HiddenField name="id" value={row.commitment.id} />
+                                  <ReasonField hint="Recorded in the audit trail." />
+                                </ConfirmDialog>
+                              </div>
                             </div>
-                          </div>
-                        </details>
-                      ) : (
-                        <span className="text-xs text-slate-500">read-only</span>
-                      )}
-                    </td>
-                  </tr>
+                          </details>
+                        ) : (
+                          <span className="text-xs text-slate-500">read-only</span>
+                        )}
+                      </td>
+                    </tr>
+                    {hasRecordedCustomFields(
+                      customFields,
+                      customValues.get(row.commitment.id),
+                    ) ? (
+                      <tr>
+                        <td colSpan={8} className="pb-3">
+                          <CustomFieldsPanel
+                            fields={customFields}
+                            values={customValues.get(row.commitment.id)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -321,6 +360,8 @@ export function SpendSection({
   allowCapex,
   today,
   fiscalYear,
+  customFields,
+  customValues,
 }: {
   parentKind: 'allocation' | 'recurring';
   parentId: string;
@@ -331,6 +372,8 @@ export function SpendSection({
   allowCapex: boolean;
   today: string;
   fiscalYear: number;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: Map<string, CustomFieldValues>;
 }) {
   const parentField = parentKind === 'allocation' ? 'allocationId' : 'recurringOpsItemId';
   return (
@@ -405,6 +448,7 @@ export function SpendSection({
                 </div>
               </div>
             ) : null}
+            <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Record spend</SubmitButton>
             </div>
@@ -431,129 +475,145 @@ export function SpendSection({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row) => (
-                  <tr key={row.spend.id}>
-                    <td className="py-3 pr-4 whitespace-nowrap">{formatDate(row.spend.spentOn)}</td>
-                    <td className="py-3 pr-4 uppercase">{row.spend.component}</td>
-                    <td className="py-3 pr-4">
-                      <p>{row.spend.vendor ?? '—'}</p>
-                      <p className="text-xs text-slate-500">
-                        {row.spend.reference ?? row.categoryName ?? ''}
-                      </p>
-                    </td>
-                    <td className="py-3 pr-4 whitespace-nowrap">
-                      <Money value={row.spend.amount} />
-                    </td>
-                    <td className="py-3 pr-4">
-                      {row.spend.settlementKind === 'prior_year_opening' ? (
-                        <Badge tone="info">prior-year opening</Badge>
-                      ) : row.crossYearSettled > 0 ? (
-                        <Badge tone="warning">cross-year settlement</Badge>
-                      ) : (
-                        <Badge tone="neutral">current year</Badge>
-                      )}
-                    </td>
-                    <td className="py-3 pr-4">
-                      {row.settlementLinks.length === 0 ? (
-                        <span className="text-xs text-slate-500">none</span>
-                      ) : (
-                        <ul className="space-y-1 text-xs text-slate-600">
-                          {row.settlementLinks.map((link) => (
-                            <li key={link.commitmentId}>
-                              <Money value={link.amount} /> · FY{link.commitmentFiscalYear}
-                              {link.commitmentFiscalYear < fiscalYear ? ' (cross-year)' : ''}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {editable ? (
-                        <details>
-                          <summary className={summaryClass}>Manage</summary>
-                          <div className="mt-3 grid gap-4 lg:grid-cols-2">
-                            <Form action={updateSpendAction} className="grid gap-2">
-                              <HiddenField name="id" value={row.spend.id} />
-                              <SelectField
-                                label="Component"
-                                name="component"
-                                options={
-                                  allowCapex
-                                    ? [
-                                        { value: 'capex', label: 'Capex' },
-                                        { value: 'opex', label: 'Opex' },
-                                      ]
-                                    : [{ value: 'opex', label: 'Opex' }]
-                                }
-                                defaultValue={row.spend.component}
-                              />
-                              <MoneyField
-                                label="Amount"
-                                name="amount"
-                                defaultValue={row.spend.amount}
-                                required
-                              />
-                              <TextField
-                                label="Spent on"
-                                name="spentOn"
-                                type="date"
-                                defaultValue={row.spend.spentOn}
-                                required
-                              />
-                              <SelectField
-                                label="Category"
-                                name="categoryId"
-                                placeholder="No category"
-                                options={categoryOptions}
-                                defaultValue={row.spend.categoryId ?? ''}
-                              />
-                              <TextField label="Vendor" name="vendor" defaultValue={row.spend.vendor} />
-                              <TextField
-                                label="Invoice / reference"
-                                name="reference"
-                                defaultValue={row.spend.reference}
-                              />
-                              <TextAreaField
-                                label="Description"
-                                name="description"
-                                defaultValue={row.spend.description}
-                                rows={2}
-                              />
-                              <SelectField
-                                label="Settlement classification"
-                                name="settlementKind"
-                                options={[
-                                  { value: 'current', label: 'Current-year spend' },
-                                  {
-                                    value: 'prior_year_opening',
-                                    label: 'Prior-year opening payment',
-                                  },
-                                ]}
-                                defaultValue={row.spend.settlementKind}
-                              />
-                              <ReasonField hint="Settlement links are fixed after creation; void and re-enter to change them." />
-                              <div>
-                                <SubmitButton>Save spend</SubmitButton>
-                              </div>
-                            </Form>
-                            <div className="flex items-start">
-                              <ConfirmDialog
-                                action={voidSpendAction}
-                                triggerLabel="Void spend"
-                                title="Void this spend entry?"
-                                consequence="Voiding keeps the record and its history but releases any commitment it settled, so those commitments become open again."
-                                confirmLabel="Void spend"
-                              >
+                  <Fragment key={row.spend.id}>
+                    <tr>
+                      <td className="py-3 pr-4 whitespace-nowrap">{formatDate(row.spend.spentOn)}</td>
+                      <td className="py-3 pr-4 uppercase">{row.spend.component}</td>
+                      <td className="py-3 pr-4">
+                        <p>{row.spend.vendor ?? '—'}</p>
+                        <p className="text-xs text-slate-500">
+                          {row.spend.reference ?? row.categoryName ?? ''}
+                        </p>
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.spend.amount} />
+                      </td>
+                      <td className="py-3 pr-4">
+                        {row.spend.settlementKind === 'prior_year_opening' ? (
+                          <Badge tone="info">prior-year opening</Badge>
+                        ) : row.crossYearSettled > 0 ? (
+                          <Badge tone="warning">cross-year settlement</Badge>
+                        ) : (
+                          <Badge tone="neutral">current year</Badge>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4">
+                        {row.settlementLinks.length === 0 ? (
+                          <span className="text-xs text-slate-500">none</span>
+                        ) : (
+                          <ul className="space-y-1 text-xs text-slate-600">
+                            {row.settlementLinks.map((link) => (
+                              <li key={link.commitmentId}>
+                                <Money value={link.amount} /> · FY{link.commitmentFiscalYear}
+                                {link.commitmentFiscalYear < fiscalYear ? ' (cross-year)' : ''}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        {editable ? (
+                          <details>
+                            <summary className={summaryClass}>Manage</summary>
+                            <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                              <Form action={updateSpendAction} className="grid gap-2">
                                 <HiddenField name="id" value={row.spend.id} />
-                                <ReasonField hint="Recorded in the audit trail." />
-                              </ConfirmDialog>
+                                <SelectField
+                                  label="Component"
+                                  name="component"
+                                  options={
+                                    allowCapex
+                                      ? [
+                                          { value: 'capex', label: 'Capex' },
+                                          { value: 'opex', label: 'Opex' },
+                                        ]
+                                      : [{ value: 'opex', label: 'Opex' }]
+                                  }
+                                  defaultValue={row.spend.component}
+                                />
+                                <MoneyField
+                                  label="Amount"
+                                  name="amount"
+                                  defaultValue={row.spend.amount}
+                                  required
+                                />
+                                <TextField
+                                  label="Spent on"
+                                  name="spentOn"
+                                  type="date"
+                                  defaultValue={row.spend.spentOn}
+                                  required
+                                />
+                                <SelectField
+                                  label="Category"
+                                  name="categoryId"
+                                  placeholder="No category"
+                                  options={categoryOptions}
+                                  defaultValue={row.spend.categoryId ?? ''}
+                                />
+                                <TextField label="Vendor" name="vendor" defaultValue={row.spend.vendor} />
+                                <TextField
+                                  label="Invoice / reference"
+                                  name="reference"
+                                  defaultValue={row.spend.reference}
+                                />
+                                <TextAreaField
+                                  label="Description"
+                                  name="description"
+                                  defaultValue={row.spend.description}
+                                  rows={2}
+                                />
+                                <SelectField
+                                  label="Settlement classification"
+                                  name="settlementKind"
+                                  options={[
+                                    { value: 'current', label: 'Current-year spend' },
+                                    {
+                                      value: 'prior_year_opening',
+                                      label: 'Prior-year opening payment',
+                                    },
+                                  ]}
+                                  defaultValue={row.spend.settlementKind}
+                                />
+                                <CustomFieldInputs
+                                  fields={customFields}
+                                  values={customValues.get(row.spend.id)}
+                                />
+                                <ReasonField hint="Settlement links are fixed after creation; void and re-enter to change them." />
+                                <div>
+                                  <SubmitButton>Save spend</SubmitButton>
+                                </div>
+                              </Form>
+                              <div className="flex items-start">
+                                <ConfirmDialog
+                                  action={voidSpendAction}
+                                  triggerLabel="Void spend"
+                                  title="Void this spend entry?"
+                                  consequence="Voiding keeps the record and its history but releases any commitment it settled, so those commitments become open again."
+                                  confirmLabel="Void spend"
+                                >
+                                  <HiddenField name="id" value={row.spend.id} />
+                                  <ReasonField hint="Recorded in the audit trail." />
+                                </ConfirmDialog>
+                              </div>
                             </div>
-                          </div>
-                        </details>
-                      ) : (
-                        <span className="text-xs text-slate-500">read-only</span>
-                      )}
-                    </td>
-                  </tr>
+                          </details>
+                        ) : (
+                          <span className="text-xs text-slate-500">read-only</span>
+                        )}
+                      </td>
+                    </tr>
+                    {hasRecordedCustomFields(customFields, customValues.get(row.spend.id)) ? (
+                      <tr>
+                        <td colSpan={7} className="pb-3">
+                          <CustomFieldsPanel
+                            fields={customFields}
+                            values={customValues.get(row.spend.id)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

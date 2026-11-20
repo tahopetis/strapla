@@ -69,6 +69,8 @@ export default async function AllocationFundingPage({
           editable={editable}
           allowCapex
           today={today}
+          customFields={funding.customFields.commitmentFields}
+          customValues={funding.customFields.commitmentValues}
         />
 
         <SpendSection
@@ -81,6 +83,8 @@ export default async function AllocationFundingPage({
           allowCapex
           today={today}
           fiscalYear={funding.annualPlan.fiscalYear}
+          customFields={funding.customFields.spendFields}
+          customValues={funding.customFields.spendValues}
         />
       </div>
     </div>

@@ -6,9 +6,12 @@ import {
 } from '@/components/custom-fields';
 import { ReportNote, ReportShell } from '@/components/report-shell';
 import { Badge, Card, Money } from '@/components/ui';
-import { matchesCustomFieldFilter } from '@/domain/custom-fields';
+import { matchesAllCustomFieldFilters, resolveCustomFieldFilters } from '@/domain/custom-fields';
 import { getAnnualPlanReport } from '@/server/plan/report-queries';
-import { loadReportCustomFieldGroups } from '@/server/plan/report-custom-fields';
+import {
+  loadReportCustomFieldGroups,
+  readRememberedReportColumns,
+} from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -26,14 +29,13 @@ export default async function AnnualPlanReportPage({
   }>;
 }) {
   const { cf: cfParam, cv: cvParam, columns } = await searchParams;
-  const cf = Array.isArray(cfParam) ? cfParam[0] : cfParam;
-  const cv = Array.isArray(cvParam) ? cvParam[0] : cvParam;
   const plan = await getCurrentStrategicPlan();
   if (!plan) {
     return <p className="text-sm text-slate-600">Create the strategic plan to see this report.</p>;
   }
   const report = await getAnnualPlanReport(plan.id);
-  const groups = await loadReportCustomFieldGroups('annual-plan', columns);
+  const remembered = await readRememberedReportColumns('annual-plan', columns);
+  const groups = await loadReportCustomFieldGroups('annual-plan', columns, remembered);
   const [programGroup, recurringGroup] = groups;
   const fields = groups.flatMap((candidate) => candidate.fields);
   const selectedIds = groups.flatMap((candidate) =>
@@ -41,21 +43,27 @@ export default async function AnnualPlanReportPage({
   );
   const programVisibleFields = programGroup?.selectedFields ?? [];
   const recurringVisibleFields = recurringGroup?.selectedFields ?? [];
-  const filterField = cf ? fields.find((field) => field.id === cf) : undefined;
-  const filterQuery = cv?.trim() ?? '';
-  const filtering = filterField !== undefined && filterQuery.length > 0;
-  const filteringPrograms = filtering && filterField?.entityType === 'annual_program';
-  const filteringRecurring = filtering && filterField?.entityType === 'recurring_ops_item';
+  // Repeated cf/cv pairs narrow the rows together (AND, #74). A filter belongs
+  // to the table of its own entity, so a program filter never hides a
+  // recurring ops row; totals and the export above stay whole-report.
+  const filters = resolveCustomFieldFilters(fields, cfParam, cvParam);
+  const programFilters = filters.filter((filter) => filter.field.entityType === 'annual_program');
+  const recurringFilters = filters.filter(
+    (filter) => filter.field.entityType === 'recurring_ops_item',
+  );
   const programRows =
-    filteringPrograms && filterField !== undefined
+    programFilters.length > 0
       ? report.programs.filter((row) =>
-          matchesCustomFieldFilter(programGroup?.values.get(row.programId), filterField, filterQuery),
+          matchesAllCustomFieldFilters(programGroup?.values.get(row.programId), programFilters),
         )
       : report.programs;
   const recurringRows =
-    filteringRecurring && filterField !== undefined
+    recurringFilters.length > 0
       ? report.recurringOps.filter((row) =>
-          matchesCustomFieldFilter(recurringGroup?.values.get(row.itemId), filterField, filterQuery),
+          matchesAllCustomFieldFilters(
+            recurringGroup?.values.get(row.itemId),
+            recurringFilters,
+          ),
         )
       : report.recurringOps;
   const recurringCommitments = report.recurringOps.reduce((sum, row) => sum + row.commitmentOpex, 0);
@@ -87,8 +95,7 @@ export default async function AnnualPlanReportPage({
           <CustomFieldFilterForm
             fields={fields}
             action="/reports/annual-plan"
-            fieldId={filterField?.id}
-            query={cv}
+            filters={filters}
             columnSelection={columns === undefined ? undefined : selectedIds}
           />
         </div>
@@ -199,7 +206,7 @@ export default async function AnnualPlanReportPage({
             </tfoot>
           </table>
         </div>
-        {filteringPrograms ? (
+        {programFilters.length > 0 ? (
           <p className="mt-3 text-xs text-slate-500">
             Totals cover the whole report, not only the filtered rows.
           </p>
@@ -296,7 +303,7 @@ export default async function AnnualPlanReportPage({
             </table>
           </div>
         )}
-        {filteringRecurring && report.recurringOps.length > 0 ? (
+        {recurringFilters.length > 0 && report.recurringOps.length > 0 ? (
           <p className="mt-3 text-xs text-slate-500">
             Totals cover the whole report, not only the filtered rows.
           </p>

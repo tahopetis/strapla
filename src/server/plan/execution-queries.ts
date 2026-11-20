@@ -19,6 +19,7 @@ import {
   type SpendEntry,
   type StrategicPlan,
 } from '@/db/schema';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { allocationRemaining } from '@/domain/funding';
 import {
   commitmentStatus,
@@ -27,6 +28,10 @@ import {
   spendExceedsFiscalYearCommitment,
   type CommitmentStatus,
 } from '@/domain/settlement';
+import {
+  listCustomFieldDefinitions,
+  readCustomFieldValuesMap,
+} from '@/server/custom-fields/data';
 
 /** Read queries for commitments, spend and settlement (M3 #18/#19). */
 
@@ -84,6 +89,38 @@ export interface AllocationFunding {
   spends: SpendRow[];
   totals: FundingTotals;
   settlementOptions: SettlementOption[];
+  customFields: ExecutionCustomFields;
+}
+
+/**
+ * The active registry and the recorded values for the two record types the
+ * execution sections render (#71). Both pages load them with the rows so the
+ * create/edit forms and the read-only display agree with the registry.
+ */
+export interface ExecutionCustomFields {
+  commitmentFields: CustomFieldDefinition[];
+  commitmentValues: Map<string, CustomFieldValues>;
+  spendFields: CustomFieldDefinition[];
+  spendValues: Map<string, CustomFieldValues>;
+}
+
+async function loadExecutionCustomFields(
+  commitments: CommitmentRow[],
+  spends: SpendRow[],
+): Promise<ExecutionCustomFields> {
+  const [commitmentFields, commitmentValues, spendFields, spendValues] = await Promise.all([
+    listCustomFieldDefinitions('commitment_entry'),
+    readCustomFieldValuesMap(
+      'commitment_entry',
+      commitments.map((row) => row.commitment.id),
+    ),
+    listCustomFieldDefinitions('spend_entry'),
+    readCustomFieldValuesMap(
+      'spend_entry',
+      spends.map((row) => row.spend.id),
+    ),
+  ]);
+  return { commitmentFields, commitmentValues, spendFields, spendValues };
 }
 
 async function loadCommitmentRows(
@@ -442,6 +479,7 @@ export async function getAllocationFunding(
       ...settlementOptionsFromCommitments(commitments),
       ...(await loadPriorSettlementOptions(header.project.id, header.annualPlan.fiscalYear)),
     ],
+    customFields: await loadExecutionCustomFields(commitments, spends),
   };
 }
 
@@ -453,6 +491,7 @@ export interface RecurringOpsFunding {
   spends: SpendRow[];
   totals: FundingTotals;
   settlementOptions: SettlementOption[];
+  customFields: ExecutionCustomFields;
 }
 
 export async function getRecurringOpsFunding(
@@ -488,6 +527,7 @@ export async function getRecurringOpsFunding(
       carryInOpex: header.item.carryInOpex,
     }),
     settlementOptions: settlementOptionsFromCommitments(commitments),
+    customFields: await loadExecutionCustomFields(commitments, spends),
   };
 }
 

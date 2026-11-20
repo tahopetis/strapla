@@ -17,6 +17,7 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   custom_field_update: 'Custom field updated',
   custom_field_remove: 'Custom field removed',
   custom_field_restore: 'Custom field restored',
+  custom_field_reorder: 'Custom field reordered',
 };
 
 const ENTITY_TYPE_LABELS: Readonly<Record<string, string>> = {

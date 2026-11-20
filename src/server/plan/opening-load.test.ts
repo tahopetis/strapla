@@ -96,6 +96,7 @@ function customField(
     required: false,
     description: 'How the project is procured.',
     example: '',
+    position: 0,
     ...overrides,
   };
   return { column: column ?? definition.key, label: definition.name, definition };

@@ -334,7 +334,11 @@ async function cancelProject(userId: string, id: string, reason: string): Promis
   return updated;
 }
 
-async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Promise<string> {
+async function saveIjinPrinsip(
+  userId: string,
+  input: IjinPrinsipSaveInput,
+  custom: CustomFieldPayload,
+): Promise<string> {
   const context = await loadProjectContext(input.projectId);
   if (context.project.status === 'cancelled') {
     throw new FormError('This project is cancelled and read-only.');
@@ -365,19 +369,27 @@ async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Pro
     };
 
     if (existing) {
+      const beforeValues = await readCustomFieldValues('ijin_prinsip', existing.id, tx);
       const [updated] = await tx
         .update(ijinPrinsipRecords)
         .set(values)
         .where(eq(ijinPrinsipRecords.id, existing.id))
         .returning();
       if (!updated) throw new FormError('Ijin prinsip record not found.');
+      await saveCustomFieldValues(tx, {
+        entityType: 'ijin_prinsip',
+        entityId: updated.id,
+        fields: custom.fields,
+        values: custom.values,
+        userId,
+      });
       await recordAudit(tx, {
         actorUserId: userId,
         action: 'update',
         entityType: 'ijin_prinsip',
         entityId: updated.id,
-        before: ijinSnapshot(existing),
-        after: ijinSnapshot(updated),
+        before: withCustomFields(ijinSnapshot(existing), custom.fields, beforeValues),
+        after: withCustomFields(ijinSnapshot(updated), custom.fields, custom.values),
         reason: input.reason ?? null,
       });
       return;
@@ -388,12 +400,19 @@ async function saveIjinPrinsip(userId: string, input: IjinPrinsipSaveInput): Pro
       .values({ projectId: input.projectId, ...values, createdBy: userId })
       .returning();
     if (!created) throw new Error('failed to save the ijin prinsip record');
+    await saveCustomFieldValues(tx, {
+      entityType: 'ijin_prinsip',
+      entityId: created.id,
+      fields: custom.fields,
+      values: custom.values,
+      userId,
+    });
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'create',
       entityType: 'ijin_prinsip',
       entityId: created.id,
-      after: ijinSnapshot(created),
+      after: withCustomFields(ijinSnapshot(created), custom.fields, custom.values),
     });
   });
   return context.project.code;
@@ -456,9 +475,13 @@ export async function saveIjinPrinsipAction(previous: FormState, formData: FormD
   const parsed = validateForm(previous, ijinPrinsipSaveSchema, formData);
   if (!parsed.ok) return parsed.state;
 
+  const custom = await readCustomFieldPayloadState('ijin_prinsip', formData);
+  const customError = invalidCustomFieldState(previous, parsed.values, custom.errors);
+  if (customError) return customError;
+
   let projectCode: string;
   try {
-    projectCode = await saveIjinPrinsip(user.id, parsed.data);
+    projectCode = await saveIjinPrinsip(user.id, parsed.data, custom);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }

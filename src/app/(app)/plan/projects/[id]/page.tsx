@@ -22,7 +22,7 @@ import type { ProjectDetail } from '@/server/plan/project-queries';
 import { getProjectDetail } from '@/server/plan/project-queries';
 import { listAllocationProgramOptions, listProjectAllocations } from '@/server/plan/allocation-queries';
 import { listEntityHistory } from '@/server/admin/queries';
-import { listCustomFieldDefinitions, readCustomFieldValues } from '@/server/custom-fields/data';
+import { listCustomFieldDefinitions, readCustomFieldValues, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
   cancelProjectAction,
   saveIjinPrinsipAction,
@@ -51,12 +51,24 @@ export default async function ProjectPage({
     detail.strategicPlan.status !== 'archived' &&
     detail.annualPlan.status !== 'closed';
 
-  const [allocations, allocationOptions, history, projectFields, projectValues] = await Promise.all([
+  const [allocations, allocationOptions, history, projectFields, projectValues, ijinFields, ijinValues] = await Promise.all([
     listProjectAllocations(detail.project.id),
     listAllocationProgramOptions(detail.project.id),
     listEntityHistory('project', detail.project.id, 10),
     listCustomFieldDefinitions('project'),
     readCustomFieldValues('project', detail.project.id),
+    listCustomFieldDefinitions('ijin_prinsip'),
+    detail.ijin
+      ? readCustomFieldValues('ijin_prinsip', detail.ijin.id)
+      : Promise.resolve<CustomFieldValues>({}),
+  ]);
+
+  const [allocationFields, allocationValues] = await Promise.all([
+    listCustomFieldDefinitions('project_year_allocation'),
+    readCustomFieldValuesMap(
+      'project_year_allocation',
+      allocations.map((row) => row.allocation.id),
+    ),
   ]);
 
   return (
@@ -124,13 +136,20 @@ export default async function ProjectPage({
           customFields={projectFields}
           customValues={projectValues}
         />
-        <IjinPrinsipCard detail={detail} editable={editable} />
+        <IjinPrinsipCard
+          detail={detail}
+          editable={editable}
+          customFields={ijinFields}
+          customValues={ijinValues}
+        />
 
         <ProjectAllocationsSection
           projectId={detail.project.id}
           rows={allocations}
           options={allocationOptions}
           editable={editable}
+          customFields={allocationFields}
+          customValues={allocationValues}
         />
 
         <EntityHistory entries={history} />
@@ -312,7 +331,17 @@ function PricingCard({
   );
 }
 
-function IjinPrinsipCard({ detail, editable }: { detail: ProjectDetail; editable: boolean }) {
+function IjinPrinsipCard({
+  detail,
+  editable,
+  customFields,
+  customValues,
+}: {
+  detail: ProjectDetail;
+  editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: CustomFieldValues;
+}) {
   const ijin = detail.ijin;
   return (
     <Card
@@ -355,6 +384,8 @@ function IjinPrinsipCard({ detail, editable }: { detail: ProjectDetail; editable
         </dl>
       ) : null}
 
+      <CustomFieldsPanel fields={customFields} values={customValues} />
+
       {editable ? (
         <details open={!ijin}>
           <summary className={summaryClass}>{ijin ? 'Update ijin prinsip' : 'Record ijin prinsip'}</summary>
@@ -381,6 +412,7 @@ function IjinPrinsipCard({ detail, editable }: { detail: ProjectDetail; editable
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Notes" name="notes" defaultValue={ijin?.notes} rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} values={customValues} />
             {ijin ? (
               <div className="sm:col-span-2 lg:col-span-3">
                 <ReasonField />

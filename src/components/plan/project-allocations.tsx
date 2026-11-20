@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
   Form,
   HiddenField,
@@ -10,6 +11,7 @@ import {
   TextAreaField,
 } from '@/components/form';
 import { AnnualPlanBadge, Badge, Card, EmptyState, Money } from '@/components/ui';
+import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type {
   AllocationProgramOptions,
   ProjectAllocationRow,
@@ -27,11 +29,15 @@ export function ProjectAllocationsSection({
   rows,
   options,
   editable,
+  customFields,
+  customValues,
 }: {
   projectId: string;
   rows: ProjectAllocationRow[];
   options: AllocationProgramOptions;
   editable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues: Map<string, CustomFieldValues>;
 }) {
   return (
     <div className="space-y-4">
@@ -76,6 +82,7 @@ export function ProjectAllocationsSection({
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Notes" name="notes" rows={2} />
             </div>
+            <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
               <SubmitButton>Add allocation</SubmitButton>
             </div>
@@ -95,7 +102,14 @@ export function ProjectAllocationsSection({
       ) : (
         <div className="space-y-4">
           {rows.map((row) => (
-            <AllocationCard key={row.allocation.id} row={row} editable={editable} projectId={projectId} />
+            <AllocationCard
+              key={row.allocation.id}
+              row={row}
+              editable={editable}
+              projectId={projectId}
+              customFields={customFields}
+              customValues={customValues.get(row.allocation.id)}
+            />
           ))}
         </div>
       )}
@@ -107,10 +121,14 @@ function AllocationCard({
   row,
   editable,
   projectId,
+  customFields,
+  customValues,
 }: {
   row: ProjectAllocationRow;
   editable: boolean;
   projectId: string;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
 }) {
   const { allocation, annualPlan, program, position } = row;
   return (
@@ -177,6 +195,8 @@ function AllocationCard({
         </Link>
       </p>
 
+      <CustomFieldsPanel fields={customFields} values={customValues} />
+
       {editable ? (
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
@@ -208,6 +228,7 @@ function AllocationCard({
               <div className="sm:col-span-2">
                 <TextAreaField label="Notes" name="notes" defaultValue={allocation.notes} rows={2} />
               </div>
+              <CustomFieldInputs fields={customFields} values={customValues} />
               <div className="sm:col-span-2">
                 <ReasonField />
               </div>

@@ -57,6 +57,13 @@
       "when": 1795183153566,
       "tag": "0007_cold_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795189958627,
+      "tag": "0008_foamy_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

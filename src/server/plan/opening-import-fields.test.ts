@@ -18,6 +18,7 @@ function definition(overrides: Partial<CustomFieldDefinition> = {}): CustomField
     required: false,
     description: 'How the delivery is staged.',
     example: '',
+    position: 0,
     ...overrides,
   };
 }

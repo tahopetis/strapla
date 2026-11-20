@@ -11,7 +11,7 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/form';
-import { Badge, Card, EmptyState, Flash, PageHeader } from '@/components/ui';
+import { Badge, Card, EmptyState, Flash, PageHeader, secondaryButtonClass } from '@/components/ui';
 import {
   CUSTOM_FIELD_ENTITIES,
   CUSTOM_FIELD_TYPES,
@@ -23,6 +23,7 @@ import { formatDate } from '@/lib/format';
 import { requireUser } from '@/server/auth/session';
 import {
   createCustomFieldAction,
+  moveCustomFieldAction,
   removeCustomFieldAction,
   restoreCustomFieldAction,
   updateCustomFieldAction,
@@ -75,7 +76,54 @@ function AddFieldForm({ entityType }: { entityType: CustomFieldEntityType }) {
   );
 }
 
-function FieldRow({ field }: { field: CustomFieldWithUsage }) {
+/**
+ * One Move up / Move down control of a field row (#73). At the end of the
+ * entity's active sequence the swap would be a no-op, so the control renders as
+ * a disabled button instead of a form: the edge is visible but cannot be
+ * submitted. The move forms sit in the row beside the edit details and the
+ * remove dialog rather than nested inside them.
+ */
+function MoveFieldButton({
+  id,
+  direction,
+  disabled,
+}: {
+  id: string;
+  direction: 'up' | 'down';
+  disabled: boolean;
+}) {
+  const label = direction === 'up' ? 'Move up' : 'Move down';
+  if (disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={`${secondaryButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
+      >
+        {label}
+      </button>
+    );
+  }
+  return (
+    <Form action={moveCustomFieldAction}>
+      <HiddenField name="id" value={id} />
+      <HiddenField name="direction" value={direction} />
+      <SubmitButton variant="secondary" pendingLabel="Moving…">
+        {label}
+      </SubmitButton>
+    </Form>
+  );
+}
+
+function FieldRow({
+  field,
+  isFirst,
+  isLast,
+}: {
+  field: CustomFieldWithUsage;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
   return (
     <li className="rounded border border-slate-200 px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -94,6 +142,11 @@ function FieldRow({ field }: { field: CustomFieldWithUsage }) {
       </div>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-2">
+        <div className="flex flex-wrap items-center gap-2 lg:col-span-2">
+          <MoveFieldButton id={field.id} direction="up" disabled={isFirst} />
+          <MoveFieldButton id={field.id} direction="down" disabled={isLast} />
+        </div>
+
         <details>
           <summary className="cursor-pointer text-sm font-medium text-slate-700">Edit field</summary>
           <Form action={updateCustomFieldAction} className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -219,8 +272,13 @@ function EntityCard({
         </EmptyState>
       ) : (
         <ul aria-label="Active fields" className="space-y-3">
-          {fields.map((field) => (
-            <FieldRow key={field.id} field={field} />
+          {fields.map((field, index) => (
+            <FieldRow
+              key={field.id}
+              field={field}
+              isFirst={index === 0}
+              isLast={index === fields.length - 1}
+            />
           ))}
         </ul>
       )}

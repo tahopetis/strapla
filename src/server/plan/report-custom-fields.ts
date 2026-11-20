@@ -1,10 +1,12 @@
 import {
-  resolveCustomExportFields,
+  resolveReportColumnSelection,
   type CustomFieldDefinition,
   type CustomFieldEntityType,
   type CustomFieldValues,
 } from '@/domain/custom-fields';
+import { getCurrentUser } from '@/server/auth/session';
 import { listCustomFieldDefinitions, readAllCustomFieldValues } from '@/server/custom-fields/data';
+import { readReportColumnPreference } from './report-preferences';
 import type { ReportKey } from './report-tables';
 
 /**
@@ -50,14 +52,19 @@ export interface ReportCustomFieldGroup {
 /**
  * Loads the field registry and the recorded values for each table of a report.
  *
- * `rawColumns` is the export column selection: absent means every active field,
- * an explicit empty list means none (see `resolveCustomExportFields`). An entity
- * without fields is returned as an empty group without reading the values table,
- * and raw ids that belong to another entity are simply ignored.
+ * `rawColumns` is the request's explicit column selection: absent means "use
+ * the remembered selection, else every active field", an explicit empty list
+ * means none (see `resolveReportColumnSelection`). `rememberedColumns` is the
+ * signed-in user's saved selection (#75), read by the caller through
+ * `readRememberedReportColumns`; it is ignored whenever `rawColumns` is present
+ * because an explicit parameter always wins for that view. An entity without
+ * fields is returned as an empty group without reading the values table, and
+ * raw ids that belong to another entity are simply ignored.
  */
 export async function loadReportCustomFieldGroups(
   report: ReportKey,
   rawColumns: string | readonly string[] | undefined | null,
+  rememberedColumns: readonly string[] | null = null,
 ): Promise<ReportCustomFieldGroup[]> {
   const groups: ReportCustomFieldGroup[] = [];
 
@@ -67,10 +74,26 @@ export async function loadReportCustomFieldGroups(
       entityType: entity.entityType,
       tableName: entity.tableName,
       fields,
-      selectedFields: resolveCustomExportFields(fields, rawColumns),
+      selectedFields: resolveReportColumnSelection(fields, rawColumns, rememberedColumns),
       values: fields.length === 0 ? new Map() : await readAllCustomFieldValues(entity.entityType),
     });
   }
 
   return groups;
+}
+
+/**
+ * The user's saved custom-column selection for a report, for the report pages
+ * (#75). It is read only when the request names no `columns` parameter: an
+ * explicit selection wins for that view and must not be overridden by, or
+ * written as, the saved one. A page GET never writes the preference; only the
+ * "save selection" control does.
+ */
+export async function readRememberedReportColumns(
+  report: ReportKey,
+  rawColumns: string | readonly string[] | undefined | null,
+): Promise<string[] | null> {
+  if (rawColumns !== undefined && rawColumns !== null) return null;
+  const user = await getCurrentUser();
+  return user ? readReportColumnPreference(user.id, report) : null;
 }

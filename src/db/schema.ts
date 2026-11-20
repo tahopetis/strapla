@@ -552,11 +552,18 @@ export type NewIjinPrinsipRecord = typeof ijinPrinsipRecords.$inferInsert;
  * deployment per organisation (G5). Values live in `custom_field_values`,
  * keyed by field id so renaming a field never rewrites recorded data. A custom
  * field never touches `remaining`, flags, allocations or an existing report
- * total (G1); the four plan-record entities are the supported surface.
+ * total (G1); the plan-record entities listed in the check are the supported
+ * surface (#71 added ijin prinsip, project year allocation, commitment entry and
+ * spend entry to the original four).
  *
  * Removal follows the app's no-delete convention: the definition is archived
  * (`archived_at` + reason) and its recorded values are kept. The unique index
  * is partial, so archiving a field frees its name for a new definition.
+ *
+ * `position` is the administrator-controlled order (#73). New fields append at
+ * the end of their entity's sequence; archived fields drop out of the sequence
+ * because every registry read filters them out first. Ordering is applied in the
+ * one registry read, so forms, panels, reports and exports all agree.
  */
 export const customFields = pgTable(
   'custom_fields',
@@ -571,6 +578,8 @@ export const customFields = pgTable(
     description: text('description').notNull(),
     /** Optional sample value shown in the administration row and the import template. */
     example: text('example').notNull().default(''),
+    /** Administrator-controlled sort order within one entity type; ties fall back to creation order. */
+    position: integer('position').notNull().default(0),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedReason: text('archived_reason'),
     createdBy: uuid('created_by').references(() => users.id),
@@ -585,10 +594,8 @@ export const customFields = pgTable(
       .on(table.entityType, table.key)
       .where(sql`${table.archivedAt} IS NULL`),
     index('custom_fields_entity_idx').on(table.entityType),
-    check(
-      'custom_fields_entity_type_check',
-      sql`${table.entityType} IN ('strategic_initiative', 'annual_program', 'project', 'recurring_ops_item')`,
-    ),
+    index('custom_fields_entity_position_idx').on(table.entityType, table.position),
+    check('custom_fields_entity_type_check', sql`${table.entityType} IN ('strategic_initiative', 'annual_program', 'project', 'recurring_ops_item', 'ijin_prinsip', 'project_year_allocation', 'commitment_entry', 'spend_entry')`),
     check('custom_fields_type_check', sql`${table.type} IN ('text', 'number', 'date')`),
   ],
 );
@@ -609,9 +616,42 @@ export const customFieldValues = pgTable(
     uniqueIndex('custom_field_values_entity_idx').on(table.entityType, table.entityId),
     check(
       'custom_field_values_entity_type_check',
-      sql`${table.entityType} IN ('strategic_initiative', 'annual_program', 'project', 'recurring_ops_item')`,
+      sql`${table.entityType} IN ('strategic_initiative', 'annual_program', 'project', 'recurring_ops_item', 'ijin_prinsip', 'project_year_allocation', 'commitment_entry', 'spend_entry')`,
+    ),
+  ],
+);
+
+/**
+ * A report's remembered custom-column selection, one row per user and report
+ * (issue #75). The selection is a list of field ids, resolved against the live
+ * registry on read: a field archived since the choice was saved simply drops
+ * out, and `[]` (a saved row with no ids) means "no extra columns", distinct
+ * from "never chosen", which shows every active field.
+ *
+ * Reading a report never writes here; an explicit `?columns=` value wins for
+ * that view and is not persisted. Only the report's "save selection" action
+ * (and the export's own explicit value) change the preference.
+ */
+export const reportPreferences = pgTable(
+  'report_preferences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    reportKey: text('report_key').notNull(),
+    /** Selected custom-field ids, in registry order at read time; never trusted as-is. */
+    columnIds: jsonb('column_ids').$type<string[]>().notNull().default([]),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('report_preferences_user_report_idx').on(table.userId, table.reportKey),
+    check(
+      'report_preferences_report_key_check',
+      sql`${table.reportKey} IN ('si-five-year', 'annual-plan', 'project-register', 'budget-vs-actual')`,
     ),
   ],
 );
 
 export type CustomField = typeof customFields.$inferSelect;
+export type ReportPreference = typeof reportPreferences.$inferSelect;

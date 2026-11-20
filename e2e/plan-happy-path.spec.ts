@@ -312,6 +312,28 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByText(/Custom field “Delivery note” added\./)).toBeVisible();
   await expect(page.getByText('Delivery note').first()).toBeVisible();
 
+  // #73: an administrator controls the order the fields appear in
+  const activeProjectFields = projectFieldCard.getByRole('list', { name: 'Active fields' });
+  const deliveryFieldRow = activeProjectFields
+    .locator('li')
+    .filter({ hasText: 'Delivery note' });
+  await deliveryFieldRow.getByRole('button', { name: 'Move up' }).click();
+  await expect(page.getByText(/“Delivery note” moved up\./)).toBeVisible();
+  await expect(activeProjectFields.locator('li').first()).toContainText('Delivery note');
+  // the position is persisted, not just a render-order change
+  await page.reload();
+  await expect(
+    projectFieldCard.getByRole('list', { name: 'Active fields' }).locator('li').first(),
+  ).toContainText('Delivery note');
+  // put the creation order back so the import template example below is stable
+  await projectFieldCard
+    .getByRole('list', { name: 'Active fields' })
+    .locator('li')
+    .first()
+    .getByRole('button', { name: 'Move down' })
+    .click();
+  await expect(page.getByText(/“Delivery note” moved down\./)).toBeVisible();
+
   // ---------------------------------------- opening-balance import (W3b)
   await page.goto('/plan/opening-balances/import');
   await expect(page.getByRole('heading', { name: 'Opening-balance import' })).toBeVisible();
@@ -690,6 +712,26 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   const xlsx = await page.request.get(`${origin}/reports/export/project-register?format=xlsx`);
   expect(xlsx.status()).toBe(200);
   expect(xlsx.headers()['content-type']).toContain('spreadsheetml');
+
+  // #75: the report remembers the chosen custom columns for the signed-in user
+  await page.goto('/reports/project-register');
+  const deliveryColumn = page.getByRole('checkbox', { name: 'Delivery note' });
+  const deliveryColumnId = await deliveryColumn.getAttribute('value');
+  expect(deliveryColumnId).toBeTruthy();
+  await page.getByText('Extra columns').click();
+  await deliveryColumn.uncheck();
+  await page.getByRole('button', { name: 'Save selection' }).click();
+  await expect(page.getByText(/Selection saved/)).toBeVisible();
+  // returning to the report without a columns parameter uses the saved subset
+  await page.goto('/reports/project-register');
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note', exact: true }),
+  ).toHaveCount(0);
+  // an explicit columns link still wins for a shareable view
+  await page.goto(`/reports/project-register?columns=${deliveryColumnId}`);
+  await expect(
+    page.getByRole('columnheader', { name: 'Delivery note', exact: true }),
+  ).toBeVisible();
 
   // ------------------------------------------------------ administration (M2.5)
   await page.goto('/admin/members');

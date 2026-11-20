@@ -7,6 +7,7 @@ describe('audit labels', () => {
     expect(auditActionLabel('custom_field_update')).toBe('Custom field updated');
     expect(auditActionLabel('custom_field_remove')).toBe('Custom field removed');
     expect(auditActionLabel('custom_field_restore')).toBe('Custom field restored');
+    expect(auditActionLabel('custom_field_reorder')).toBe('Custom field reordered');
   });
 
   it('names the custom-field entity in readable words', () => {
