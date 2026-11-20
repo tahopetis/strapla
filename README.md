@@ -118,3 +118,18 @@ scripts/opening-import.ts  Opening-balance import CLI (template, dry run, field 
 - Every mutation writes an audit entry in the same transaction (ADR-0004).
 - No hard deletes: cancellation is a void status with a reason.
 - Planning artifacts and issues are the source of truth; code follows them.
+
+## Security
+
+Every pull request and push runs a closed-by-default `security-gate` (secrets,
+dependencies, SAST, container/IaC configuration) plus CodeQL and dependency
+review; the published image gets a report-only Trivy CVE scan. GitHub secret
+scanning and push protection are enabled on the repository. The contract is
+[`docs/agents/security.md`](docs/agents/security.md).
+
+To report a vulnerability, use GitHub's private vulnerability reporting — see
+[`SECURITY.md`](SECURITY.md).
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

@@ -10,6 +10,10 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  schedule:
+    # Weekly baseline scan with no code change: new advisories and new scanner
+    # rules are tested against the unchanged tree.
+    - cron: "23 4 * * 1"
   workflow_dispatch:
     inputs:
       fail_on:
@@ -18,7 +22,7 @@ on:
         default: ""
 
 concurrency:
-  group: security-gate-${{ github.ref }}
+  group: security-gate-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 # contents: read   -> checkout only
@@ -48,6 +52,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Tags are mutable; a pinned SHA is a reviewable line. This check is
+      # offline (it only looks for full-SHA refs) and fails closed.
+      - name: Check actions are pinned
+        run: node ci/pin-actions.mjs .github/workflows/*.yml --check
 
       # Exit code is the verdict, so this step turns the check red on FAIL,
       # ERROR and SETUP without any extra glue.

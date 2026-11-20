@@ -9,6 +9,7 @@
 | Date | 2026-10-25 |
 | Owner | Portfolio owner (author) |
 | Status | Approved for v1 build — shared-understanding record of 2026-10-25 |
+| Repository | Public, MIT-licensed (owner decision 2026-11-20) |
 | Scope of this charter | The project and the product. Technology, authentication and deployment decisions are recorded in architecture decision records in [`docs/adr/`](adr/). |
 | Related documents | [`AGENTS.md`](../AGENTS.md), [`GLOSSARY.md`](../GLOSSARY.md), [`docs/data-model.md`](data-model.md), [`docs/agents/domain.md`](agents/domain.md), ADR-0001 (stack), ADR-0002 (authentication and deployment), ADR-0003 (funding and settlement), ADR-0004 (audit trail and administrator role) |
 
@@ -307,7 +308,7 @@ Milestone order is deliberate: the funding model comes before execution, and mul
 | R1 | Multi-year and carry-over rules are complex and easy to get wrong | High: incorrect budget figures | Rules are explicit and implemented as pure, property-tested domain functions; M4 is built after the single-year flow is stable and validated against the manual FY2026 close. |
 | R2 | Existing spreadsheets hold inconsistent or incomplete data | Medium: poor reports at launch | Manual entry for v1, validation rules on entry, opening balances are a signed-off one-time load; CSV import in a later phase. |
 | R3 | Team adoption | Medium: system becomes stale | Simple forms, one source of truth, quick entry, reports that remove manual consolidation. |
-| R4 | Financial data is sensitive | High: confidentiality | Private repository, account-based access, session security, audit trail, nightly backups; hosting decided before real data enters the app. |
+| R4 | Financial data is sensitive | High: confidentiality | The source repository is public (owner decision 2026-11-20) and contains no real data: sample fixtures are fictitious and the real FY2026 workbook stays off-repo. Production data is protected by account-based access, session security, the audit trail and nightly backups; hosting is decided before real data enters the app. |
 | R5 | Scope creep toward a full ERP/procurement suite | High: never ships | Explicit non-goals in section 4; milestone gate before each expansion. |
 | R6 | Governance expectations from directors and finance | Medium: reports not trusted | Audit trail, approval references, no hard deletes, clear capex/opex separation, exports. |
 | R7 | Capex and opex carry-over policies may differ across the organisation | Medium: wrong carry-over | Carry-over is per component and uses an approval reference, so policy can differ by component. |

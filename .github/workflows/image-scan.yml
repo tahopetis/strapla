@@ -1,0 +1,74 @@
+name: image-scan
+
+# Trivy CVE scan of the published container image, report-only in this first
+# iteration (exit-code 0 + SARIF to the Security tab). Promote to blocking once
+# the baseline has been triaged.
+#
+# The scan is triggered by the docker workflow's completion and resolves the
+# image from that run's head SHA, so it always scans the image that run actually
+# published (sha-<commit>). It never guesses :latest, which could be a stale
+# image while a new build is still running. A scheduled/manual run scans
+# :latest because there is no build to correlate with.
+
+on:
+  workflow_run:
+    workflows: ["docker"]
+    types: [completed]
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+
+concurrency:
+  group: image-scan-${{ github.event_name }}-${{ github.event.workflow_run.head_sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Trivy image scan (report-only)
+    # PR image builds are never pushed, so there is nothing to scan for them.
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image reference
+        id: image
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            short="${{ github.event.workflow_run.head_sha }}"
+            echo "ref=ghcr.io/${{ github.repository }}:sha-${short:0:7}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=ghcr.io/${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          exit-code: "0"
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
