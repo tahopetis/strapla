@@ -38,6 +38,10 @@ export function OpeningImportWizard({ closingFiscalYear }: { closingFiscalYear: 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const selected = DATA_SETS.find((option) => option.value === dataSet) ?? DATA_SETS[0];
+  // The template links are built from the declared option list, never from the
+  // select's DOM value, so a manipulated control cannot inject a URL here
+  // (CodeQL js/xss-through-dom).
+  const templateDataSet = selected?.value ?? 'strategic-initiatives';
   const stateDataSetLabel =
     state.status === 'valid' || state.status === 'invalid'
       ? (DATA_SETS.find((option) => option.value === state.dataSet)?.label ?? state.dataSet)
@@ -102,13 +106,13 @@ export function OpeningImportWizard({ closingFiscalYear }: { closingFiscalYear: 
         </p>
         <p className="mt-2 flex gap-4 text-sm font-medium">
           <a
-            href={`/plan/opening-balances/import/template?dataSet=${dataSet}&format=csv`}
+            href={`/plan/opening-balances/import/template?dataSet=${templateDataSet}&format=csv`}
             className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
           >
             CSV template
           </a>
           <a
-            href={`/plan/opening-balances/import/template?dataSet=${dataSet}&format=xlsx`}
+            href={`/plan/opening-balances/import/template?dataSet=${templateDataSet}&format=xlsx`}
             className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
           >
             XLSX template
