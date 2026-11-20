@@ -41,8 +41,9 @@ updates:
   #   schedule:
   #     interval: "weekly"
 
-  # Keep the scanners themselves current. The security gate runs pinned
-  # versions (ci/run-security.sh), so this keeps them from going stale.
+  # Keep the container base image current. The Dockerfile pins node:26-alpine by
+  # digest, so this is what turns an upstream rebuild into a reviewable PR
+  # (the image scan then decides whether it is safe to merge).
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

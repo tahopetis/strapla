@@ -44,11 +44,41 @@ The gate above is not the only check. Each workflow below has one job and one di
 | `security-gate` | gitleaks, osv-scanner, semgrep, Trivy config, one decider | **Blocking** at `medium` |
 | `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Required check** (the analysis must succeed); findings appear as alerts and do not fail the job |
 | `dependency-review` | the PR's own dependency and action changes (`fail-on-severity: high`) | **Blocking** (required check) |
-| `image-scan` | Trivy CVEs in the published container, triggered by the `docker` workflow's completion and weekly; SARIF to the Security tab | **Report-only** for now (`exit-code: 0`); promote once the baseline is triaged |
+| `image-scan` | Trivy CVEs in the container image: the PR build (linux/amd64, local) before merge, the `docker` run's published `sha-<commit>` image after it, and `:latest` weekly; SARIF to the Security tab at every severity | **Blocking** on CRITICAL/HIGH (required check) |
 | GitHub secret scanning | full repository history plus push protection | **Blocking** (push protection) |
 
-`image-scan` scans the exact image the `docker` run published (`sha-<commit>`) rather than
-`:latest`, so it can never analyse a stale image. On a scheduled or manual run it scans `:latest`.
+`image-scan` runs on **pull requests** as well. There it builds the image locally (`linux/amd64`,
+never pushed) because the `docker` workflow deliberately does not publish PR images — a check that
+only ran after a merge could not be required on a pull request. For a `docker` run it scans the exact
+image that run published (`sha-<commit>`) rather than `:latest`, so it can never analyse a stale image.
+A scheduled run scans `:latest`; a manual run scans `:latest` unless it passes the `image_ref` input.
+
+### Image scan policy
+
+The scan blocks on **CRITICAL and HIGH**. Two passes produce that:
+
+- **Record** — Trivy runs with `exit-code: 0` and no severity filter, so every severity reaches the
+  Security tab. An alert that is no longer reported by a later analysis closes as fixed.
+- **Decide** — Trivy runs scoped to `CRITICAL,HIGH` with `exit-code: 1`. That step is the verdict,
+  and on a red job its table in the log carries the detail (package, CVE, fixed version).
+
+The split exists because `trivy-action` ties `--severity` to both the report and the exit code: for
+SARIF output it unsets `--severity` unless `limit-severities-for-sarif` is set, so one pass cannot
+keep MEDIUM findings visible *and* fail only on HIGH ones. Do not collapse the two passes without
+accepting the loss of medium/low tracking — the first iteration of this workflow declared
+`severity: CRITICAL,HIGH` and still uploaded 23 MEDIUM and 1 LOW alert because of that coupling.
+
+`ignore-unfixed: false` in both passes: an unfixable CRITICAL/HIGH is still a CRITICAL/HIGH, and the
+gate must see it. Accepting one is an explicit, dated decision: add the id to a committed
+`.trivyignore.yaml` with a `statement` and an `expired_at`, and pass it to the **decide pass only**
+(`trivyignores: .trivyignore.yaml`) in the same PR. Trivy stops honouring an entry after `expired_at`,
+so the finding returns to the gate by itself; the record pass keeps scanning without the ignore file,
+so the alert stays in the Security tab while the waiver is active. No wildcard ids, no broad ignore
+files, and never `ignore-unfixed: true` as a way to go green.
+
+The gate is proven, not assumed: a manual run with
+`image_ref=ghcr.io/tahopetis/strapla:sha-fadc98d` (a deliberately pre-fix image) fails on its 6 HIGH
+findings, while the current image passes.
 
 GitHub's dependency alerts and automated security fixes are enabled as well; Dependabot PRs pass
 through the same gate.
@@ -91,8 +121,10 @@ subset is `SCANNERS=secrets`.
 1. Read the **last line** of the job log; it is the verdict. Download the `security-findings` artifact from the run (14 days) for the SARIF and per-scanner logs.
 2. `ERROR` / `SETUP` — fix what it names; the code is not on trial.
 3. `FAIL` — read `findings/summary.json` (counts, scanner, severity), then the SARIF for detail.
-4. For CodeQL, dependency review and image-scan findings, open the repository's **Security** tab; the
-   alert carries the rule, path and severity. The image scan is report-only, so it never blocks a merge.
+4. For CodeQL and dependency review findings, open the repository's **Security** tab; the alert
+   carries the rule, path and severity. For the image scan, the failing check is authoritative — its
+   `Fail on CRITICAL/HIGH` step prints the table (package, CVE, fixed version) — while the Security
+   tab holds the complete record at every severity.
 5. Waive only what has been read: add `scanner:rule:path`, a reason and an expiry to
    `ci/security-baseline.json`.
 
@@ -109,23 +141,34 @@ merge.
 ## Required status checks
 
 The repository is public, so branch protection on `main` is available on GitHub Free and is enabled
-with these required checks: `verify` (ci), `build` (docker), `security-gate`, `Dependency review`
-and `Analyze (javascript-typescript)` (CodeQL). A red or missing required check blocks the merge.
-`image-scan` is not required while it is report-only.
+with these required checks: `verify` (ci), `build` (docker), `security-gate`, `Dependency review`,
+`Analyze (javascript-typescript)` (CodeQL) and `Trivy image scan` (image-scan). A red or missing
+required check blocks the merge. Each of them runs on pull requests — that is the test for requiring
+a check at all; a check that only runs after the merge holds every PR open forever.
 
 ## Current state (November 2026)
 
 The repository is public and MIT-licensed; secret scanning and push protection are enabled. The
 security gate runs four scanners and reports **0 findings at any severity**, with one open waiver.
-The threshold is `medium`; the gate passes on its own merits rather than shadow mode. CodeQL and
-dependency review are required on pull requests; the image scan is report-only while its baseline is
-triaged.
+The threshold is `medium`; the gate passes on its own merits rather than shadow mode. CodeQL,
+dependency review and the image scan are required on pull requests.
 
 The first CodeQL analysis (20 November 2026) flagged two `js/xss-through-dom` warnings on the import
 wizard's template links. The links now take their `dataSet` from the declared option list instead of
-the select's DOM value, so the next analysis closes them. The report-only image scan of
-`sha-fadc98d` currently reports 30 CRITICAL/HIGH CVEs, mostly in npm's bundled tooling inside the
-base image; that is a triage backlog, not a merge gate yet.
+the select's DOM value, so the next analysis closes them.
+
+The image scan's first report (`sha-fadc98d`, 20 November 2026) opened **30 alerts: 6 HIGH, 23
+MEDIUM and 1 LOW**. All 30 were fixed rather than waived, and the image now reports **0 findings at
+any severity**:
+
+| Where | Findings | Fix |
+|---|---|---|
+| npm's bundled toolchain inside the image (undici, brace-expansion, glob, minimatch, ip-address, postcss-selector-parser) | 6 HIGH, 12 MEDIUM, 1 LOW | npm and pnpm are build-stage tools; the runtime stage removes them, and nothing in the container runs them |
+| Alpine packages in `node:26-alpine` (libcrypto3, libssl3 3.5.9-r0; zlib 1.3.2-r1) | 11 MEDIUM | `apk upgrade` for those three packages — the base tag was already at its newest digest (2026-11-11), so a digest bump could not have fixed them |
+
+Base-image changes now arrive as a reviewable diff (the `FROM` line is pinned by digest and
+Dependabot's docker ecosystem moves it), and a new CRITICAL/HIGH finding fails the check with its own
+table.
 
 On 17 November 2026 a new upstream advisory (CVE-2026-112366, picomatch ReDoS) arrived with no patched
 release published (GHSA-fc5q-39xc-vjpf: `first_patched_version` null). It is waived in
