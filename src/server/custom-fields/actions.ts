@@ -1,19 +1,22 @@
 'use server';
 
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
-import { getDb } from '@/db/client';
+import { and, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { getDb, type Db } from '@/db/client';
 import { customFieldValues, customFields, type CustomField } from '@/db/schema';
 import {
   customFieldCreateSchema,
   customFieldRemoveSchema,
+  customFieldRestoreSchema,
   customFieldUpdateSchema,
 } from '@/domain/inputs';
 import {
   customFieldEntityLabel,
+  customFieldRestoreConflictMessage,
   customFieldTypeLabel,
   deriveCustomFieldKey,
   parseCustomFieldValue,
   type CustomFieldEntityType,
+  type CustomFieldRestoreConflict,
   type CustomFieldType,
 } from '@/domain/custom-fields';
 import type { FormState } from '@/lib/form-state';
@@ -25,6 +28,7 @@ import {
   validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
+import type { ArchivedFieldRow } from './data';
 
 const PAGE = '/admin/custom-fields';
 
@@ -57,24 +61,92 @@ async function requireField(id: string): Promise<CustomField> {
   return row;
 }
 
+/** The archived mirror of requireField: only a field currently out of the registry can be restored. */
+async function requireArchivedField(id: string): Promise<ArchivedFieldRow> {
+  const rows = await getDb()
+    .select()
+    .from(customFields)
+    .where(and(eq(customFields.id, id), isNotNull(customFields.archivedAt)))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.archivedAt === null) {
+    throw new FormError('That archived custom field no longer exists.');
+  }
+  return { ...row, archivedAt: row.archivedAt };
+}
+
+/**
+ * Active fields of one entity that collide with a name (case-insensitive) or a
+ * key. One query serves both the duplicate guard on create/update and the named
+ * refusal on restore, so the two cannot disagree about what "taken" means.
+ */
+async function findActiveFieldConflicts(
+  executor: Pick<Db, 'select'>,
+  entityType: string,
+  match: { name?: string; key?: string; excludeId?: string },
+): Promise<CustomFieldRestoreConflict> {
+  const matches = [];
+  if (match.name !== undefined) {
+    matches.push(sql`lower(${customFields.name}) = lower(${match.name})`);
+  }
+  if (match.key !== undefined) matches.push(eq(customFields.key, match.key));
+  if (matches.length === 0) return {};
+
+  const conditions = [eq(customFields.entityType, entityType), isNull(customFields.archivedAt)];
+  if (match.excludeId) conditions.push(ne(customFields.id, match.excludeId));
+
+  const rows = await executor
+    .select({
+      name: customFields.name,
+      sameName:
+        match.name === undefined
+          ? sql<boolean>`false`
+          : sql<boolean>`lower(${customFields.name}) = lower(${match.name})`,
+      sameKey:
+        match.key === undefined
+          ? sql<boolean>`false`
+          : sql<boolean>`${customFields.key} = ${match.key}`,
+    })
+    .from(customFields)
+    .where(and(...conditions, or(...matches)));
+
+  const conflict: CustomFieldRestoreConflict = {};
+  for (const row of rows) {
+    if (row.sameName) conflict.sameName = row.name;
+    if (row.sameKey) conflict.sameKey = row.name;
+  }
+  return conflict;
+}
+
+/**
+ * A restore puts the archived name and key back into the active registry, where
+ * the partial unique indexes require both to be free. Checking first names the
+ * active field in the refusal instead of surfacing a constraint violation.
+ */
+async function assertRestoreIsFree(
+  executor: Pick<Db, 'select'>,
+  field: ArchivedFieldRow,
+): Promise<void> {
+  const conflict = await findActiveFieldConflicts(executor, field.entityType, {
+    name: field.name,
+    key: field.key,
+  });
+  const message = customFieldRestoreConflictMessage(
+    field,
+    conflict,
+    customFieldEntityLabel(field.entityType as CustomFieldEntityType),
+  );
+  if (message) throw new FormError(message);
+}
+
 /** Case-insensitive duplicate name check within one entity. */
 async function assertNameFree(
   entityType: string,
   name: string,
   excludeId?: string,
 ): Promise<void> {
-  const conditions = [
-    eq(customFields.entityType, entityType),
-    isNull(customFields.archivedAt),
-    sql`lower(${customFields.name}) = lower(${name})`,
-  ];
-  if (excludeId) conditions.push(ne(customFields.id, excludeId));
-  const duplicate = await getDb()
-    .select({ id: customFields.id })
-    .from(customFields)
-    .where(and(...conditions))
-    .limit(1);
-  if (duplicate.length > 0) {
+  const conflict = await findActiveFieldConflicts(getDb(), entityType, { name, excludeId });
+  if (conflict.sameName !== undefined) {
     throw new FormError(
       `The ${customFieldEntityLabel(entityType as CustomFieldEntityType)} already has a field called "${name}".`,
     );
@@ -262,6 +334,54 @@ async function removeCustomField(actorId: string, id: string, reason: string): P
   return archived;
 }
 
+/**
+ * Restores an archived field (#72). The definition returns to the active
+ * registry, so it shows again on forms, record panels, reports and exports;
+ * values are keyed by field id, so the recorded values appear with it. The
+ * update and its audit entry share one transaction, like every other mutation.
+ */
+async function restoreCustomField(
+  actorId: string,
+  input: { id: string; reason: string },
+): Promise<CustomField> {
+  const archived = await requireArchivedField(input.id);
+
+  let restored: CustomField | undefined;
+  await getDb().transaction(async (tx) => {
+    // The conflict check runs inside the transaction, against the registry the
+    // update is about to write to; the partial unique indexes stay the
+    // last-resort guard for a concurrent create that commits after this read.
+    await assertRestoreIsFree(tx, archived);
+    [restored] = await tx
+      .update(customFields)
+      .set({
+        archivedAt: null,
+        archivedReason: null,
+        updatedBy: actorId,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(customFields.id, archived.id), isNotNull(customFields.archivedAt)))
+      .returning();
+    if (!restored) throw new FormError('That archived custom field no longer exists.');
+
+    await recordAudit(tx, {
+      actorUserId: actorId,
+      action: 'custom_field_restore',
+      entityType: 'custom_field',
+      entityId: archived.id,
+      before: {
+        ...fieldSnapshot(archived),
+        archivedAt: archived.archivedAt.toISOString(),
+        archivedReason: archived.archivedReason,
+      },
+      after: { ...fieldSnapshot(restored), archivedAt: null, archivedReason: null },
+      reason: input.reason,
+    });
+  });
+  if (!restored) throw new FormError('That archived custom field no longer exists.');
+  return restored;
+}
+
 // ---------------------------------------------------------------- actions
 
 export async function createCustomFieldAction(previous: FormState, formData: FormData): Promise<FormState> {
@@ -304,4 +424,25 @@ export async function removeCustomFieldAction(previous: FormState, formData: For
     return failureState(previous, error, parsed.values);
   }
   finishWith(PAGE, `Custom field “${archived.name}” removed.`);
+}
+
+/**
+ * Restores an archived field, for issue #72. Values are keyed by field id, so
+ * they show again everywhere once the definition is active again.
+ */
+export async function restoreCustomFieldAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await actionUser();
+  const parsed = validateForm(previous, customFieldRestoreSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let restored: CustomField;
+  try {
+    restored = await restoreCustomField(actor.id, parsed.data);
+  } catch (error) {
+    return failureState(previous, error, parsed.values);
+  }
+  finishWith(PAGE, `Custom field “${restored.name}” restored.`);
 }

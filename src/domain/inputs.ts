@@ -441,6 +441,9 @@ export const customFieldUpdateSchema = customFieldCreateSchema.extend({
 
 export const customFieldRemoveSchema = z.object({ id: idSchema, reason: reasonSchema });
 
+export const customFieldRestoreSchema = z.object({ id: idSchema, reason: reasonSchema });
+
 export type CustomFieldCreateInput = z.infer<typeof customFieldCreateSchema>;
 export type CustomFieldUpdateInput = z.infer<typeof customFieldUpdateSchema>;
 export type CustomFieldRemoveInput = z.infer<typeof customFieldRemoveSchema>;
+export type CustomFieldRestoreInput = z.infer<typeof customFieldRestoreSchema>;

@@ -59,8 +59,8 @@ export default async function AdminPage() {
           actions={<Badge>metadata</Badge>}
         >
           <p className="text-sm text-slate-700">
-            An administrator adds, edits and removes the fields here; every change is audited. Values are
-            metadata and never change budgets, remaining amounts or flags.
+            An administrator adds, edits, removes and restores the fields here; every change is
+            audited. Values are metadata and never change budgets, remaining amounts or flags.
           </p>
           <p className="mt-4 text-sm">
             <Link href="/admin/custom-fields" className={linkClass}>

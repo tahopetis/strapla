@@ -3,6 +3,7 @@ import {
   carryOverAmountSchema,
   closeFiscalYearSchema,
   customFieldCreateSchema,
+  customFieldRestoreSchema,
   customFieldUpdateSchema,
 } from './inputs';
 
@@ -80,5 +81,16 @@ describe('custom field administration schemas', () => {
     expect(
       customFieldUpdateSchema.safeParse({ ...definition, id, reason: 'Tidy the registry' }).success,
     ).toBe(true);
+  });
+
+  it('requires a reason and a valid id when an archived field is restored', () => {
+    const id = '00000000-0000-4000-8000-000000000000';
+
+    expect(customFieldRestoreSchema.safeParse({ id, reason: '' }).success).toBe(false);
+    expect(customFieldRestoreSchema.safeParse({ id, reason: '   ' }).success).toBe(false);
+    expect(
+      customFieldRestoreSchema.safeParse({ id: 'archived-field', reason: 'Needed again.' }).success,
+    ).toBe(false);
+    expect(customFieldRestoreSchema.safeParse({ id, reason: 'Needed again.' }).success).toBe(true);
   });
 });
