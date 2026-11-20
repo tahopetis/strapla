@@ -59,6 +59,17 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.unroute('**/setup');
 
+  // W1a: activation lives in the page header's action group. Scoping to that
+  // group proves placement instead of finding a form anywhere on the page.
+  const pageHeaderActions = page.getByRole('group', { name: 'Page header actions' });
+
+  const activateFromHeader = async (buttonName: string, reason: string) => {
+    await expect(pageHeaderActions.getByText('draft', { exact: true })).toBeVisible();
+    const form = pageHeaderActions.locator('form');
+    await form.locator('textarea[name="reason"]').fill(reason);
+    await form.getByRole('button', { name: buttonName }).click();
+  };
+
   // W8a timing: first plan step starts after first-run setup (UAT-01 is not timed).
   const firstPlanStepStartedAt = performance.now();
   await page.goto('/plan/strategic');
@@ -69,11 +80,11 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Create plan' }).click();
   await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” created\./)).toBeVisible();
 
-  const activatePlan = page.locator('details').filter({ hasText: 'Activate plan' });
-  await activatePlan.locator('summary').click();
-  await activatePlan.locator('textarea[name="reason"]').fill('Approved by the directors.');
-  await activatePlan.getByRole('button', { name: 'Activate plan' }).click();
+  // W1a: the status and the activation form are in the page header, not a
+  // closed disclosure.
+  await activateFromHeader('Activate plan', 'Approved by the directors.');
   await expect(page.getByText(/Strategic plan “IT Strategic Plan 2026–2030” activated\./)).toBeVisible();
+  await expect(pageHeaderActions.getByText('active', { exact: true })).toBeVisible();
   endTiming('first-plan-step', firstPlanStepStartedAt);
 
   const initiativeForm = page
@@ -98,11 +109,16 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
-  const activateAnnualPlan = page.locator('details').filter({ hasText: 'Activate annual plan' });
-  await activateAnnualPlan.locator('summary').click();
-  await activateAnnualPlan.locator('textarea[name="reason"]').fill('FY2027 budget approved.');
-  await activateAnnualPlan.getByRole('button', { name: 'Activate annual plan' }).click();
+  // W1a: the annual plan activation is in the page header too.
+  await activateFromHeader('Activate annual plan', 'FY2027 budget approved.');
   await expect(page.getByText(/Annual plan FY2027 activated\./)).toBeVisible();
+
+  // W1a: the fiscal-year badge on the dashboard links to the annual plan page.
+  await page.goto('/dashboard');
+  const activeFiscalYear = page.getByRole('link', { name: 'FY2027 active annual plan' });
+  await expect(activeFiscalYear).toBeVisible();
+  await activeFiscalYear.click();
+  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
   const programForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
   await programForm.locator('input[name="code"]').fill('PRG-2027-001');
@@ -115,6 +131,21 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Add program' }).click();
   await expect(page.getByText(/Annual program PRG-2027-001 created\./)).toBeVisible();
   await expect(page.getByText('PRG-2027-001 · Workplace Modernisation 2027')).toBeVisible();
+
+  // W1a: the program page's fiscal-year badge links to the annual plan it names.
+  await page.getByRole('link', { name: 'Thread' }).first().click();
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: 'PRG-2027-001 · Workplace Modernisation 2027',
+    }),
+  ).toBeVisible();
+  const programFiscalYear = page.getByRole('link', {
+    name: 'FY2027 annual plan',
+    exact: true,
+  });
+  await expect(programFiscalYear).toBeVisible();
+  await expect(programFiscalYear).toHaveAttribute('href', /^\/plan\/annual\/[0-9a-f-]+$/);
 
   // ---------------------------------------------------------------- project
   await page.goto('/plan/projects');
@@ -185,6 +216,14 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(
     page.getByText('FY2027 · PRG-2027-001 · Workplace Modernisation 2027').first(),
   ).toBeVisible();
+
+  // W1a: the allocation card's fiscal-year badge links to the annual plan.
+  const allocationFiscalYear = page.getByRole('link', {
+    name: 'FY2027 annual plan',
+    exact: true,
+  });
+  await expect(allocationFiscalYear).toBeVisible();
+  await expect(allocationFiscalYear).toHaveAttribute('href', /^\/plan\/annual\/[0-9a-f-]+$/);
 
   // ---------------------------------------- commitments, spend and settlement (M3)
   await page.getByRole('link', { name: 'Open commitments & spend' }).first().click();
@@ -509,6 +548,15 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.goto('/admin/audit?entityType=user');
   await expect(page.locator('tbody').getByText('member_create').first()).toBeVisible();
   await expect(page.locator('tbody').getByText('member_deactivate').first()).toBeVisible();
+
+  // W1a: both activations record the unchanged status_change entry with its reason.
+  await page.goto('/admin/audit?entityType=strategic_plan');
+  await expect(page.locator('tbody').getByText('status_change').first()).toBeVisible();
+  await expect(page.locator('tbody').getByText('Approved by the directors.').first()).toBeVisible();
+
+  await page.goto('/admin/audit?entityType=annual_plan');
+  await expect(page.locator('tbody').getByText('status_change').first()).toBeVisible();
+  await expect(page.locator('tbody').getByText('FY2027 budget approved.').first()).toBeVisible();
 
   // ------------------------------------------------ full annual cycle (M4/M5)
   await page.goto('/plan/annual');

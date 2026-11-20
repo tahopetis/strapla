@@ -196,8 +196,9 @@ Each step needs the step above it.
 **Plan → Strategic plan & SIs**
 
 1. **Create plan**: enter the plan name and the start/end fiscal years (e.g. 2026–2030).
-2. Activate the plan: open **Manage / Activate plan**, enter a reason. Annual plans can only be
-   created once the strategic plan is active. Archiving the plan makes it read-only.
+2. For a draft plan, the status badge and the **Activate plan** form appear in the page header.
+   Enter a reason and click **Activate plan**. Annual plans can only be created once the strategic
+   plan is active. Archiving the plan makes it read-only.
 3. **Add initiative** for each SI:
    - **Code** (e.g. `SI-01`) and **name**;
    - **owner** and **objective** (optional text);
@@ -212,7 +213,9 @@ Each step needs the step above it.
 
 1. Select a fiscal year inside the horizon (a year can have only **one** annual plan) and create it
    as a draft.
-2. Open the plan and **Activate annual plan** with a reason when the budget is settled.
+2. For a draft plan, the **Activate annual plan** form is in the page header — enter a reason and
+   activate when the budget is settled. The fiscal-year badges on the dashboard, program pages and
+   annual-allocation cards link back to the annual plan they name.
 3. A plan can be closed only through the year-close workflow (§6). Closed years are read-only.
 4. Notes on the plan are free text and audited.
 

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PlanNav } from '@/components/plan-nav';
-import { Badge, Card, Money, PageHeader, StatusBadge } from '@/components/ui';
+import { AnnualPlanBadge, Badge, Card, Money, PageHeader, StatusBadge } from '@/components/ui';
 import { getProgramThread } from '@/server/plan/program-queries';
 
 export const dynamic = 'force-dynamic';
@@ -173,7 +173,11 @@ export default async function ProgramThreadPage({ params }: { params: Promise<{ 
         <Card
           title="Current program"
           description={`FY${current.annualPlan.fiscalYear} · ${current.si.code} · ${current.si.name}`}
-          actions={<Badge tone="info">FY{current.annualPlan.fiscalYear}</Badge>}
+          actions={
+            <AnnualPlanBadge annualPlanId={current.annualPlan.id} tone="info">
+              FY{current.annualPlan.fiscalYear}
+            </AnnualPlanBadge>
+          }
         >
           <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { formatRupiahSigned } from '@/domain/money';
 
@@ -30,7 +31,11 @@ export function PageHeader({
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description ? <div className="mt-1 text-sm text-slate-600">{description}</div> : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? (
+        <div role="group" aria-label="Page header actions" className="flex flex-wrap gap-2">
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -108,6 +113,34 @@ export function StatusBadge({ status }: { status: 'draft' | 'active' | 'archived
   const tone: Tone =
     status === 'active' ? 'success' : status === 'draft' ? 'info' : status === 'closed' ? 'neutral' : 'neutral';
   return <Badge tone={tone}>{status}</Badge>;
+}
+
+/**
+ * A fiscal-year badge that links to the annual plan page it names (W1a). The
+ * screen-reader text makes the destination explicit without lengthening the
+ * visible badge; hovering gives the same hint for sighted users.
+ */
+export function AnnualPlanBadge({
+  annualPlanId,
+  tone,
+  children,
+}: {
+  annualPlanId: string;
+  tone?: Tone;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      href={`/plan/annual/${annualPlanId}`}
+      title="Open the annual plan"
+      className="inline-flex rounded transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+    >
+      <Badge tone={tone}>
+        {children}
+        <span className="sr-only"> annual plan</span>
+      </Badge>
+    </Link>
+  );
 }
 
 export function Money({ value, className }: { value: number | null | undefined; className?: string }) {
