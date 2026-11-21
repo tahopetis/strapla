@@ -108,6 +108,7 @@ function queuedDb(results: unknown[][]) {
       const chain = {
         from: () => chain,
         innerJoin: () => chain,
+        leftJoin: () => chain,
         where: () => chain,
         limit: () => Promise.resolve(rows),
         then: (
@@ -442,6 +443,207 @@ describe('updateSpendAction component changes', () => {
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({ component: 'capex', vendor: 'PT Edits Vendor (revised)' }),
     );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining('message='));
+  });
+});
+
+describe('createSpendAction post-close treatment (#98)', () => {
+  /** The transaction executor for a successful create: the spend, then one settlement. */
+  function createExecutor(spend: Record<string, unknown>, settlement: Record<string, unknown>) {
+    const inserted: unknown[] = [];
+    const insert = vi.fn(() => ({
+      values: (values: unknown) => {
+        inserted.push(values);
+        return {
+          returning: () => Promise.resolve(inserted.length === 1 ? [spend] : [settlement]),
+        };
+      },
+    }));
+    return { transaction: { insert }, inserted };
+  }
+
+  const closedYearParent = () => {
+    const parent = allocationParent();
+    return parent;
+  };
+
+  function spendValues(extra: Record<string, string> = {}): FormData {
+    return spendForm({
+      allocationId: ALLOCATION_ID,
+      component: 'capex',
+      amount: '10000000',
+      spentOn: '2028-04-04',
+      settlementKind: 'current',
+      reference: 'POST-CLOSE-SP-1',
+      [`settle_${COMMITMENT_ID}`]: '6000000',
+      ...extra,
+    });
+  }
+
+  it('defaults a closed-year split to charging the current year and audits the treatment', async () => {
+    const { transaction, inserted } = createExecutor(
+      { ...spendRow({ id: SPEND_ID, amount: 10_000_000 }), postCloseTreatment: 'charge_current_year' },
+      { id: 'settlement-1' },
+    );
+    const database = queuedDb([
+      [closedYearParent()],
+      [commitmentRow()],
+      [{ projectId: PROJECT_ID, fiscalYear: 2027, planStatus: 'closed' }],
+      [{ amount: 0 }],
+    ]);
+    database.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(transaction),
+    );
+
+    await createSpendAction(INITIAL, spendValues());
+
+    expect(inserted[0]).toMatchObject({ postCloseTreatment: 'charge_current_year' });
+    const audit = mocks.recordAudit.mock.calls[0]?.[1] as { after?: Record<string, unknown> };
+    expect(audit.after?.postCloseTreatment).toBe('charge_current_year');
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining('message='));
+  });
+
+  it('stores the reserve treatment when the payment settles a closed-year commitment', async () => {
+    const { transaction, inserted } = createExecutor(
+      {
+        ...spendRow({ id: SPEND_ID, amount: 10_000_000 }),
+        postCloseTreatment: 'charge_closed_year_reserve',
+      },
+      { id: 'settlement-1' },
+    );
+    const database = queuedDb([
+      [closedYearParent()],
+      [commitmentRow()],
+      [{ projectId: PROJECT_ID, fiscalYear: 2027, planStatus: 'closed' }],
+      [{ amount: 0 }],
+    ]);
+    database.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(transaction),
+    );
+
+    await createSpendAction(INITIAL, spendValues({ postCloseTreatment: 'charge_closed_year_reserve' }));
+
+    expect(inserted[0]).toMatchObject({ postCloseTreatment: 'charge_closed_year_reserve' });
+    const audit = mocks.recordAudit.mock.calls[0]?.[1] as { after?: Record<string, unknown> };
+    expect(audit.after?.postCloseTreatment).toBe('charge_closed_year_reserve');
+  });
+
+  it('refuses a treatment when no split settles a closed-year commitment', async () => {
+    const database = queuedDb([
+      [closedYearParent()],
+      [commitmentRow()],
+      [{ projectId: PROJECT_ID, fiscalYear: 2028, planStatus: 'active' }],
+      [{ amount: 0 }],
+    ]);
+
+    const state = await createSpendAction(
+      INITIAL,
+      spendValues({ postCloseTreatment: 'charge_closed_year_reserve' }),
+    );
+
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'A post-close treatment only applies when the payment settles a commitment from a closed fiscal year.',
+    );
+    expect(database.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateSpendAction post-close treatment (#98)', () => {
+  function updateForm(treatment: string): FormData {
+    return spendForm({
+      id: SPEND_ID,
+      component: 'capex',
+      amount: '4000000',
+      spentOn: '2028-06-01',
+      settlementKind: 'current',
+      vendor: 'PT Edits Vendor',
+      reference: 'POST-CLOSE-SP-2',
+      postCloseTreatment: treatment,
+      reason: 'Corrected the post-close treatment.',
+    });
+  }
+
+  function updateExecutor(updated: Record<string, unknown>) {
+    const set = vi.fn(() => ({
+      where: () => ({ returning: () => Promise.resolve([updated]) }),
+    }));
+    const transaction = { update: vi.fn(() => ({ set })) };
+    return { transaction, set };
+  }
+
+  it('refuses to change the treatment once the spend has settlements', async () => {
+    const database = queuedDb([
+      [spendRow({ postCloseTreatment: 'charge_current_year' })],
+      [allocationParent()],
+      [{ amount: 4_000_000, commitmentPlanStatus: 'closed' }],
+    ]);
+
+    const state = await updateSpendAction(
+      INITIAL,
+      updateForm('charge_closed_year_reserve'),
+    );
+
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'Void the spend entry and re-enter it to change its post-close treatment.',
+    );
+    expect(database.transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unchanged treatment on a settled spend', async () => {
+    const updated = spendRow({ postCloseTreatment: 'charge_closed_year_reserve' });
+    const { transaction, set } = updateExecutor(updated);
+    const database = queuedDb([
+      [spendRow({ postCloseTreatment: 'charge_closed_year_reserve' })],
+      [allocationParent()],
+      [{ amount: 4_000_000, commitmentPlanStatus: 'closed' }],
+    ]);
+    database.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(transaction),
+    );
+
+    await updateSpendAction(INITIAL, updateForm('charge_closed_year_reserve'));
+
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ postCloseTreatment: 'charge_closed_year_reserve' }),
+    );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining('message='));
+  });
+});
+
+describe('updateSpendAction keeps same-year settlements out of the closed-year split (#98)', () => {
+  it('does not freeze the treatment for a same-year settlement of a since-closed plan', async () => {
+    const updated = spendRow({ postCloseTreatment: null });
+    const set = vi.fn(() => ({
+      where: () => ({ returning: () => Promise.resolve([updated]) }),
+    }));
+    const transaction = { update: vi.fn(() => ({ set })) };
+    const database = queuedDb([
+      [spendRow({ postCloseTreatment: null })],
+      [allocationParent()],
+      // the spend and its commitment are both FY2028; the plan closed later
+      [{ amount: 4_000_000, commitmentPlanStatus: 'closed', commitmentFiscalYear: 2028 }],
+    ]);
+    database.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
+      callback(transaction),
+    );
+
+    await updateSpendAction(
+      INITIAL,
+      spendForm({
+        id: SPEND_ID,
+        component: 'capex',
+        amount: '4000000',
+        spentOn: '2028-06-01',
+        settlementKind: 'current',
+        vendor: 'PT Edits Vendor',
+        reference: 'POST-CLOSE-SP-3',
+        reason: 'Corrected the vendor.',
+      }),
+    );
+
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ postCloseTreatment: null }));
     expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining('message='));
   });
 });

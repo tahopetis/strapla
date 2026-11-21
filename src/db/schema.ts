@@ -305,6 +305,7 @@ export type CommitmentEntry = typeof commitmentEntries.$inferSelect;
 export type SpendEntry = typeof spendEntries.$inferSelect;
 export type CommitmentSettlement = typeof commitmentSettlements.$inferSelect;
 export type SettlementKind = (typeof settlementKind.enumValues)[number];
+export type PostCloseTreatment = (typeof postCloseTreatment.enumValues)[number];
 export type CarryOverEntry = typeof carryOverEntries.$inferSelect;
 export type CarryOverEntityType = (typeof carryOverEntityType.enumValues)[number];
 export type PlanComponent = (typeof component.enumValues)[number];
@@ -350,6 +351,18 @@ export const projectYearAllocations = pgTable(
 // ---------------------------------------------------------------- execution (M3)
 
 export const settlementKind = pgEnum('settlement_kind', ['current', 'prior_year_opening']);
+
+/**
+ * The per-transaction treatment of a split that settles a commitment from a
+ * closed annual plan (issue #98, ADR-0003 §4a). Null when no closed-year split
+ * is in play. `charge_current_year` counts the closed-year portion as
+ * current-year spend; `charge_closed_year_reserve` leaves it in the closed year
+ * and reports it as a prior-year settlement / post-close reserve.
+ */
+export const postCloseTreatment = pgEnum('post_close_treatment', [
+  'charge_current_year',
+  'charge_closed_year_reserve',
+]);
 
 export const commitmentEntries = pgTable(
   'commitment_entries',
@@ -404,6 +417,7 @@ export const spendEntries = pgTable(
     reference: text('reference'),
     description: text('description'),
     settlementKind: settlementKind('settlement_kind').notNull().default('current'),
+    postCloseTreatment: postCloseTreatment('post_close_treatment'),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedReason: text('voided_reason'),
     createdBy: uuid('created_by').references(() => users.id),

@@ -33,7 +33,12 @@ import {
   type SpendUpdateInput,
 } from '@/domain/inputs';
 import { formatRupiah, parseRupiah } from '@/domain/money';
-import { validateSettlementSplits } from '@/domain/settlement';
+import {
+  SettlementError,
+  postCloseTreatmentFor,
+  validateSettlementSplits,
+  type PostCloseTreatment,
+} from '@/domain/settlement';
 import { invalidFormState, type FormState } from '@/lib/form-state';
 import {
   FormError,
@@ -169,6 +174,7 @@ function spendSnapshot(spend: SpendEntry): Record<string, unknown> {
     reference: spend.reference,
     description: spend.description,
     settlementKind: spend.settlementKind,
+    postCloseTreatment: spend.postCloseTreatment,
     voidedAt: spend.voidedAt?.toISOString() ?? null,
   };
 }
@@ -397,18 +403,23 @@ async function createSpend(
   requireEditable(context);
   requireComponentAllowed(context, input.component);
 
-  if (context.annualPlan.status === 'closed' && splits.length === 0 && input.settlementKind !== 'prior_year_opening') {
-    throw new FormError(
-      'This fiscal year is closed: only spend entries settling existing commitments can be recorded.',
-    );
-  }
+  // A closed plan never accepts a new spend entry directly (#98): the payment is
+  // recorded in the open year and settles a commitment from the closed year, so
+  // the treatment below decides which year the closed-year portion counts in.
   if (input.settlementKind === 'prior_year_opening' && splits.length > 0) {
     throw new FormError('A prior-year opening payment cannot settle an in-app commitment.');
   }
 
   const commitments = new Map<
     string,
-    { amount: number; settled: number; component: 'capex' | 'opex'; fiscalYear: number }
+    {
+      amount: number;
+      settled: number;
+      component: 'capex' | 'opex';
+      fiscalYear: number;
+      /** The commitment's annual plan status; only `closed` needs a treatment. */
+      planStatus: AnnualPlan['status'];
+    }
   >();
   for (const split of splits) {
     const commitmentRows = await getDb()
@@ -421,9 +432,14 @@ async function createSpend(
     if (commitment.voidedAt) throw new FormError('A selected commitment entry is voided.');
 
     let commitmentFiscalYear = 0;
+    let commitmentPlanStatus: AnnualPlan['status'] = 'active';
     if (commitment.projectYearAllocationId) {
       const allocationRows = await getDb()
-        .select({ projectId: projectYearAllocations.projectId, fiscalYear: annualPlans.fiscalYear })
+        .select({
+          projectId: projectYearAllocations.projectId,
+          fiscalYear: annualPlans.fiscalYear,
+          planStatus: annualPlans.status,
+        })
         .from(projectYearAllocations)
         .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
         .where(eq(projectYearAllocations.id, commitment.projectYearAllocationId))
@@ -434,9 +450,14 @@ async function createSpend(
         throw new FormError('A settlement must belong to the same project as the spend entry.');
       }
       commitmentFiscalYear = allocation.fiscalYear;
+      commitmentPlanStatus = allocation.planStatus;
     } else {
       const itemRows = await getDb()
-        .select({ itemId: recurringOpsItems.id, fiscalYear: annualPlans.fiscalYear })
+        .select({
+          itemId: recurringOpsItems.id,
+          fiscalYear: annualPlans.fiscalYear,
+          planStatus: annualPlans.status,
+        })
         .from(recurringOpsItems)
         .innerJoin(annualPlans, eq(recurringOpsItems.annualPlanId, annualPlans.id))
         .where(eq(recurringOpsItems.id, commitment.recurringOpsItemId ?? ''))
@@ -447,6 +468,7 @@ async function createSpend(
         throw new FormError('A settlement must belong to the same recurring ops item as the spend entry.');
       }
       commitmentFiscalYear = item.fiscalYear;
+      commitmentPlanStatus = item.planStatus;
     }
 
     if (commitment.component !== input.component) {
@@ -460,7 +482,28 @@ async function createSpend(
       settled: await settledAmount(split.commitmentId),
       component: commitment.component,
       fiscalYear: commitmentFiscalYear,
+      planStatus: commitmentPlanStatus,
     });
+  }
+
+  // The treatment applies only to splits that settle a commitment from a closed
+  // annual plan (#98); open-year splits are always current-year.
+  const closedYearSettled = splits.reduce((sum, split) => {
+    const commitment = commitments.get(split.commitmentId);
+    return commitment?.planStatus === 'closed' &&
+      commitment.fiscalYear < context.fiscalYear
+      ? sum + split.amount
+      : sum;
+  }, 0);
+  let postCloseTreatment: PostCloseTreatment | null;
+  try {
+    postCloseTreatment = postCloseTreatmentFor({
+      closedYearSettled,
+      requested: input.postCloseTreatment ?? null,
+    });
+  } catch (error) {
+    if (error instanceof SettlementError) throw new FormError(error.message);
+    throw error;
   }
 
   const validationSplits = splits.map((split) => {
@@ -500,6 +543,7 @@ async function createSpend(
         reference: input.reference,
         description: input.description,
         settlementKind: input.settlementKind,
+        postCloseTreatment,
         createdBy: actorId,
         updatedBy: actorId,
       })
@@ -557,8 +601,18 @@ async function updateSpend(
   requireComponentAllowed(context, input.component);
 
   const settlements = await getDb()
-    .select({ amount: commitmentSettlements.amount })
+    .select({
+      amount: commitmentSettlements.amount,
+      commitmentPlanStatus: annualPlans.status,
+      commitmentFiscalYear: annualPlans.fiscalYear,
+    })
     .from(commitmentSettlements)
+    .innerJoin(commitmentEntries, eq(commitmentSettlements.commitmentEntryId, commitmentEntries.id))
+    .leftJoin(
+      projectYearAllocations,
+      eq(commitmentEntries.projectYearAllocationId, projectYearAllocations.id),
+    )
+    .leftJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
     .where(eq(commitmentSettlements.spendEntryId, spend.id));
   const totalSettled = settlements.reduce((sum, row) => sum + row.amount, 0);
   if (input.amount < totalSettled) {
@@ -571,6 +625,31 @@ async function updateSpend(
   }
   if (input.settlementKind !== spend.settlementKind && totalSettled > 0) {
     throw new FormError('Void the spend entry and re-enter it to change its settlement classification.');
+  }
+  // The treatment decides which year a closed-year portion counts in, so the
+  // settlements freeze it just like the component and the classification (#98).
+  // Only a commitment from an earlier, closed year is a closed-year split; a
+  // same-year settlement of a plan that closed later stays current-year money.
+  const closedYearSettled = settlements.reduce(
+    (sum, row) =>
+      row.commitmentPlanStatus === 'closed' &&
+      (row.commitmentFiscalYear ?? 0) < context.fiscalYear
+        ? sum + row.amount
+        : sum,
+    0,
+  );
+  let postCloseTreatment: PostCloseTreatment | null;
+  try {
+    postCloseTreatment = postCloseTreatmentFor({
+      closedYearSettled,
+      requested: input.postCloseTreatment ?? null,
+    });
+  } catch (error) {
+    if (error instanceof SettlementError) throw new FormError(error.message);
+    throw error;
+  }
+  if (totalSettled > 0 && postCloseTreatment !== (spend.postCloseTreatment ?? null)) {
+    throw new FormError('Void the spend entry and re-enter it to change its post-close treatment.');
   }
 
   let updated: SpendEntry | undefined;
@@ -587,6 +666,7 @@ async function updateSpend(
         reference: input.reference,
         description: input.description,
         settlementKind: input.settlementKind,
+        postCloseTreatment,
         updatedBy: actorId,
         updatedAt: new Date(),
       })

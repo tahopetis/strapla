@@ -61,8 +61,8 @@ A full run is about two minutes of test execution (50 tests) and four to five mi
 | `auth.spec.ts` | T2 | Sign-in, wrong password, deactivated member, minted session for a deactivated member, sign-out, `/setup` after the first account. |
 | `voids.spec.ts` | T2 | Void/cancel for SI, program, project, allocation, commitment, spend and recurring ops — with reasons, refusals and audit rows. |
 | `edits.spec.ts` | T2 | Program, recurring-ops, allocation, commitment and spend edits, including the settled/frozen guards (component and settlement classification). |
-| `execution.spec.ts` | T2 | Commitment → spend → settlement lifecycle, open/partially settled/settled, remaining arithmetic, over-settlement refusing inline on the settlement field, prior-year opening settlement, and cross-year settlement (an FY2029 spend settling an FY2028 commitment). |
-| `closed-year.spec.ts` | T2 | Every closed-year refusal and hidden form. The allocation-update and recurring-ops-void guards are proven by action-level unit tests; #98 is the one remaining linked server gap. |
+| `execution.spec.ts` | T2 | Commitment → spend → settlement lifecycle, open/partially settled/settled, remaining arithmetic, over-settlement refusing inline on the settlement field, prior-year opening settlement, cross-year settlement (an FY2029 spend settling an FY2028 commitment), and post-close settlement under both treatments (charge to the current year, or a closed-year reserve). |
+| `closed-year.spec.ts` | T2 | Every closed-year refusal and hidden form, plus the write-surface split for a post-close payment (the closed allocation has no spend form; the open-year allocation offers the closed-year commitment). The allocation-update and recurring-ops-void guards are proven by action-level unit tests. |
 | `close.spec.ts` | T2 | Close preconditions: missing next-year plan, typed confirmation, carry-over preview. |
 | `opening-balances.spec.ts` | T2 | Signed-off read-only view, CSV/XLSX templates for all three data sets, and the import gate after the close (the import always targets the first in-app year, which the foundation closes — so the XLSX round-trip lives in the foundation, before the close). |
 | `admin.spec.ts` | T2 | Member lifecycle (create, activate/deactivate, reset password, revoke sessions), self/last-admin protections, audit search and CSV. |
@@ -73,11 +73,9 @@ A full run is about two minutes of test execution (50 tests) and four to five mi
 
 ## Known gaps
 
-These are tracked as issues, not silently missing tests:
+No known gaps are currently tracked.
 
-- [#98](https://github.com/tahopetis/strapla/issues/98) — post-close settlement has no reachable path: the spend-create closed-year branch is dead code behind an earlier editability guard. It is the one remaining linked server gap and is filed as a ready-for-human feature decision.
-
-The earlier gaps here — the allocation-update and recurring-ops-void closed-year guards (#96, #97), the uncaught over-settlement (#99), the ignored Component field (#100), the project page's commitment figure (#101) and the malformed-id 500 (#103) — are fixed and now pinned by tests: action-level unit tests for the two server guards, and regression specs for the inline settlement refusal, the component freeze, the project page and register agreeing on BR-8, and the styled 404 for malformed ids.
+The gaps that used to live here are all fixed and pinned by tests: the allocation-update and recurring-ops-void closed-year guards (#96, #97), the uncaught over-settlement (#99), the ignored Component field (#100), the project page's commitment figure (#101) and the malformed-id 500 (#103). Post-close settlement (#98) is now a feature: the spend form chooses per transaction whether a closed-year portion is charged to the current year or kept as a closed-year reserve, with the reserve reported separately and never mixed into the locked close snapshot.
 
 Two other findings worth knowing when reading the suite:
 

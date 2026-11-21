@@ -179,6 +179,12 @@ test('renders all four reports with the live portfolio figures @t2', async ({ pa
   await expect(
     page.getByRole('columnheader', { name: 'Prior-year openings', exact: true }),
   ).toBeVisible();
+  // #98: the closed year's post-close adjustments are a separately labelled block,
+  // never a change to the existing columns above
+  await expect(
+    page.getByRole('heading', { name: 'Post-close adjustments (reserve)' }),
+  ).toBeVisible();
+  await expect(page.getByText(/outside the locked close snapshot/)).toBeVisible();
   const actualRow = page.locator('tbody tr').filter({ hasText: 'SI-01 · PRG-2027-001' });
   await expect(actualRow).toContainText(rp(1_200_000_000));
   await expect(actualRow).toContainText(rp(500_000_000));
@@ -219,6 +225,12 @@ test('exports every report as CSV and XLSX with the live rows @t2', async ({ pag
     'Fiscal year,SI,Program,Capex budget available,Opex budget available,Capex allocated',
   );
   expect(actualCsv).toContain('2027,SI-01,PRG-2027-001 · Workplace Modernisation 2027,1200000000');
+
+  // #98: the post-close adjustments are their own export table, not extra columns
+  expect(actualCsv).toContain('Post-close adjustments');
+  expect(actualCsv).toContain(
+    'Commitment fiscal year,SI,Program,Program name,Capex reserve,Opex reserve,Total reserve',
+  );
 
   // ----------------------------------------------------------------- XLSX
   const siWorkbook = await fetchWorkbook(page.request, '/reports/export/si-five-year?format=xlsx');
@@ -272,6 +284,9 @@ test('exports every report as CSV and XLSX with the live rows @t2', async ({ pag
     '/reports/export/budget-vs-actual?format=xlsx',
   );
   expect(actualWorkbook.worksheets.map((sheet) => sheet.name)).toContain('Budget versus actual');
+  // #98: the closed year's adjustments ship as a separate worksheet
+  expect(actualWorkbook.worksheets.map((sheet) => sheet.name)).toContain('Post-close adjustments');
+  expect(sheetRows(actualWorkbook, 'Post-close adjustments')[0]?.[0]).toBe('Commitment fiscal year');
   expect(sheetRows(actualWorkbook, 'Budget versus actual')[0]?.[0]).toBe('Fiscal year');
   const actualXlsxRow = expectRow(
     findRow(

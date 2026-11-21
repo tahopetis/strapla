@@ -356,6 +356,13 @@ const spendFields = z.object({
   reference: optionalText(120),
   description: optionalText(),
   settlementKind: z.enum(['current', 'prior_year_opening']),
+  /**
+   * The per-transaction treatment of a split that settles a commitment from a
+   * closed annual plan (#98). Absent unless such a split exists; the form only
+   * submits it when a closed-year commitment is in play, and the server
+   * resolves the default (charge the current year).
+   */
+  postCloseTreatment: z.enum(['charge_current_year', 'charge_closed_year_reserve']).optional(),
   allocationId: optionalUuid,
   recurringOpsItemId: optionalUuid,
 });

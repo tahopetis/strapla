@@ -9,10 +9,10 @@ import { rp } from './support/money';
  * browser can still reach (a project created under a closed-year program), and
  * the closed-year summary on the close page so the year cannot be closed twice.
  *
- * One known server gap is recorded as `test.fixme`: the UI hides the
- * affordance, so a browser can only assert the visible lock. It is tracked at
- *   #98 dead post-close spend branch
- * and the missing guard needs an action-level test, not a faked browser path.
+ * Post-close settlement (#98) is implemented: a closed allocation stays
+ * read-only, while an open-year payment settles a commitment from the closed
+ * year. This file pins that write-surface split; the full treatment proof is
+ * in execution.spec.ts.
  * The #96 (allocation update) and #97 (recurring-ops void) closed-year guards are
  * proven by action-level tests in
  *   src/server/plan/allocation-actions.test.ts
@@ -191,21 +191,42 @@ test('refuses a recurring-ops void in a closed year on the server (#97) @t2', as
   await expect(page.locator('main form')).toHaveCount(0);
 });
 
-// #98 (https://github.com/tahopetis/strapla/issues/98): the post-close branch in
-// createSpend ("only spend entries settling existing commitments can be
-// recorded") is unreachable because requireEditable() throws first. Both paths
-// refuse, so the browser can only assert that a closed allocation offers no
-// spend form; the dead branch needs an action-level test.
-test.fixme('refuses a post-close spend on a closed allocation (#98) @t2', async ({ page }) => {
+// #98 (https://github.com/tahopetis/strapla/issues/98): a closed allocation
+// stays read-only; the payment is recorded in the open year and settles the
+// closed-year commitment from there. The full feature proof (both treatments,
+// mixed transactions, freeze, void and the closed-year report line) lives in
+// execution.spec.ts; this pins only the write-surface split.
+test('settles a closed-year commitment from the open year, not on the closed allocation (#98) @t2', async ({
+  page,
+}) => {
+  // no spend form on the closed FY2027 allocation
   await page.goto('/plan/projects');
   await page
-    .locator('tbody tr', { hasText: 'Device Refresh 2027' })
+    .locator('tbody tr', { hasText: 'Post-close settlement project' })
     .getByRole('link', { name: 'Open' })
     .click();
-  await page.getByRole('link', { name: 'Open commitments & spend' }).first().click();
   await expect(
-    page.getByRole('heading', { name: `FY${CLOSED_YEAR} allocation · PRG-2027-001` }),
+    page.getByRole('heading', { name: 'PC-SETTLE-PRJ-1 · Post-close settlement project' }),
+  ).toBeVisible();
+  const closedCard = page.locator('section').filter({ hasText: 'FY2027 · POST-CLOSE-PRG-27' });
+  await closedCard.getByRole('link', { name: 'Open commitments & spend' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'FY2027 allocation · POST-CLOSE-PRG-27' }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Record spend' })).toHaveCount(0);
   await expect(page.locator('main form')).toHaveCount(0);
+
+  // the open FY2028 allocation offers the closed-year commitment, marked as such
+  await page.goto('/plan/projects');
+  await page
+    .locator('tbody tr', { hasText: 'Post-close settlement project' })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  const openCard = page
+    .locator('section')
+    .filter({ hasText: 'FY2028 · PRG-2028-001 · Workplace Modernisation 2028' });
+  await openCard.getByRole('link', { name: 'Open commitments & spend' }).click();
+  await expect(
+    page.getByText(/CLOSED YEAR · CAPEX · FY2027 · .*POST-CLOSE-PO-27/),
+  ).toBeVisible();
 });
