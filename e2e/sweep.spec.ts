@@ -41,7 +41,9 @@ test('sweeps the planning routes with real portfolio data @t3', async ({ page })
   await expect(page.getByRole('heading', { name: 'Plan details' })).toBeVisible();
 
   await page.goto('/plan/annual');
-  await expect(page.getByRole('heading', { name: 'Annual plans', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Annual plans', exact: true, level: 1 }),
+  ).toBeVisible();
   await expect(page.locator('tbody tr', { hasText: 'FY2027' }).getByText('closed')).toBeVisible();
   await expect(page.locator('tbody tr', { hasText: 'FY2028' })).toBeVisible();
 

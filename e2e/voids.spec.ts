@@ -322,6 +322,7 @@ test('refuses to void a commitment with settlements and voids an unsettled one @
 
   const settledRow = page.locator('tbody tr', { hasText: 'VOID-PO-1' });
   await expect(settledRow.getByText('partially settled')).toBeVisible();
+  await settledRow.locator('summary', { hasText: 'Manage' }).click();
   await settledRow.getByRole('button', { name: 'Void commitment' }).click();
   const refused = settledRow.getByRole('dialog');
   await refused.locator('textarea[name="reason"]').fill('Should be refused.');
@@ -366,6 +367,7 @@ test('voids a spend and releases the commitment it settled @t2', async ({ page }
   // voidSpend; docs/USER-GUIDE.md §4.2 "Voiding a spend ... releases its
   // settlements"). There is no settlement guard on this path to assert.
   const spendRow = page.locator('tbody tr', { hasText: 'VOID-SP-1' });
+  await spendRow.locator('summary', { hasText: 'Manage' }).click();
   await spendRow.getByRole('button', { name: 'Void spend' }).click();
   const dialog = spendRow.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Void this spend entry?' })).toBeVisible();

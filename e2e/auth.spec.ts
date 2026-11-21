@@ -35,7 +35,9 @@ test('rejects a wrong password without signing in @t2', async ({ page }) => {
   await page.locator('input[name="password"]').fill('not the right password');
   await page.getByRole('button', { name: 'Sign in' }).click();
 
-  await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Email or password is incorrect.' }),
+  ).toHaveText('Email or password is incorrect.');
   await expect(page).toHaveURL(/\/login$/);
   // Still signed out: the protected shell sends the visitor back to sign-in.
   await page.goto('/dashboard');
@@ -55,7 +57,9 @@ test('refuses a deactivated member at the form @t2', async ({ page }) => {
   await page.locator('input[name="password"]').fill(member.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
-  await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Email or password is incorrect.' }),
+  ).toHaveText('Email or password is incorrect.');
   await expect(page).toHaveURL(/\/login$/);
 });
 

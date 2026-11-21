@@ -147,9 +147,9 @@ test('refuses a project created under a closed-year program @t2', async ({ page 
   await form.locator('input[name="allocatedBudgetFullLife"]').fill('1000000');
   await page.getByRole('button', { name: 'Create project' }).click();
 
-  await expect(page.getByRole('alert')).toContainText(
-    'The originating fiscal year is closed and read-only.',
-  );
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'The originating fiscal year is closed and read-only.' }),
+  ).toContainText('The originating fiscal year is closed and read-only.');
   // the refused form keeps what was typed and nothing was created
   await expect(page.locator('input[name="name"]')).toHaveValue('Closed year project attempt');
   await expect(page.locator('tbody tr', { hasText: 'Closed year project attempt' })).toHaveCount(0);

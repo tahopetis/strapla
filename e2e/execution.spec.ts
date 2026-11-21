@@ -298,7 +298,7 @@ test('records a prior-year opening payment without moving the remaining budget @
   await page.getByRole('button', { name: 'Record spend' }).click();
   await expectSpendFlash(page, 'EXEC-SP-4');
 
-  await expect(page.locator('tbody tr', { hasText: 'EXEC-SP-4' }).getByText('prior-year opening')).toBeVisible();
+  await expect(page.locator('tbody tr', { hasText: 'EXEC-SP-4' }).getByText('prior-year opening', { exact: true })).toBeVisible();
   await expect(summary('Capex spend this year')).toHaveText(rp(0));
   await expect(summary('Capex remaining')).toHaveText(rp(15000000));
   const priorYearRow = page
@@ -431,7 +431,7 @@ test('settles an FY2028 commitment from FY2029 without moving either year @t2', 
   await expectSpendFlash(page, 'XYS-SP-1');
 
   // classified cross-year, and the primary/excluded portion does not reduce FY2029
-  await expect(page.getByText('cross-year settlement')).toBeVisible();
+  await expect(page.getByText('cross-year settlement', { exact: true })).toBeVisible();
   await expect(
     page
       .locator('tbody tr', { hasText: 'XYS-SP-1' })

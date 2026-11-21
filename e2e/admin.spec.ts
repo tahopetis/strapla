@@ -98,9 +98,14 @@ test('manages a member through create, deactivate, activate, password reset and 
   await expect(page.getByRole('status')).toContainText(`Password reset for ${MEMBER.email}.`);
 
   // The new password signs in from a signed-out context.
-  const memberContext = await browser.newContext({ baseURL: baseURL() });
+  const memberContext = await browser.newContext({
+    baseURL: baseURL(),
+    storageState: { cookies: [], origins: [] },
+  });
   const memberPage = await memberContext.newPage();
-  await memberPage.goto('/login');
+  await memberPage.goto('/login', { waitUntil: 'domcontentloaded' });
+  await expect(memberPage).toHaveURL(/\/login$/);
+  await expect(memberPage.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
   await memberPage.locator('input[name="email"]').fill(MEMBER.email);
   await memberPage.locator('input[name="password"]').fill(MEMBER.newPassword);
   await memberPage.getByRole('button', { name: 'Sign in' }).click();
