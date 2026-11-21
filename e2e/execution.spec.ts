@@ -472,12 +472,12 @@ test('settles a closed-year commitment from the open year under both post-close 
   page,
 }) => {
   // Post-close settlement (#98, ADR-0003 §4a): the foundation created
-  // POST-CLOSE-PRJ-1 with a closed FY2027 allocation (commitment 30,000,000)
+  // PC-SETTLE-PRJ-1 with a closed FY2027 allocation (commitment 30,000,000)
   // and an open FY2028 allocation (70,000,000). Both treatments are proved on
   // the open allocation, including the mixed transaction, the frozen
   // treatment, the void reversal and the closed year's post-close adjustment.
   test.setTimeout(240_000);
-  const project = { code: 'POST-CLOSE-PRJ-1', name: 'Post-close settlement project' };
+  const project = { code: 'PC-SETTLE-PRJ-1', name: 'Post-close settlement project' };
   const closedProgram = { code: 'POST-CLOSE-PRG-27', name: 'Post-close settlement programme' };
   const openProgram = { code: 'PRG-2028-001', name: 'Workplace Modernisation 2028' };
   const summary = (label: string) => cardValue(page, 'Allocation and execution', label);
@@ -641,8 +641,9 @@ test('settles a closed-year commitment from the open year under both post-close 
     .locator('tbody tr')
     .filter({ hasText: 'Verified the post-close treatment.' });
   await treatmentAuditRow.getByText('Show values').click();
+  // The row carries before and after snapshots; the stored value is in both.
   await expect(
-    treatmentAuditRow.locator('pre', { hasText: 'charge_closed_year_reserve' }),
+    treatmentAuditRow.locator('pre', { hasText: 'charge_closed_year_reserve' }).first(),
   ).toBeVisible();
 
   await page.goto(allocationUrl);

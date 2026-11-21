@@ -305,7 +305,7 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
     .selectOption({
       label: 'POST-CLOSE-PRG-27 · Post-close settlement programme (FY2027, SI-01)',
     });
-  await postCloseProjectForm.locator('input[name="code"]').fill('POST-CLOSE-PRJ-1');
+  await postCloseProjectForm.locator('input[name="code"]').fill('PC-SETTLE-PRJ-1');
   await postCloseProjectForm.locator('input[name="name"]').fill('Post-close settlement project');
   await postCloseProjectForm.locator('input[name="owner"]').fill('IT Infrastructure Lead');
   await postCloseProjectForm.locator('input[name="startFiscalYear"]').fill('2027');
@@ -314,14 +314,14 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
     .locator('input[name="allocatedBudgetFullLife"]')
     .fill('150000000');
   await page.getByRole('button', { name: 'Create project' }).click();
-  await expect(page.getByText(/Project POST-CLOSE-PRJ-1 created\./)).toBeVisible();
+  await expect(page.getByText(/Project PC-SETTLE-PRJ-1 created\./)).toBeVisible();
 
   await page
     .locator('tbody tr', { hasText: 'Post-close settlement project' })
     .getByRole('link', { name: 'Open' })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'POST-CLOSE-PRJ-1 · Post-close settlement project' }),
+    page.getByRole('heading', { name: 'PC-SETTLE-PRJ-1 · Post-close settlement project' }),
   ).toBeVisible();
   const postCloseAllocationForm = page
     .locator('form')

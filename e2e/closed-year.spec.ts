@@ -206,7 +206,7 @@ test('settles a closed-year commitment from the open year, not on the closed all
     .getByRole('link', { name: 'Open' })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'POST-CLOSE-PRJ-1 · Post-close settlement project' }),
+    page.getByRole('heading', { name: 'PC-SETTLE-PRJ-1 · Post-close settlement project' }),
   ).toBeVisible();
   const closedCard = page.locator('section').filter({ hasText: 'FY2027 · POST-CLOSE-PRG-27' });
   await closedCard.getByRole('link', { name: 'Open commitments & spend' }).click();
