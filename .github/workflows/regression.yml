@@ -16,9 +16,6 @@ name: regression
 # `grep` is an advanced filter: it applies to the foundation too, so narrowing it
 # away starves the later tiers of data. Prefer `tier`.
 on:
-  # TEMPORARY bring-up trigger for this pull request only. Removed before merge:
-  # the workflow is dispatch-only by design.
-  pull_request:
   workflow_dispatch:
     inputs:
       tier:

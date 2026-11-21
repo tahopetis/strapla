@@ -49,6 +49,8 @@ The database must have **no users**: the journey starts at `/setup`, which the a
 
 The tiers are Playwright projects: `t2` and `t3` depend on `foundation`, so they run it first and reuse its `storageState` (`e2e/.auth/admin.json`, gitignored). A broken foundation skips the later tiers — which is correct: if the plan cannot be built, nothing downstream is meaningful.
 
+A full run is about two minutes of test execution (50 tests) and four to five minutes for the whole job including install, build, migrate and browser download on a cold runner.
+
 `tier` selects the project. `grep` is an advanced filter passed to `--grep`; it applies to the foundation too, so narrowing it to a later-tier tag starves those tests of data. Use it to run a subset *within* a green project, not instead of one.
 
 ## Coverage map
