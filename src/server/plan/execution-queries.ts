@@ -41,12 +41,16 @@ export interface CommitmentRow {
   openAmount: number;
   status: CommitmentStatus;
   fiscalYear: number;
+  /** True when the commitment's annual plan is closed (post-close settlement, #98). */
+  closedYear: boolean;
 }
 
 export interface SpendSettlementLink {
   commitmentId: string;
   amount: number;
   commitmentFiscalYear: number;
+  /** True when the settled commitment belongs to a closed annual plan (#98). */
+  closedYear: boolean;
 }
 
 export interface SpendRow {
@@ -54,6 +58,8 @@ export interface SpendRow {
   categoryName: string | null;
   settlementLinks: SpendSettlementLink[];
   crossYearSettled: number;
+  /** Portion of the spend that settles commitments from closed annual plans (#98). */
+  closedYearSettled: number;
 }
 
 export interface FundingTotals {
@@ -77,6 +83,8 @@ export interface SettlementOption {
   openAmount: number;
   component: 'capex' | 'opex';
   fiscalYear: number;
+  /** True when the commitment's annual plan is closed — the picker marks it (#98). */
+  closedYear: boolean;
 }
 
 export interface AllocationFunding {
@@ -188,28 +196,34 @@ async function loadCommitmentRows(
     settledRows.map((row) => [row.commitmentEntryId, Number(row.settled ?? '0')]),
   );
 
-  const fiscalYears = await loadCommitmentFiscalYears(commitments.map((commitment) => commitment.id));
+  const yearInfo = await loadCommitmentYearInfo(commitments.map((commitment) => commitment.id));
 
   return commitments.map((commitment) => {
     const settledAmount = settledMap.get(commitment.id) ?? 0;
     const openAmount = openCommitmentAmount({ amount: commitment.amount, settledAmount });
+    const year = yearInfo.get(commitment.id);
     return {
       commitment,
       settledAmount,
       openAmount,
       status: commitmentStatus({ amount: commitment.amount, settledAmount }),
-      fiscalYear: fiscalYears.get(commitment.id) ?? 0,
+      fiscalYear: year?.fiscalYear ?? 0,
+      closedYear: year?.planStatus === 'closed',
     };
   });
 }
 
-async function loadCommitmentFiscalYears(commitmentIds: string[]): Promise<Map<string, number>> {
+/** The fiscal year and annual-plan status behind one commitment (allocation or recurring parent). */
+async function loadCommitmentYearInfo(
+  commitmentIds: string[],
+): Promise<Map<string, { fiscalYear: number; planStatus: AnnualPlan['status'] }>> {
   if (commitmentIds.length === 0) return new Map();
   const db = getDb();
   const allocationRows = await db
     .select({
       commitmentId: commitmentEntries.id,
       fiscalYear: annualPlans.fiscalYear,
+      planStatus: annualPlans.status,
     })
     .from(commitmentEntries)
     .innerJoin(
@@ -221,15 +235,18 @@ async function loadCommitmentFiscalYears(commitmentIds: string[]): Promise<Map<s
     .select({
       commitmentId: commitmentEntries.id,
       fiscalYear: annualPlans.fiscalYear,
+      planStatus: annualPlans.status,
     })
     .from(commitmentEntries)
     .innerJoin(recurringOpsItems, eq(commitmentEntries.recurringOpsItemId, recurringOpsItems.id))
     .innerJoin(annualPlans, eq(recurringOpsItems.annualPlanId, annualPlans.id));
 
   const wanted = new Set(commitmentIds);
-  const map = new Map<string, number>();
+  const map = new Map<string, { fiscalYear: number; planStatus: AnnualPlan['status'] }>();
   for (const row of [...allocationRows, ...recurringRows]) {
-    if (wanted.has(row.commitmentId)) map.set(row.commitmentId, row.fiscalYear);
+    if (wanted.has(row.commitmentId)) {
+      map.set(row.commitmentId, { fiscalYear: row.fiscalYear, planStatus: row.planStatus });
+    }
   }
   return map;
 }
@@ -257,6 +274,7 @@ async function loadSpendRows(
       commitmentEntryId: commitmentSettlements.commitmentEntryId,
       amount: commitmentSettlements.amount,
       fiscalYear: annualPlans.fiscalYear,
+      planStatus: annualPlans.status,
     })
     .from(commitmentSettlements)
     .innerJoin(spendEntries, eq(commitmentSettlements.spendEntryId, spendEntries.id))
@@ -278,6 +296,7 @@ async function loadSpendRows(
       commitmentId: link.commitmentEntryId,
       amount: link.amount,
       commitmentFiscalYear: link.fiscalYear ?? 0,
+      closedYear: link.planStatus === 'closed',
     });
     linksBySpend.set(link.spendEntryId, list);
   }
@@ -287,11 +306,15 @@ async function loadSpendRows(
     const crossYearSettled = links
       .filter((link) => link.commitmentFiscalYear < fiscalYear)
       .reduce((sum, link) => sum + link.amount, 0);
+    const closedYearSettled = links
+      .filter((link) => link.closedYear && link.commitmentFiscalYear < fiscalYear)
+      .reduce((sum, link) => sum + link.amount, 0);
     return {
       spend: row.spend,
       categoryName: row.categoryName,
       settlementLinks: links,
       crossYearSettled,
+      closedYearSettled,
     };
   });
 }
@@ -323,6 +346,8 @@ function totalsFromRows(input: {
         amount: row.spend.amount,
         settlementKind: row.spend.settlementKind,
         crossYearSettled: row.crossYearSettled,
+        closedYearSettled: row.closedYearSettled,
+        postCloseTreatment: row.spend.postCloseTreatment,
         priorYearOpening: row.spend.settlementKind === 'prior_year_opening',
       })),
     );
@@ -386,6 +411,7 @@ function settlementOptionsFromCommitments(rows: CommitmentRow[]): SettlementOpti
       openAmount: row.openAmount,
       component: row.commitment.component,
       fiscalYear: row.fiscalYear,
+      closedYear: row.closedYear,
     }));
 }
 
@@ -421,6 +447,7 @@ async function loadPriorSettlementOptions(
       commitmentDate: commitmentEntries.commitmentDate,
       reference: commitmentEntries.reference,
       fiscalYear: annualPlans.fiscalYear,
+      planStatus: annualPlans.status,
     })
     .from(commitmentEntries)
     .innerJoin(
@@ -446,7 +473,7 @@ async function loadPriorSettlementOptions(
       return {
         commitmentId: row.commitmentId,
         label: [
-          'PRIOR YEAR',
+          row.planStatus === 'closed' ? 'CLOSED YEAR' : 'PRIOR YEAR',
           row.component.toUpperCase(),
           `FY${row.fiscalYear}`,
           row.commitmentDate,
@@ -456,6 +483,7 @@ async function loadPriorSettlementOptions(
         openAmount,
         component: row.component,
         fiscalYear: row.fiscalYear,
+        closedYear: row.planStatus === 'closed',
       };
     })
     .filter((option) => option.openAmount > 0);

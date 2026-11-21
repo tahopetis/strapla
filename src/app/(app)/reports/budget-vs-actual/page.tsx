@@ -51,6 +51,11 @@ export default async function BudgetVsActualPage({
           matchesAllCustomFieldFilters(group?.values.get(row.programId), filters),
         )
       : report.rows;
+  // Post-close adjustment line for a closed year (#98): reserve-treated
+  // closed-year settlements, outside the locked close snapshot and carry-over.
+  const postCloseRows = report.rows.filter(
+    (row) => row.postCloseReserveCapex + row.postCloseReserveOpex > 0,
+  );
 
   return (
     <ReportShell
@@ -65,8 +70,10 @@ export default async function BudgetVsActualPage({
       <ReportNote>
         Available = budget + carry-in; unallocated = available − allocations. Committed and spent are the
         in-app execution figures; prior-year settlements are spend paying earlier-year commitments (excluded
-        from the current year, ADR-0003 §4); prior-year opening payments settle pre-app commitments. Capex and
-        opex are shown per component.
+        from the current year, ADR-0003 §4); prior-year opening payments settle pre-app commitments. A
+        post-close adjustment is a closed-year settlement kept as a reserve in its closed year, shown
+        separately and never part of the locked close snapshot or carry-over figures. Capex and opex are
+        shown per component.
       </ReportNote>
 
       {fields.length > 0 ? (
@@ -204,6 +211,51 @@ export default async function BudgetVsActualPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
+      </Card>
+
+      <Card
+        title="Post-close adjustments (reserve)"
+        description="Closed-year settlements kept in the closed year, per commitment fiscal year. These figures sit outside the locked close snapshot and never change the carry-over."
+      >
+        {postCloseRows.length === 0 ? (
+          <p className="text-sm text-slate-600">No post-close reserves recorded.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead>
+                <tr>
+                  <th className={th}>Commitment FY</th>
+                  <th className={th}>SI / program</th>
+                  <th className={th}>Capex reserve</th>
+                  <th className={th}>Opex reserve</th>
+                  <th className={th}>Total reserve</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {postCloseRows.map((row) => (
+                  <tr key={`post-close-${row.fiscalYear}-${row.programCode}`}>
+                    <td className="py-3 pr-4 whitespace-nowrap">{row.fiscalYear}</td>
+                    <td className="py-3 pr-4">
+                      <p className="font-medium">
+                        {row.siCode} · {row.programCode}
+                      </p>
+                      <p className="text-slate-600">{row.programName}</p>
+                    </td>
+                    <td className="py-3 pr-4 whitespace-nowrap">
+                      <Money value={row.postCloseReserveCapex} />
+                    </td>
+                    <td className="py-3 pr-4 whitespace-nowrap">
+                      <Money value={row.postCloseReserveOpex} />
+                    </td>
+                    <td className="py-3 pr-4 whitespace-nowrap">
+                      <Money value={row.postCloseReserveCapex + row.postCloseReserveOpex} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </ReportShell>
   );

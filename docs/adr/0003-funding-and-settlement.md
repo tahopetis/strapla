@@ -48,6 +48,19 @@ Every monetary figure is held **per component** (capex, opex). Combined totals a
 - Spend entries that settle commitments existing **before the app** (FY2026 and earlier) are recorded with `settlement_kind = prior_year_opening`; they follow the same rule. Their commitment figure is the project's opening committed amount, which is a snapshot and is not reduced by settlements recorded in the app.
 - BR-11's warning (spend above fiscal-year commitment) compares *current-year spend excluding cross-year settlements* against the allocation's commitment entries.
 
+### 4a. Post-close settlement
+
+A spend entry can be recorded only in an open fiscal year, but it may settle a commitment whose annual plan is **closed**. The commitment's year is determined by the annual plan that owns its allocation, so "closed" is a plan status, not merely "earlier than the spend". The treatment is chosen **per transaction**, because company policy differs, and applies **only to the closed-year portion** of the settlement — splits against open-year commitments are always current-year.
+
+- **A. Charge to the current year.** The closed-year portion counts as current-year spend: it reduces the current year's remaining and is included in BR-11's current-year spend. The closed year's figures stay frozen. The current-year report shows the money in *spent*, not as a prior-year settlement.
+- **B. Charge to the closed year — reserve.** The closed-year portion does not reduce the current year's remaining. It is reported as a prior-year settlement in the current-year report, and on the closed year's report it appears as a separately labelled *post-close adjustment (reserve)* line per commitment fiscal year. The locked close snapshot, carry-over records and carry-over figures never change.
+- The default when the choice is relevant is A.
+- Under either option the commitment becomes settled (the settlement link is the same). The audit entry is written in the transaction's year and records the treatment.
+- The treatment is frozen once the spend has settlements, like the component and the settlement classification: void the spend and re-enter it to change it. Voiding the spend releases the settlement and removes both reporting effects.
+- An earlier-year commitment whose annual plan is still open remains an **ordinary cross-year settlement** (§4): no treatment is stored and none is offered.
+
+In the remaining formula (§3), `current_year_spend` therefore excludes every earlier-year settlement portion except a closed-year portion explicitly charged to the current year. BR-11 (§6) compares the same figure against the year's commitments.
+
 ### 5. Opening balances (FY2027 start)
 
 Loaded once, manually, by the portfolio owner during UAT:
@@ -70,7 +83,7 @@ Computed in `src/domain` and shown in the UI and reports:
 - final deal price > approved budget (BR-9)
 - final deal price > submitted price (BR-18)
 - lifetime commitments > contract value (BR-8, extended with opening committed)
-- current-year spend > fiscal-year commitment (BR-11, extended with exclusion of cross-year settlements)
+- current-year spend > fiscal-year commitment (BR-11, extended with exclusion of cross-year settlements and reserve-treated closed-year portions)
 - allocation > program budget, per component (BR-7)
 - cumulative in-app program budgets + prior consumed > SI envelope (BR-2)
 - cumulative project allocations > project full-life allocated budget (soft consistency flag)

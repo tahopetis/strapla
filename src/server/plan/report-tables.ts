@@ -5,6 +5,7 @@ import {
   getBudgetVsActualReport,
   getProjectRegisterReport,
   getSiFiveYearReport,
+  type BudgetVsActualRow,
 } from './report-queries';
 
 /** Builds the export document for a report key; shared by CSV and XLSX downloads. */
@@ -19,7 +20,7 @@ export const REPORT_TITLES: Record<ReportKey, string> = {
 };
 
 const EXECUTION_NOTE =
-  'Commitments and actual spend come from the execution module. Prior-year settlements are spend paying earlier-year commitments (excluded from the current year); prior-year opening payments settle pre-app commitments.';
+  'Commitments and actual spend come from the execution module. Prior-year settlements are spend paying earlier-year commitments (excluded from the current year); prior-year opening payments settle pre-app commitments. Post-close adjustments are closed-year settlements kept as a reserve; they never enter the locked close snapshot or the carry-over figures.';
 
 function table(name: string, columns: ExportColumn[]): ExportTable {
   return { name, columns, rows: [] };
@@ -79,6 +80,37 @@ function applyCustomFieldGroups(
     }
     return result;
   });
+}
+
+/**
+ * The closed year's post-close adjustment figures (#98). A reserve-treated
+ * closed-year settlement never enters the locked close snapshot or the
+ * carry-over figures; it is shown here, on its commitment's fiscal year, as a
+ * separately labelled line beside the existing columns.
+ */
+export function postCloseAdjustmentTable(rows: readonly BudgetVsActualRow[]): ExportTable {
+  const postClose = table('Post-close adjustments', [
+    { key: 'fiscalYear', header: 'Commitment fiscal year', kind: 'number' },
+    { key: 'si', header: 'SI' },
+    { key: 'program', header: 'Program' },
+    { key: 'programName', header: 'Program name' },
+    { key: 'capexReserve', header: 'Capex reserve', kind: 'money' },
+    { key: 'opexReserve', header: 'Opex reserve', kind: 'money' },
+    { key: 'totalReserve', header: 'Total reserve', kind: 'money' },
+  ]);
+  postClose.rows = rows
+    .filter((row) => row.postCloseReserveCapex + row.postCloseReserveOpex > 0)
+    .map((row) => ({
+      id: row.programId,
+      fiscalYear: row.fiscalYear,
+      si: `${row.siCode} · ${row.siName}`,
+      program: row.programCode,
+      programName: row.programName,
+      capexReserve: row.postCloseReserveCapex,
+      opexReserve: row.postCloseReserveOpex,
+      totalReserve: row.postCloseReserveCapex + row.postCloseReserveOpex,
+    }));
+  return postClose;
 }
 
 export async function buildReportDocument(
@@ -370,6 +402,8 @@ export async function buildReportDocument(
     subtitle: planName,
     generatedAt,
     note,
-    tables: applyCustomFieldGroups([main], groups),
+    // The closed year's adjustment is a separate labelled table so no existing
+    // column or export changes shape (#98).
+    tables: [...applyCustomFieldGroups([main], groups), postCloseAdjustmentTable(data.rows)],
   };
 }

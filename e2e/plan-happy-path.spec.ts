@@ -38,8 +38,9 @@ function endTiming(name: string, startedAt: number): void {
 
 test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) => {
   // Bounded rather than open-ended: CI runs this in about a minute, and the cap
-  // stops one hung step from burning the whole job's budget.
-  test.setTimeout(180_000);
+  // stops one hung step from burning the whole job's budget. The post-close
+  // settlement fixture adds a program, a two-year project and two allocations.
+  test.setTimeout(240_000);
   // ---------------------------------------------------------------- setup
   await page.goto('/setup');
   await expect(page.getByRole('heading', { name: 'Strapla — first-run setup' })).toBeVisible();
@@ -273,6 +274,90 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await expect(programCard.getByText('Capex allocated')).toBeVisible();
   await expect(programCard.getByText('Rp 500.000.000')).toBeVisible();
   await expect(programCard.getByText('Rp 700.000.000')).toBeVisible();
+
+  // ------------------------- post-close settlement fixture (#98)
+  // A dedicated FY2027 program and a project spanning FY2027–FY2028, so the
+  // execution journey can record an FY2028 payment that settles a commitment
+  // from the closed FY2027. It has its own program so the PRG-2027-001 card
+  // and the close carry-over totals stay exactly as asserted above.
+  const postCloseProgramForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add program' }) });
+  await postCloseProgramForm.locator('input[name="code"]').fill('POST-CLOSE-PRG-27');
+  await postCloseProgramForm
+    .locator('input[name="name"]')
+    .fill('Post-close settlement programme');
+  await postCloseProgramForm
+    .locator('select[name="siId"]')
+    .selectOption({ label: 'SI-01 · Digital Workplace' });
+  // a budget the FY2027 allocation fits under; the figures are not asserted elsewhere
+  await postCloseProgramForm.locator('input[name="capexBudget"]').fill('100000000');
+  await postCloseProgramForm.locator('input[name="opexBudget"]').fill('0');
+  await page.getByRole('button', { name: 'Add program' }).click();
+  await expect(page.getByText(/Annual program POST-CLOSE-PRG-27 created\./)).toBeVisible();
+
+  await page.goto('/plan/projects');
+  const postCloseProjectForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Create project' }) });
+  await postCloseProjectForm
+    .locator('select[name="originatingProgramId"]')
+    .selectOption({
+      label: 'POST-CLOSE-PRG-27 · Post-close settlement programme (FY2027, SI-01)',
+    });
+  await postCloseProjectForm.locator('input[name="code"]').fill('POST-CLOSE-PRJ-1');
+  await postCloseProjectForm.locator('input[name="name"]').fill('Post-close settlement project');
+  await postCloseProjectForm.locator('input[name="owner"]').fill('IT Infrastructure Lead');
+  await postCloseProjectForm.locator('input[name="startFiscalYear"]').fill('2027');
+  await postCloseProjectForm.locator('input[name="endFiscalYear"]').fill('2028');
+  await postCloseProjectForm
+    .locator('input[name="allocatedBudgetFullLife"]')
+    .fill('150000000');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.getByText(/Project POST-CLOSE-PRJ-1 created\./)).toBeVisible();
+
+  await page
+    .locator('tbody tr', { hasText: 'Post-close settlement project' })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'POST-CLOSE-PRJ-1 · Post-close settlement project' }),
+  ).toBeVisible();
+  const postCloseAllocationForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add allocation' }) });
+  await postCloseAllocationForm
+    .locator('select[name="annualProgramId"]')
+    .selectOption({
+      label: 'FY2027 · POST-CLOSE-PRG-27 · Post-close settlement programme',
+    });
+  await postCloseAllocationForm.locator('input[name="allocationCapex"]').fill('80000000');
+  await postCloseAllocationForm.locator('input[name="allocationOpex"]').fill('0');
+  await page.getByRole('button', { name: 'Add allocation' }).click();
+  await expect(page.getByText(/Project year allocation FY2027 created\./)).toBeVisible();
+
+  const postCloseCard = page
+    .locator('section')
+    .filter({ hasText: 'FY2027 · POST-CLOSE-PRG-27 · Post-close settlement programme' });
+  await postCloseCard.getByRole('link', { name: 'Open commitments & spend' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'FY2027 allocation · POST-CLOSE-PRG-27' }),
+  ).toBeVisible();
+  // the commitment stays open until an FY2028 payment settles it after the close
+  const postCloseCommitmentForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add commitment' }) });
+  await postCloseCommitmentForm.locator('select[name="component"]').selectOption('capex');
+  await postCloseCommitmentForm.locator('input[name="amount"]').fill('30000000');
+  await postCloseCommitmentForm.locator('input[name="commitmentDate"]').fill('2027-09-10');
+  await postCloseCommitmentForm.locator('input[name="reference"]').fill('POST-CLOSE-PO-27');
+  await page.getByRole('button', { name: 'Add commitment' }).click();
+  await expect(page.getByText(/Commitment POST-CLOSE-PO-27 recorded\./)).toBeVisible();
+
+  // back to the annual plan for the recurring ops item below
+  await page.goto('/plan/annual');
+  await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
   // ------------------------------------------------------------ recurring ops
   const recurringForm = page
@@ -1030,6 +1115,27 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await page.getByRole('button', { name: 'Add program' }).click();
   await expect(page.getByText(/Annual program .* created\./)).toBeVisible();
   await expect(page.getByText('Continues program').first()).toBeVisible();
+
+  // The FY2028 leg of the post-close project: its second allocation, still
+  // before the FY2027 close below (the open-year allocation is created while
+  // FY2028 exists so the closed year and the open year are both fixtures).
+  await page.goto('/plan/projects');
+  await page
+    .locator('tbody tr', { hasText: 'Post-close settlement project' })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  const openYearAllocationForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add allocation' }) });
+  await openYearAllocationForm
+    .locator('select[name="annualProgramId"]')
+    .selectOption({
+      label: 'FY2028 · PRG-2028-001 · Workplace Modernisation 2028',
+    });
+  await openYearAllocationForm.locator('input[name="allocationCapex"]').fill('70000000');
+  await openYearAllocationForm.locator('input[name="allocationOpex"]').fill('0');
+  await page.getByRole('button', { name: 'Add allocation' }).click();
+  await expect(page.getByText(/Project year allocation FY2028 created\./)).toBeVisible();
 
   // close FY2027 with a program carry-over
   await page.goto('/plan/annual');

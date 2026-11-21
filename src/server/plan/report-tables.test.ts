@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { ExportTable } from '@/lib/report-export';
 import type { ReportCustomFieldGroup } from './report-custom-fields';
-import { applyCustomFieldGroup } from './report-tables';
+import { applyCustomFieldGroup, postCloseAdjustmentTable } from './report-tables';
+import type { BudgetVsActualRow } from './report-queries';
 
 /**
  * Unit tests for the custom-field column attachment (issue #46).
@@ -135,5 +136,71 @@ describe('applyCustomFieldGroup', () => {
   it('returns the same table when no field is selected', () => {
     const source = table();
     expect(applyCustomFieldGroup(source, group([], new Map()))).toBe(source);
+  });
+});
+
+describe('postCloseAdjustmentTable (#98)', () => {
+  function budgetRow(overrides: Partial<BudgetVsActualRow>): BudgetVsActualRow {
+    return {
+      programId: 'program-1',
+      fiscalYear: 2027,
+      siCode: 'SI-01',
+      siName: 'Digital Workplace',
+      programCode: 'POST-CLOSE-PRG-27',
+      programName: 'Post-close programme',
+      capexAvailable: 100_000_000,
+      opexAvailable: 0,
+      allocatedCapex: 80_000_000,
+      allocatedOpex: 0,
+      commitmentCapex: 30_000_000,
+      commitmentOpex: 0,
+      spendCapex: 0,
+      spendOpex: 0,
+      settlementCapex: 0,
+      settlementOpex: 0,
+      priorOpeningCapex: 0,
+      priorOpeningOpex: 0,
+      postCloseReserveCapex: 0,
+      postCloseReserveOpex: 0,
+      unallocatedCapex: 20_000_000,
+      unallocatedOpex: 0,
+      overCapex: false,
+      overOpex: false,
+      ...overrides,
+    };
+  }
+
+  it('is a separate table with its own columns and only the reserve rows', () => {
+    const result = postCloseAdjustmentTable([
+      budgetRow({ postCloseReserveCapex: 10_000_000 }),
+      budgetRow({ programId: 'program-2', programCode: 'PRG-2028-001', fiscalYear: 2028 }),
+    ]);
+
+    expect(result.name).toBe('Post-close adjustments');
+    expect(result.columns.map((column) => column.header)).toEqual([
+      'Commitment fiscal year',
+      'SI',
+      'Program',
+      'Program name',
+      'Capex reserve',
+      'Opex reserve',
+      'Total reserve',
+    ]);
+    expect(result.rows).toEqual([
+      {
+        id: 'program-1',
+        fiscalYear: 2027,
+        si: 'SI-01 · Digital Workplace',
+        program: 'POST-CLOSE-PRG-27',
+        programName: 'Post-close programme',
+        capexReserve: 10_000_000,
+        opexReserve: 0,
+        totalReserve: 10_000_000,
+      },
+    ]);
+  });
+
+  it('has no rows when nothing was reserved', () => {
+    expect(postCloseAdjustmentTable([budgetRow({})]).rows).toEqual([]);
   });
 });

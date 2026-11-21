@@ -423,7 +423,7 @@ test('settles an FY2028 commitment from FY2029 without moving either year @t2', 
   ).toBeVisible();
   await expect(
     page.getByText(
-      'FY2029 spend settling an earlier-year commitment is classified as cross-year automatically.',
+      "Leave blank for none. A settlement of an earlier-year commitment is cross-year and stays out of this year's remaining, unless the commitment's year is closed and you charge its portion to FY2029 below.",
     ),
   ).toBeVisible();
 
@@ -466,4 +466,222 @@ test('settles an FY2028 commitment from FY2029 without moving either year @t2', 
   await expect(summary('Capex remaining')).toHaveText(rp(20000000));
   // the cross-year spend belongs to the FY2029 allocation, so FY2028 lists none
   await expect(page.getByText('No spend entries recorded yet.')).toBeVisible();
+});
+
+test('settles a closed-year commitment from the open year under both post-close treatments @t2', async ({
+  page,
+}) => {
+  // Post-close settlement (#98, ADR-0003 §4a): the foundation created
+  // POST-CLOSE-PRJ-1 with a closed FY2027 allocation (commitment 30,000,000)
+  // and an open FY2028 allocation (70,000,000). Both treatments are proved on
+  // the open allocation, including the mixed transaction, the frozen
+  // treatment, the void reversal and the closed year's post-close adjustment.
+  test.setTimeout(240_000);
+  const project = { code: 'POST-CLOSE-PRJ-1', name: 'Post-close settlement project' };
+  const closedProgram = { code: 'POST-CLOSE-PRG-27', name: 'Post-close settlement programme' };
+  const openProgram = { code: 'PRG-2028-001', name: 'Workplace Modernisation 2028' };
+  const summary = (label: string) => cardValue(page, 'Allocation and execution', label);
+
+  await openProject(page, project);
+  await openAllocationCard(page, FY, openProgram);
+  const allocationUrl = page.url();
+  await expect(summary('Capex allocation + carry-in')).toHaveText(rp(70000000));
+  await expect(summary('Capex commitments (open)')).toHaveText(`${rp(0)} (open ${rp(0)})`);
+  await expect(summary('Capex spend this year')).toHaveText(rp(0));
+  await expect(summary('Capex remaining')).toHaveText(rp(70000000));
+
+  // an open-year commitment, settled by the mixed transaction below
+  await recordCommitment(page, { amount: '5000000', reference: 'POST-CLOSE-PO-28' });
+  await expect(summary('Capex remaining')).toHaveText(rp(65000000));
+
+  const spendForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Record spend' }) });
+  const treatment = spendForm.getByLabel('Post-close settlement treatment');
+  // the choice is not offered while no closed-year commitment is selected
+  await expect(treatment).toHaveCount(0);
+  // the picker marks the closed-year commitment instead of the generic prior-year wording
+  await expect(
+    spendForm.getByLabel(
+      'CLOSED YEAR · CAPEX · FY2027 · 2027-09-10 · POST-CLOSE-PO-27 · open 30000000',
+    ),
+  ).toBeVisible();
+
+  // ---- option A: charge the closed-year portion to the current year
+  await spendForm.locator('select[name="component"]').selectOption('capex');
+  await spendForm.locator('input[name="amount"]').fill('10000000');
+  await spendForm.locator('input[name="spentOn"]').fill('2028-07-01');
+  await spendForm.locator('input[name="reference"]').fill('POST-CLOSE-SP-A');
+  await spendForm
+    .getByLabel('CLOSED YEAR · CAPEX · FY2027 · 2027-09-10 · POST-CLOSE-PO-27 · open 30000000')
+    .fill('10000000');
+  await expect(treatment).toBeVisible();
+  await expect(treatment).toHaveValue('charge_current_year');
+  await expect(
+    spendForm.locator('select[name="postCloseTreatment"] option[value="charge_current_year"]'),
+  ).toHaveText('Charge to the current year (FY2028)');
+  await expect(
+    spendForm.locator('select[name="postCloseTreatment"] option[value="charge_closed_year_reserve"]'),
+  ).toHaveText('Charge to the closed year (FY2027) — reserve');
+  await treatment.selectOption('charge_current_year');
+  await page.getByRole('button', { name: 'Record spend' }).click();
+  await expectSpendFlash(page, 'POST-CLOSE-SP-A');
+
+  const spendA = page.locator('tbody tr', { hasText: 'POST-CLOSE-SP-A' });
+  await expect(spendA.getByText('closed-year charged to current year')).toBeVisible();
+  await expect(spendA.getByText(`${rp(10000000)} · FY2027 (closed year)`)).toBeVisible();
+  await expect(summary('Capex spend this year')).toHaveText(rp(10000000));
+  await expect(summary('Capex commitments (open)')).toHaveText(`${rp(5000000)} (open ${rp(5000000)})`);
+  await expect(summary('Capex remaining')).toHaveText(rp(55000000));
+
+  // option A counts as current-year spend, so the current-year report does not
+  // show it as a prior-year settlement and the closed year stays clean
+  await page.goto('/reports/budget-vs-actual');
+  const currentYearRow = page
+    .locator('tbody tr')
+    .filter({ hasText: 'SI-01 · PRG-2028-001' });
+  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(10000000));
+  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(0));
+  const reserveSection = page
+    .locator('section')
+    .filter({ hasText: 'Post-close adjustments (reserve)' });
+  await expect(
+    reserveSection.getByRole('heading', { name: 'Post-close adjustments (reserve)' }),
+  ).toBeVisible();
+  await expect(reserveSection.getByText('No post-close reserves recorded.')).toBeVisible();
+
+  // ---- the mixed transaction: only the closed-year portion follows the choice
+  await page.goto(allocationUrl);
+  await spendForm.locator('select[name="component"]').selectOption('capex');
+  await spendForm.locator('input[name="amount"]').fill('15000000');
+  await spendForm.locator('input[name="spentOn"]').fill('2028-07-15');
+  await spendForm.locator('input[name="reference"]').fill('POST-CLOSE-SP-B');
+  await spendForm
+    .getByLabel('CLOSED YEAR · CAPEX · FY2027 · 2027-09-10 · POST-CLOSE-PO-27 · open 20000000')
+    .fill('10000000');
+  await expect(treatment).toBeVisible();
+  await treatment.selectOption('charge_current_year');
+  await spendForm
+    .getByLabel('CAPEX · FY2028 · 2028-03-01 · POST-CLOSE-PO-28 · open 5000000')
+    .fill('5000000');
+  await page.getByRole('button', { name: 'Record spend' }).click();
+  await expectSpendFlash(page, 'POST-CLOSE-SP-B');
+
+  // the open-year split stays current-year either way; the closed-year split is charged
+  await expect(summary('Capex spend this year')).toHaveText(rp(25000000));
+  await expect(summary('Capex commitments (open)')).toHaveText(`${rp(5000000)} (open ${rp(0)})`);
+  await expect(summary('Capex remaining')).toHaveText(rp(45000000));
+  await expect(
+    page.locator('tbody tr', { hasText: 'POST-CLOSE-PO-28' }).getByText('settled', { exact: true }),
+  ).toBeVisible();
+
+  await page.goto('/reports/budget-vs-actual');
+  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(25000000));
+  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(0));
+
+  // ---- option B: charge the last 10,000,000 to the closed year (reserve)
+  await page.goto(allocationUrl);
+  await spendForm.locator('select[name="component"]').selectOption('capex');
+  await spendForm.locator('input[name="amount"]').fill('10000000');
+  await spendForm.locator('input[name="spentOn"]').fill('2028-08-01');
+  await spendForm.locator('input[name="reference"]').fill('POST-CLOSE-SP-C');
+  await spendForm
+    .getByLabel('CLOSED YEAR · CAPEX · FY2027 · 2027-09-10 · POST-CLOSE-PO-27 · open 10000000')
+    .fill('10000000');
+  await expect(treatment).toBeVisible();
+  await treatment.selectOption('charge_closed_year_reserve');
+  await page.getByRole('button', { name: 'Record spend' }).click();
+  await expectSpendFlash(page, 'POST-CLOSE-SP-C');
+
+  const spendC = page.locator('tbody tr', { hasText: 'POST-CLOSE-SP-C' });
+  await expect(spendC.getByText('closed-year reserve')).toBeVisible();
+  await expect(spendC.getByText(`${rp(10000000)} · FY2027 (closed year)`)).toBeVisible();
+  // the reserve never touches the open year's remaining or current-year spend
+  await expect(summary('Capex spend this year')).toHaveText(rp(25000000));
+  await expect(summary('Capex commitments (open)')).toHaveText(`${rp(5000000)} (open ${rp(0)})`);
+  await expect(summary('Capex remaining')).toHaveText(rp(45000000));
+
+  // the closed year reports a labelled post-close adjustment beside its frozen columns
+  await page.goto('/reports/budget-vs-actual');
+  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(35000000));
+  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(10000000));
+  const reserveRow = reserveSection
+    .locator('tbody tr')
+    .filter({ hasText: closedProgram.code });
+  await expect(reserveRow).toHaveCount(1);
+  await expect(reserveRow.locator('td').nth(0)).toHaveText('2027');
+  await expect(reserveRow.locator('td').nth(1)).toContainText('SI-01 · POST-CLOSE-PRG-27');
+  await expect(reserveRow.locator('td').nth(2)).toHaveText(rp(10000000));
+  await expect(reserveRow.locator('td').nth(4)).toHaveText(rp(10000000));
+  // the closed-year program row itself keeps its zero spend and zero settlement
+  const closedYearProgramRow = page
+    .locator('tbody tr')
+    .filter({ hasText: `SI-01 · ${closedProgram.code}` })
+    .first();
+  await expect(closedYearProgramRow.locator('td').nth(9)).toHaveText(rp(0));
+  await expect(closedYearProgramRow.locator('td').nth(10)).toHaveText(rp(0));
+
+  // ---- the treatment is frozen once the spend has settlements, and audited
+  await page.goto(allocationUrl);
+  const reserveRowLocator = page.locator('tbody tr', { hasText: 'POST-CLOSE-SP-C' });
+  await reserveRowLocator.locator('summary', { hasText: 'Manage' }).click();
+  const editForm = reserveRowLocator
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save spend' }) });
+  await expect(editForm.getByLabel('Post-close settlement treatment')).toHaveValue(
+    'charge_closed_year_reserve',
+  );
+  await editForm.locator('input[name="vendor"]').fill('PT Reserve Vendor');
+  await editForm.locator('textarea[name="reason"]').fill('Verified the post-close treatment.');
+  await editForm.getByRole('button', { name: 'Save spend' }).click();
+  await expect(page.getByText(/Spend entry POST-CLOSE-SP-C updated\./)).toBeVisible();
+
+  await page.goto('/admin/audit?entityType=spend_entry');
+  const treatmentAuditRow = page
+    .locator('tbody tr')
+    .filter({ hasText: 'Verified the post-close treatment.' });
+  await treatmentAuditRow.getByText('Show values').click();
+  await expect(
+    treatmentAuditRow.locator('pre', { hasText: 'charge_closed_year_reserve' }),
+  ).toBeVisible();
+
+  await page.goto(allocationUrl);
+  const frozenRow = page.locator('tbody tr', { hasText: 'POST-CLOSE-SP-C' });
+  await frozenRow.locator('summary', { hasText: 'Manage' }).click();
+  const frozenForm = frozenRow
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save spend' }) });
+  await frozenForm.getByLabel('Post-close settlement treatment').selectOption('charge_current_year');
+  await frozenForm.locator('textarea[name="reason"]').fill('Try to change the frozen treatment.');
+  await frozenForm.getByRole('button', { name: 'Save spend' }).click();
+  await expect(
+    frozenForm.getByText(
+      'Void the spend entry and re-enter it to change its post-close treatment.',
+    ),
+  ).toBeVisible();
+
+  // ---- voiding the reserve spend releases the settlement and both effects
+  await page.goto(allocationUrl);
+  const voidRow = page.locator('tbody tr', { hasText: 'POST-CLOSE-SP-C' });
+  await voidRow.locator('summary', { hasText: 'Manage' }).click();
+  await voidRow.getByRole('button', { name: 'Void spend' }).click();
+  const voidDialog = voidRow.getByRole('dialog');
+  await voidDialog.locator('textarea[name="reason"]').fill('Releases the reserve.');
+  await voidDialog.getByRole('button', { name: 'Void spend' }).click();
+  await expect(page.getByText('Spend entry POST-CLOSE-SP-C voided.')).toBeVisible();
+
+  await expect(page.locator('tbody tr', { hasText: 'POST-CLOSE-SP-C' })).toHaveCount(0);
+  await expect(summary('Capex spend this year')).toHaveText(rp(25000000));
+  await expect(summary('Capex remaining')).toHaveText(rp(45000000));
+  // the closed-year commitment is open again, so the picker offers it once more
+  await expect(
+    spendForm.getByLabel(
+      'CLOSED YEAR · CAPEX · FY2027 · 2027-09-10 · POST-CLOSE-PO-27 · open 10000000',
+    ),
+  ).toBeVisible();
+
+  await page.goto('/reports/budget-vs-actual');
+  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(25000000));
+  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(0));
+  await expect(reserveSection.getByText('No post-close reserves recorded.')).toBeVisible();
 });

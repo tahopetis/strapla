@@ -191,6 +191,13 @@ export interface AnnualPlanProgramRow {
   crossYearOpex: number;
   priorOpeningCapex: number;
   priorOpeningOpex: number;
+  /**
+   * Post-close adjustments: closed-year settlements kept as a reserve in this
+   * program's closed fiscal year (#98). Outside the locked close snapshot and
+   * carry-over figures, which never change.
+   */
+  postCloseReserveCapex: number;
+  postCloseReserveOpex: number;
   availableCapex: number;
   availableOpex: number;
   unallocatedCapex: number;
@@ -301,6 +308,8 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       crossYearOpex: execution.byProgram.get(row.programId)?.crossYearOpex ?? 0,
       priorOpeningCapex: execution.byProgram.get(row.programId)?.priorOpeningCapex ?? 0,
       priorOpeningOpex: execution.byProgram.get(row.programId)?.priorOpeningOpex ?? 0,
+      postCloseReserveCapex: execution.byProgram.get(row.programId)?.reserveCapex ?? 0,
+      postCloseReserveOpex: execution.byProgram.get(row.programId)?.reserveOpex ?? 0,
       availableCapex: position.capex.available,
       availableOpex: position.opex.available,
       unallocatedCapex: position.capex.unallocated,
@@ -564,6 +573,9 @@ export interface BudgetVsActualRow {
   settlementOpex: number;
   priorOpeningCapex: number;
   priorOpeningOpex: number;
+  /** Closed-year settlements kept as a post-close reserve in this fiscal year (#98). */
+  postCloseReserveCapex: number;
+  postCloseReserveOpex: number;
   unallocatedCapex: number;
   unallocatedOpex: number;
   overCapex: boolean;
@@ -587,6 +599,8 @@ export interface BudgetVsActualReport {
     settlementOpex: number;
     priorOpeningCapex: number;
     priorOpeningOpex: number;
+    postCloseReserveCapex: number;
+    postCloseReserveOpex: number;
   };
 }
 
@@ -613,6 +627,8 @@ export async function getBudgetVsActualReport(
     settlementOpex: row.crossYearOpex,
     priorOpeningCapex: row.priorOpeningCapex,
     priorOpeningOpex: row.priorOpeningOpex,
+    postCloseReserveCapex: row.postCloseReserveCapex,
+    postCloseReserveOpex: row.postCloseReserveOpex,
     unallocatedCapex: row.unallocatedCapex,
     unallocatedOpex: row.unallocatedOpex,
     overCapex: row.overCapex,
@@ -633,6 +649,8 @@ export async function getBudgetVsActualReport(
       settlementOpex: total.settlementOpex + row.settlementOpex,
       priorOpeningCapex: total.priorOpeningCapex + row.priorOpeningCapex,
       priorOpeningOpex: total.priorOpeningOpex + row.priorOpeningOpex,
+      postCloseReserveCapex: total.postCloseReserveCapex + row.postCloseReserveCapex,
+      postCloseReserveOpex: total.postCloseReserveOpex + row.postCloseReserveOpex,
       unallocatedCapex: total.unallocatedCapex + row.unallocatedCapex,
       unallocatedOpex: total.unallocatedOpex + row.unallocatedOpex,
     }),
@@ -649,6 +667,8 @@ export async function getBudgetVsActualReport(
       settlementOpex: 0,
       priorOpeningCapex: 0,
       priorOpeningOpex: 0,
+      postCloseReserveCapex: 0,
+      postCloseReserveOpex: 0,
       unallocatedCapex: 0,
       unallocatedOpex: 0,
     },

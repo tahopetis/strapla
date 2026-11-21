@@ -1,4 +1,6 @@
-import { Fragment } from 'react';
+'use client';
+
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CustomFieldInputs, CustomFieldsPanel } from '@/components/custom-fields';
 import {
@@ -26,6 +28,113 @@ import {
 import { SettlementInput } from './settlement-input';
 
 const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
+
+/**
+ * The two agreed post-close treatment labels (ADR-0003 §4a, issue #98). The
+ * closed year is named when the transaction settles exactly one closed year.
+ */
+function postCloseTreatmentOptions(
+  currentFiscalYear: number,
+  closedFiscalYears: readonly number[],
+): Array<{ value: string; label: string }> {
+  const closedLabel =
+    closedFiscalYears.length === 1
+      ? `Charge to the closed year (FY${closedFiscalYears[0]}) — reserve`
+      : 'Charge to the closed year — reserve';
+  return [
+    { value: 'charge_current_year', label: `Charge to the current year (FY${currentFiscalYear})` },
+    { value: 'charge_closed_year_reserve', label: closedLabel },
+  ];
+}
+
+/** A settlement amount typed as a positive whole-Rupiah figure (dots ignored). */
+function hasSettlementAmount(value: string): boolean {
+  const digits = value.trim().replaceAll('.', '');
+  return digits !== '' && Number(digits) > 0;
+}
+
+/**
+ * The settlement rows plus the post-close treatment control (#98). The control
+ * only appears when a typed settlement targets a commitment whose annual plan
+ * is closed; it defaults to charging the current year. It is a client component
+ * because it reacts to the amounts typed into the uncontrolled settlement rows,
+ * including the values echoed back after a refused submission.
+ */
+function SettlementFields({
+  options,
+  fiscalYear,
+}: {
+  options: SettlementOption[];
+  fiscalYear: number;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closedCommitmentIds = useMemo(
+    () => options.filter((option) => option.closedYear).map((option) => option.commitmentId),
+    [options],
+  );
+  const closedFiscalYears = useMemo(
+    () =>
+      Array.from(
+        new Set(options.filter((option) => option.closedYear).map((option) => option.fiscalYear)),
+      ).sort((left, right) => left - right),
+    [options],
+  );
+  const [closedYearInPlay, setClosedYearInPlay] = useState(false);
+
+  const syncClosedYearInPlay = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || closedCommitmentIds.length === 0) {
+      setClosedYearInPlay(false);
+      return;
+    }
+    const inPlay = closedCommitmentIds.some((commitmentId) => {
+      const input = container.querySelector<HTMLInputElement>(
+        `input[name="settle_${commitmentId}"]`,
+      );
+      return Boolean(input && hasSettlementAmount(input.value));
+    });
+    setClosedYearInPlay(inPlay);
+  }, [closedCommitmentIds]);
+
+  useEffect(() => {
+    syncClosedYearInPlay();
+  }, [syncClosedYearInPlay]);
+
+  return (
+    <div
+      ref={containerRef}
+      onInput={syncClosedYearInPlay}
+      className="sm:col-span-2 lg:col-span-3 rounded border border-slate-200 bg-slate-50 p-3"
+    >
+      <p className="text-sm font-medium text-slate-700">Settle open commitments (optional)</p>
+      <p className="mt-1 text-xs text-slate-500">
+        Leave blank for none. A settlement of an earlier-year commitment is cross-year and stays out
+        of this year&apos;s remaining, unless the commitment&apos;s year is closed and you charge its
+        portion to FY{fiscalYear} below.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {options.map((option) => (
+          <SettlementInput
+            key={option.commitmentId}
+            name={`settle_${option.commitmentId}`}
+            label={option.label}
+          />
+        ))}
+      </div>
+      {closedYearInPlay ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <SelectField
+            label="Post-close settlement treatment"
+            name="postCloseTreatment"
+            defaultValue="charge_current_year"
+            options={postCloseTreatmentOptions(fiscalYear, closedFiscalYears)}
+            hint="Closed-year settlement only. Open-year commitments always count in the current year."
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Whether the panel will render anything. `CustomFieldsPanel` hides itself for a
@@ -143,7 +252,9 @@ export function FundingSummaryCard({
       <p className="mt-4 text-xs text-slate-500">
         Remaining = allocation + carry-in − open commitments − current-year spend, per component
         (ADR-0003 §3). Cross-year settlement portions and prior-year opening payments do not reduce the
-        current year. BR-11 warns when current-year spend exceeds the year&apos;s commitments.
+        current year; a closed-year portion is either charged to the current year (counts as
+        current-year spend) or reserved in its closed year, chosen per transaction. BR-11 warns when
+        current-year spend exceeds the year&apos;s commitments.
       </p>
     </Card>
   );
@@ -385,7 +496,9 @@ export function SpendSection({
       <p className="text-sm text-slate-600">
         Actual spending (invoices recorded). A spend entry can settle open commitments; settling a
         commitment from an earlier fiscal year is a cross-year settlement and does not reduce this
-        year&apos;s remaining. Payments of commitments made before Strapla are marked as prior-year opening.
+        year&apos;s remaining — unless the commitment&apos;s year is closed and you charge the
+        closed-year portion to the current year. Payments of commitments made before Strapla are
+        marked as prior-year opening.
       </p>
 
       {editable ? (
@@ -431,22 +544,7 @@ export function SpendSection({
               ]}
             />
             {settlementOptions.length > 0 ? (
-              <div className="sm:col-span-2 lg:col-span-3 rounded border border-slate-200 bg-slate-50 p-3">
-                <p className="text-sm font-medium text-slate-700">Settle open commitments (optional)</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Leave blank for none. FY{fiscalYear} spend settling an earlier-year commitment is
-                  classified as cross-year automatically.
-                </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {settlementOptions.map((option) => (
-                    <SettlementInput
-                      key={option.commitmentId}
-                      name={`settle_${option.commitmentId}`}
-                      label={option.label}
-                    />
-                  ))}
-                </div>
-              </div>
+              <SettlementFields options={settlementOptions} fiscalYear={fiscalYear} />
             ) : null}
             <CustomFieldInputs fields={customFields} />
             <div className="sm:col-span-2 lg:col-span-3">
@@ -491,6 +589,22 @@ export function SpendSection({
                       <td className="py-3 pr-4">
                         {row.spend.settlementKind === 'prior_year_opening' ? (
                           <Badge tone="info">prior-year opening</Badge>
+                        ) : row.spend.postCloseTreatment === 'charge_closed_year_reserve' &&
+                          row.closedYearSettled > 0 ? (
+                          <div className="space-y-1">
+                            <Badge tone="info">closed-year reserve</Badge>
+                            {row.crossYearSettled > row.closedYearSettled ? (
+                              <Badge tone="warning">cross-year settlement</Badge>
+                            ) : null}
+                          </div>
+                        ) : row.spend.postCloseTreatment === 'charge_current_year' &&
+                          row.closedYearSettled > 0 ? (
+                          <div className="space-y-1">
+                            <Badge tone="warning">closed-year charged to current year</Badge>
+                            {row.crossYearSettled > row.closedYearSettled ? (
+                              <Badge tone="warning">cross-year settlement</Badge>
+                            ) : null}
+                          </div>
                         ) : row.crossYearSettled > 0 ? (
                           <Badge tone="warning">cross-year settlement</Badge>
                         ) : (
@@ -505,7 +619,11 @@ export function SpendSection({
                             {row.settlementLinks.map((link) => (
                               <li key={link.commitmentId}>
                                 <Money value={link.amount} /> · FY{link.commitmentFiscalYear}
-                                {link.commitmentFiscalYear < fiscalYear ? ' (cross-year)' : ''}
+                                {link.closedYear
+                                  ? ' (closed year)'
+                                  : link.commitmentFiscalYear < fiscalYear
+                                    ? ' (cross-year)'
+                                    : ''}
                               </li>
                             ))}
                           </ul>
@@ -589,11 +707,31 @@ export function SpendSection({
                                   ]}
                                   defaultValue={row.spend.settlementKind}
                                 />
+                                {row.closedYearSettled > 0 ? (
+                                  <SelectField
+                                    label="Post-close settlement treatment"
+                                    name="postCloseTreatment"
+                                    options={postCloseTreatmentOptions(
+                                      fiscalYear,
+                                      Array.from(
+                                        new Set(
+                                          row.settlementLinks
+                                            .filter((link) => link.closedYear)
+                                            .map((link) => link.commitmentFiscalYear),
+                                        ),
+                                      ).sort((left, right) => left - right),
+                                    )}
+                                    defaultValue={
+                                      row.spend.postCloseTreatment ?? 'charge_current_year'
+                                    }
+                                    hint="Fixed once the spend has settlements; void and re-enter to change it."
+                                  />
+                                ) : null}
                                 <CustomFieldInputs
                                   fields={customFields}
                                   values={customValues.get(row.spend.id)}
                                 />
-                                <ReasonField hint="Settlement links are fixed after creation; void and re-enter to change them." />
+                                <ReasonField hint="Settlement links and the post-close treatment are fixed after creation; void and re-enter to change them." />
                                 <div>
                                   <SubmitButton>Save spend</SubmitButton>
                                 </div>

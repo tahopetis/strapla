@@ -9,6 +9,7 @@ import {
   recurringOpsItems,
   spendEntries,
 } from '@/db/schema';
+import { settlementPortionIsCrossYear } from '@/domain/settlement';
 
 /**
  * Execution aggregates for the M3 reporting line (#20). Loads the commitments,
@@ -35,6 +36,12 @@ export interface ExecutionTotals {
   /** Spend paying pre-app (opening) commitments. */
   priorOpeningCapex: number;
   priorOpeningOpex: number;
+  /** Closed-year settlements kept as a post-close reserve in the closed year (#98). */
+  reserveCapex: number;
+  reserveOpex: number;
+  /** Closed-year settlements charged to the current year instead (#98). */
+  chargedCapex: number;
+  chargedOpex: number;
 }
 
 export function emptyExecutionTotals(): ExecutionTotals {
@@ -51,6 +58,10 @@ export function emptyExecutionTotals(): ExecutionTotals {
     crossYearOpex: 0,
     priorOpeningCapex: 0,
     priorOpeningOpex: 0,
+    reserveCapex: 0,
+    reserveOpex: 0,
+    chargedCapex: 0,
+    chargedOpex: 0,
   };
 }
 
@@ -75,11 +86,13 @@ interface ParentAllocation {
   programId: string;
   siId: string;
   fiscalYear: number;
+  planStatus: 'draft' | 'active' | 'closed';
 }
 
 interface ParentRecurring {
   itemId: string;
   fiscalYear: number;
+  planStatus: 'draft' | 'active' | 'closed';
 }
 
 interface SpendInfo {
@@ -89,6 +102,7 @@ interface SpendInfo {
   component: 'capex' | 'opex';
   amount: number;
   settlementKind: 'current' | 'prior_year_opening';
+  postCloseTreatment: 'charge_current_year' | 'charge_closed_year_reserve' | null;
   fiscalYear: number;
 }
 
@@ -102,6 +116,7 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
       programId: projectYearAllocations.annualProgramId,
       siId: annualPrograms.siId,
       fiscalYear: annualPlans.fiscalYear,
+      planStatus: annualPlans.status,
     })
     .from(projectYearAllocations)
     .innerJoin(annualPrograms, eq(projectYearAllocations.annualProgramId, annualPrograms.id))
@@ -112,6 +127,7 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
     .select({
       itemId: recurringOpsItems.id,
       fiscalYear: annualPlans.fiscalYear,
+      planStatus: annualPlans.status,
     })
     .from(recurringOpsItems)
     .innerJoin(annualPlans, eq(recurringOpsItems.annualPlanId, annualPlans.id))
@@ -169,6 +185,7 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
       component: spend.component,
       amount: spend.amount,
       settlementKind: spend.settlementKind,
+      postCloseTreatment: spend.postCloseTreatment,
       fiscalYear,
     });
   }
@@ -186,7 +203,14 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
 
   const commitmentById = new Map<
     string,
-    { allocationId: string | null; recurringItemId: string | null; component: 'capex' | 'opex'; amount: number; fiscalYear: number }
+    {
+      allocationId: string | null;
+      recurringItemId: string | null;
+      component: 'capex' | 'opex';
+      amount: number;
+      fiscalYear: number;
+      planStatus: 'draft' | 'active' | 'closed';
+    }
   >();
   for (const commitment of commitments) {
     if (commitment.projectYearAllocationId) {
@@ -198,6 +222,7 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
         component: commitment.component,
         amount: commitment.amount,
         fiscalYear: allocation.fiscalYear,
+        planStatus: allocation.planStatus,
       });
     } else if (commitment.recurringOpsItemId) {
       const item = recurring.get(commitment.recurringOpsItemId);
@@ -208,18 +233,44 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
         component: commitment.component,
         amount: commitment.amount,
         fiscalYear: item.fiscalYear,
+        planStatus: item.planStatus,
       });
     }
   }
 
+  const reserveByCommitment = new Map<string, number>();
+  const chargedBySpend = new Map<string, number>();
   for (const settlement of settlementRows) {
     const spend = spendById.get(settlement.spendEntryId);
     const commitment = commitmentById.get(settlement.commitmentEntryId);
     if (!spend || !commitment) continue;
-    if (commitment.fiscalYear < spend.fiscalYear) {
+    // A post-close split pays a commitment from an earlier year whose plan is
+    // already closed; a same-year settlement of a since-closed plan was an
+    // ordinary current-year payment when it was recorded and stays one.
+    const closedYearSplit =
+      commitment.planStatus === 'closed' && commitment.fiscalYear < spend.fiscalYear;
+    const portionIsCrossYear = settlementPortionIsCrossYear({
+      commitmentFiscalYear: commitment.fiscalYear,
+      spendFiscalYear: spend.fiscalYear,
+      settlementKind: spend.settlementKind,
+      commitmentPlanClosed: closedYearSplit,
+      postCloseTreatment: spend.postCloseTreatment,
+    });
+    if (portionIsCrossYear) {
       crossYearBySpend.set(
         spend.spendId,
         (crossYearBySpend.get(spend.spendId) ?? 0) + settlement.amount,
+      );
+      if (closedYearSplit && spend.settlementKind === 'current') {
+        reserveByCommitment.set(
+          settlement.commitmentEntryId,
+          (reserveByCommitment.get(settlement.commitmentEntryId) ?? 0) + settlement.amount,
+        );
+      }
+    } else if (closedYearSplit && spend.settlementKind === 'current') {
+      chargedBySpend.set(
+        spend.spendId,
+        (chargedBySpend.get(spend.spendId) ?? 0) + settlement.amount,
       );
     }
   }
@@ -311,6 +362,26 @@ export async function loadExecutionAggregates(planId: string): Promise<Execution
         target.crossYearOpex += crossYear;
         target.priorOpeningOpex += priorOpening;
       }
+    }
+  }
+
+  // Post-close settlement (#98): a reserve stays on the closed year's
+  // commitment side; a current-year charge is current-year money and is
+  // already inside currentSpendCapex/currentSpendOpex above.
+  for (const [commitmentId, reserved] of reserveByCommitment.entries()) {
+    const commitment = commitmentById.get(commitmentId);
+    if (!commitment) continue;
+    for (const target of targetsForCommitment(commitment)) {
+      if (commitment.component === 'capex') target.reserveCapex += reserved;
+      else target.reserveOpex += reserved;
+    }
+  }
+  for (const spend of spendById.values()) {
+    const charged = chargedBySpend.get(spend.spendId) ?? 0;
+    if (charged === 0) continue;
+    for (const target of targetsForSpend(spend)) {
+      if (spend.component === 'capex') target.chargedCapex += charged;
+      else target.chargedOpex += charged;
     }
   }
 
