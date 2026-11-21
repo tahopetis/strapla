@@ -42,7 +42,7 @@ The gate above is not the only check. Each workflow below has one job and one di
 | Workflow | Covers | Disposition |
 |---|---|---|
 | `security-gate` | gitleaks, osv-scanner, semgrep, Trivy config, one decider | **Blocking** at `medium` |
-| `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Required check** (the analysis must succeed); findings appear as alerts and do not fail the job |
+| `codeql` | CodeQL `javascript-typescript` on push, PR and a weekly schedule; SARIF to the Security tab | **Required check** (the analysis must succeed) plus **merge protection** on new alerts at **medium or higher** and error-level results (ruleset; see [CodeQL merge protection](#codeql-merge-protection)) |
 | `dependency-review` | the PR's own dependency and action changes (`fail-on-severity: high`) | **Blocking** (required check) |
 | `image-scan` | Trivy CVEs in the container image: the PR build (linux/amd64, local) before merge, the `docker` run's published `sha-<commit>` image after it, and `:latest` weekly; SARIF to the Security tab at every severity (a fork/Dependabot PR or an ad-hoc `image_ref` run still blocks, but its token cannot publish) | **Blocking** on CRITICAL/HIGH (required check) |
 | GitHub secret scanning | full repository history plus push protection | **Blocking** (push protection) |
@@ -52,6 +52,32 @@ never pushed) because the `docker` workflow deliberately does not publish PR ima
 only ran after a merge could not be required on a pull request. For a `docker` run it scans the exact
 image that run published (`sha-<commit>`) rather than `:latest`, so it can never analyse a stale image.
 A scheduled run scans `:latest`; a manual run scans `:latest` unless it passes the `image_ref` input.
+
+### CodeQL merge protection
+
+A repository ruleset, `CodeQL merge protection (medium or higher)` (id `27775718`), targets `main`
+with no bypass actors and requires the `CodeQL` analysis results:
+
+- **security alerts: medium or higher** — the same threshold as the gate;
+- **analysis alerts: errors** — an error-level result blocks; warnings and notes stay triageable.
+
+The ruleset blocks a merge when a required tool reports an alert at or above the threshold **on lines
+in the pull request's diff**, while the analysis is still running, or when the tool is not configured.
+Because it only evaluates the pull request's alerts against the branch, existing alert debt elsewhere
+does not block an unrelated PR. The required `Analyze (javascript-typescript)` check still proves
+the analysis ran; the ruleset makes its findings blocking.
+
+There is **no ruleset bypass**. The only way past a blocking alert is to dismiss it in the Security
+tab with a reason — read it first, then record why. A dismissal is the CodeQL waiver: the gate clears,
+the alert stays in the record with its dismissal reason, and GitHub audits the change. Never edit a
+query, the workflow or the ruleset to go green.
+
+Verified on 21 November 2026: a throwaway PR seeding a command-injection route (#94) was blocked by
+this ruleset, and the clean documentation PR that records this decision merged with the ruleset
+active. Fork PRs are not analysed (a fork token cannot upload SARIF) and cannot merge without the
+required check; Dependabot PRs run the same advanced-setup workflow and are covered (the default-setup
+exemption does not apply here); the repository does not use a merge queue, where ruleset merge
+protection would not apply.
 
 ### Image scan policy
 
@@ -95,6 +121,8 @@ through the same gate.
   silently is the failure mode the gate exists to prevent.
 - **A secret finding is an incident**: remove the value from the code *and* rotate it. History counts.
 - **Do not add `continue-on-error`** to a scanner step.
+- **Never go around CodeQL with configuration.** A blocking CodeQL alert is fixed or dismissed with a reason
+  in the Security tab; there is no ruleset bypass and no query edit to make it disappear.
 - Dependency PRs (Dependabot included) pass through the same gate.
 
 ## Threshold
@@ -129,7 +157,8 @@ subset is `SCANNERS=secrets`.
    tab holds the complete record at every severity.
 5. Waive only what has been read: `scanner:rule:path` plus a reason and an expiry in
    `ci/security-baseline.json` for the gate, or a dated entry in `ci/image-scan-waivers.yaml` for the
-   image scan.
+   image scan. A CodeQL alert is waived by **dismissing it with a reason** in the Security tab; the
+   dismissal is recorded and audited, and there is no ruleset bypass.
 
 The job summary carries counts, not paths. Keep it that way: a path list in a status is a map of
 where to look.
@@ -149,6 +178,11 @@ with these required checks: `verify` (ci), `build` (docker), `security-gate`, `D
 required check blocks the merge. Each of them runs on pull requests — that is the test for requiring
 a check at all; a check that only runs after the merge holds every PR open forever.
 
+Since 21 November 2026 a repository ruleset additionally requires CodeQL results on `main`: new
+security alerts at **medium or higher** and error-level analysis results block the merge even when
+every status check is green. The ruleset is separate from these status checks and replaces none of
+them (see [CodeQL merge protection](#codeql-merge-protection)).
+
 ## Current state (November 2026)
 
 The repository is public and MIT-licensed; secret scanning and push protection are enabled. The
@@ -157,7 +191,8 @@ and pushing requires repository write access (normally only the `docker` workflo
 `GITHUB_TOKEN`). The security gate runs four scanners and reports **0 findings at any severity**,
 with one open waiver.
 The threshold is `medium`; the gate passes on its own merits rather than shadow mode. CodeQL,
-dependency review and the image scan are required on pull requests.
+dependency review and the image scan are required on pull requests, and a ruleset blocks new CodeQL
+security alerts at medium or higher (see [CodeQL merge protection](#codeql-merge-protection)).
 
 The first CodeQL analysis (20 November 2026) flagged two `js/xss-through-dom` warnings on the import
 wizard's template links. The links now take their `dataSet` from the declared option list instead of
