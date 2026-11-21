@@ -343,10 +343,23 @@ test('refuses a settlement above the open commitment amount @t2', async ({ page 
   await spendForm.locator('input[name^="settle_"]').first().fill('11000000');
   await page.getByRole('button', { name: 'Record spend' }).click();
 
-  // validateSettlementSplits throws a SettlementError, which failureState does not
-  // translate into a form message: it rethrows and the route error boundary renders
-  // (#99 — src/server/actions/common.ts knownFailureMessage, src/domain/settlement.ts).
-  await expect(page.getByRole('heading', { name: 'Something went wrong' })).toBeVisible();
+  // #99: an over-settlement is an ordinary validation failure, so the form comes
+  // back with the settlement on its own input and every entered value preserved —
+  // the route error boundary is not rendered.
+  await expect(
+    spendForm.getByText(
+      `This settlement is more than the commitment's open amount (${rp(10000000)}).`,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Something went wrong' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: `FY${FY} allocation · ${fixture.program.code}` }),
+  ).toBeVisible();
+  await expect(spendForm.locator('input[name^="settle_"]').first()).toHaveValue('11000000');
+  await expect(spendForm.locator('input[name="amount"]')).toHaveValue('12000000');
+  await expect(spendForm.locator('input[name="reference"]')).toHaveValue('EXEC-SP-6');
 
   // nothing was written: the commitment is still open and no spend row exists
   await page.goto(allocationUrl);

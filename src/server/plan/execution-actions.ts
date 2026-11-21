@@ -41,6 +41,7 @@ import {
   invalidCustomFieldState,
   failureState,
   finishWith,
+  settlementFieldError,
   validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
@@ -472,10 +473,17 @@ async function createSpend(
       alreadySettled: commitment.settled,
     };
   });
-  validateSettlementSplits({
-    spendAmount: input.amount,
-    splits: validationSplits,
-  });
+  try {
+    validateSettlementSplits({
+      spendAmount: input.amount,
+      splits: validationSplits,
+    });
+  } catch (error) {
+    // The domain keeps its framework-free error; the action layer turns it into
+    // the inline refusal the settlement rows are built for (#99).
+    const refusal = settlementFieldError(error, validationSplits, input.amount);
+    throw refusal ?? error;
+  }
 
   let created: SpendEntry | undefined;
   await getDb().transaction(async (tx) => {
@@ -546,6 +554,7 @@ async function updateSpend(
 ): Promise<SpendEntry> {
   if (spend.voidedAt) throw new FormError('This spend entry is voided and read-only.');
   requireSpendLifecycle(context);
+  requireComponentAllowed(context, input.component);
 
   const settlements = await getDb()
     .select({ amount: commitmentSettlements.amount })
@@ -554,6 +563,11 @@ async function updateSpend(
   const totalSettled = settlements.reduce((sum, row) => sum + row.amount, 0);
   if (input.amount < totalSettled) {
     throw new FormError('The spend amount cannot be reduced below the settled amount.');
+  }
+  // The component decides which budget the spend draws on, so settlements pin
+  // it the same way they pin the settlement classification (#100).
+  if (settlements.length > 0 && input.component !== spend.component) {
+    throw new FormError('Void the spend entry and re-enter it to change its component.');
   }
   if (input.settlementKind !== spend.settlementKind && totalSettled > 0) {
     throw new FormError('Void the spend entry and re-enter it to change its settlement classification.');
@@ -565,6 +579,7 @@ async function updateSpend(
     [updated] = await tx
       .update(spendEntries)
       .set({
+        component: input.component,
         amount: input.amount,
         spentOn: input.spentOn,
         categoryId: input.categoryId,
