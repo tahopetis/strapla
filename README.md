@@ -76,7 +76,7 @@ First visit: `/setup` creates the first administrator (only when no users exist)
 
 ### End-to-end tests
 
-Playwright drives the full plan happy path against a fresh database:
+Playwright drives the app against a fresh database. The suite has three tiers: the foundation journey that builds the portfolio, the rule specs (voids, edits, settlement, closed-year locks, close, reports and exports, flags, members and audit, auth) and a read-only sweep of every route.
 
 ```bash
 docker compose exec -T db psql -U strapla -d postgres -c 'CREATE DATABASE strapla_e2e'
@@ -84,7 +84,9 @@ DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm db:migra
 DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm e2e
 ```
 
-CI runs the same suite with a PostgreSQL service and the Playwright-managed Chromium.
+The database must have no users — the suite starts at `/setup`. Re-create it between runs; `e2e/support/global-setup.ts` refuses a database that already has an account.
+
+`ci.yml` runs the foundation journey and the read-only sweep on every pull request — not the rule specs. The **regression** workflow (`.github/workflows/regression.yml`) is dispatched on demand before a release and runs every tier, with tier selection, artifact uploads and a per-test job summary; see [`docs/REGRESSION.md`](docs/REGRESSION.md) for the trigger commands, the tier/project mapping, the coverage map and the known gaps.
 
 ### Docker
 

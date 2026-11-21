@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import ExcelJS from 'exceljs';
+import { assertEmptyStates } from './support/empty-states';
 
 /**
  * M1 happy path (charter §7 W-0..W-3 and the plan module): first-run setup,
@@ -34,9 +36,10 @@ function endTiming(name: string, startedAt: number): void {
   console.log(`[timing] ${name}: ${ms} ms`);
 }
 
-test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
-  // Generous cap so the suite also passes on slow development boxes; CI runs it in seconds.
-  test.setTimeout(600_000);
+test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) => {
+  // Bounded rather than open-ended: CI runs this in about a minute, and the cap
+  // stops one hung step from burning the whole job's budget.
+  test.setTimeout(180_000);
   // ---------------------------------------------------------------- setup
   await page.goto('/setup');
   await expect(page.getByRole('heading', { name: 'Strapla — first-run setup' })).toBeVisible();
@@ -58,6 +61,10 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await expect(setupSubmit).toHaveText('Creating…');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.unroute('**/setup');
+
+  // T3: with no portfolio yet, every page renders its empty state. This is the
+  // only moment those states exist; later tiers run against a full database.
+  await assertEmptyStates(page);
 
   // W1a: activation lives in the page header's action group. Scoping to that
   // group proves placement instead of finding a form anywhere on the page.
@@ -369,10 +376,58 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
     await expect(page.getByText(/Imported \d+ .*record\(s\) from/)).toBeVisible();
   };
 
-  await importDataSet(
-    'Strategic initiatives',
-    'e2e/fixtures/opening-import/strategic-initiatives.csv',
-  );
+  // The XLSX import is only reachable before the close: the import always targets
+  // the first in-app year, which is FY2027 here. The workbook is built with the
+  // same declared columns the CSV template carries, so the upload, the Excel
+  // parser and the one-transaction load are all exercised.
+  const importXlsx = async (label: string, rows: string[][]): Promise<void> => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Data');
+    for (const row of rows) sheet.addRow(row);
+    const payload = Buffer.from(await workbook.xlsx.writeBuffer());
+    await page.goto('/plan/opening-balances/import');
+    await page.locator('select[name="dataSet"]').selectOption({ label });
+    await page.locator('input[name="file"]').setInputFiles({
+      name: 'strategic-initiatives.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: payload,
+    });
+    await page.locator('input[name="reference"]').fill('E2E-OPENING-IMPORT');
+    await page.getByRole('button', { name: 'Validate file' }).click();
+    await expect(page.getByText(/row\(s\) validated, nothing written yet/)).toBeVisible();
+    await page.getByRole('button', { name: 'Validate and load' }).click();
+    await expect(page.getByText(/Imported \d+ .*record\(s\) from/)).toBeVisible();
+  };
+
+  await importXlsx('Strategic initiatives', [
+    [
+      'Code',
+      'Name',
+      'Owner',
+      'Objective',
+      'Envelope amount (Rp)',
+      'Prior program budget consumed (Rp)',
+      'Notes',
+    ],
+    [
+      'SI-91',
+      'Imported initiative one',
+      'Head of Importing',
+      'Exercise the opening import.',
+      '1000000000',
+      '100000000',
+      '',
+    ],
+    [
+      'SI-92',
+      'Imported initiative two',
+      'Head of Importing',
+      'Exercise the opening import.',
+      '500000000',
+      '25000000',
+      '',
+    ],
+  ]);
   await importDataSet('Annual programs', 'e2e/fixtures/opening-import/annual-programs.csv');
 
   // W8a timing: the 25-project workbook validated and loaded end to end.
@@ -428,6 +483,10 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Save control totals' }).click();
   await expect(page.getByText(/Control totals saved for the FY2026 opening balances/)).toBeVisible();
 
+  // A control total may differ from the in-app records: the difference is shown
+  // and the sign-off records the reason instead of blocking the save.
+  await expect(page.getByText('difference', { exact: true }).first()).toBeVisible();
+
   const signOffForm = page
     .locator('form')
     .filter({ has: page.getByRole('button', { name: 'Sign off opening balances' }) });
@@ -435,6 +494,9 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   await page.getByRole('button', { name: 'Sign off opening balances' }).click();
   await expect(page.getByText(/Opening balances for FY2026 signed off\./)).toBeVisible();
   await expect(page.getByText('signed off', { exact: true })).toBeVisible();
+  // Sign-off is final: the control-total form is replaced by the read-only notice.
+  await expect(page.getByRole('button', { name: 'Save control totals' })).toHaveCount(0);
+  await expect(page.getByText(/The control totals are read-only/)).toBeVisible();
 
   // ------------------------------------------------------ custom fields (#46)
   // The registry now holds the seeded Procurement method and the Delivery note
@@ -953,6 +1015,10 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
 
   await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2028 annual plan' })).toBeVisible();
+  // FY2028 becomes the open year: FY2027 closes below, and the later tiers write
+  // their own programs, projects and allocations into this year.
+  await activateFromHeader('Activate annual plan', 'FY2028 provisional budget approved.');
+  await expect(page.getByText(/Annual plan FY2028 activated\./)).toBeVisible();
   const continuationForm = page
     .locator('form')
     .filter({ has: page.getByRole('button', { name: 'Add program' }) });
@@ -1012,6 +1078,9 @@ test('builds and reconciles the FY2027 plan end to end', async ({ page }) => {
   // ------------------------------------------------------ plan is persisted
   await page.goto('/plan/strategic');
   await expect(page.getByText('SI-01 · Digital Workplace')).toBeVisible();
+
+  // The t2 and t3 projects reuse this signed-in state instead of replaying setup.
+  await page.context().storageState({ path: 'e2e/.auth/admin.json' });
 
   console.log(`[timings] ${JSON.stringify(timings)}`);
 });
