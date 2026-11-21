@@ -60,29 +60,24 @@ A full run is about two minutes of test execution (50 tests) and four to five mi
 | `plan-happy-path.spec.ts` | T1 | Setup and sign-in state; empty states of every page; strategic plan + SI; annual plan FY2027/FY2028; program and continuation; project, ijin prinsip and BR flags; allocation; commitment and partial settlement; recurring ops; opening-balance control totals (a non-zero difference is allowed and recorded) and the one-time sign-off; opening import (validate-nothing-written, XLSX upload then CSV loads); custom fields across entities, reports, exports and the import template; report exports; members and audit; FY2027 close with carry-over and thread; help. |
 | `auth.spec.ts` | T2 | Sign-in, wrong password, deactivated member, minted session for a deactivated member, sign-out, `/setup` after the first account. |
 | `voids.spec.ts` | T2 | Void/cancel for SI, program, project, allocation, commitment, spend and recurring ops — with reasons, refusals and audit rows. |
-| `edits.spec.ts` | T2 | Program, recurring-ops, allocation, commitment and spend edits, including the settled/frozen guards. |
-| `execution.spec.ts` | T2 | Commitment → spend → settlement lifecycle, open/partially settled/settled, remaining arithmetic, over-settlement refusal, prior-year opening settlement, and cross-year settlement (an FY2029 spend settling an FY2028 commitment). |
-| `closed-year.spec.ts` | T2 | Every closed-year refusal and hidden form; the three known server gaps are linked, not faked. |
+| `edits.spec.ts` | T2 | Program, recurring-ops, allocation, commitment and spend edits, including the settled/frozen guards (component and settlement classification). |
+| `execution.spec.ts` | T2 | Commitment → spend → settlement lifecycle, open/partially settled/settled, remaining arithmetic, over-settlement refusing inline on the settlement field, prior-year opening settlement, and cross-year settlement (an FY2029 spend settling an FY2028 commitment). |
+| `closed-year.spec.ts` | T2 | Every closed-year refusal and hidden form. The allocation-update and recurring-ops-void guards are proven by action-level unit tests; #98 is the one remaining linked server gap. |
 | `close.spec.ts` | T2 | Close preconditions: missing next-year plan, typed confirmation, carry-over preview. |
 | `opening-balances.spec.ts` | T2 | Signed-off read-only view, CSV/XLSX templates for all three data sets, and the import gate after the close (the import always targets the first in-app year, which the foundation closes — so the XLSX round-trip lives in the foundation, before the close). |
 | `admin.spec.ts` | T2 | Member lifecycle (create, activate/deactivate, reset password, revoke sessions), self/last-admin protections, audit search and CSV. |
 | `reports.spec.ts` | T2 | Four reports with real figures; CSV and XLSX parsed; `columns=` selection; filters; print media. |
-| `flags.spec.ts` | T2 | BR-7, BR-8, BR-9, BR-18, commitments over contract value, spend over fiscal-year commitment, envelope overrun. |
-| `sweep.spec.ts` | T3 | Every route renders with data; unauthenticated `/healthz` and sign-in redirect. |
+| `flags.spec.ts` | T2 | BR-7, BR-8, BR-9, BR-18, commitments over contract value, spend over fiscal-year commitment, envelope overrun, and the project page and register agreeing on the lifetime commitment figure and BR-8. |
+| `sweep.spec.ts` | T3 | Every route renders with data; malformed dynamic record ids render the styled 404; unauthenticated `/healthz` and sign-in redirect. |
 | `resilience.spec.ts` | T3 | Ended session lands on sign-in with an explanation; unknown URL renders the styled 404. |
 
 ## Known gaps
 
 These are tracked as issues, not silently missing tests:
 
-- [#96](https://github.com/tahopetis/strapla/issues/96) — allocation **update** has no closed-year guard on the server (void does; the UI hides the form).
-- [#97](https://github.com/tahopetis/strapla/issues/97) — recurring-ops **void** passes `allowClosed: true` on the server (the UI hides it).
-- [#98](https://github.com/tahopetis/strapla/issues/98) — the post-close settlement branch in spend-create is unreachable dead code.
-- [#99](https://github.com/tahopetis/strapla/issues/99) — an over-settlement throws an uncaught `SettlementError`, so the allocation route shows the error boundary instead of a field message. The suite pins that surface (and proves nothing was written) until the refusal is fixed.
-- [#100](https://github.com/tahopetis/strapla/issues/100) — the spend edit form renders a Component select that the server action never writes, so the change is silently ignored. The suite pins the current behaviour and the vendor edit that does work.
-- [#103](https://github.com/tahopetis/strapla/issues/103) — a non-UUID dynamic segment (`/plan/annual/close`) reaches Postgres and throws, so the error boundary renders instead of the styled 404. `sweep.spec.ts` carries it as `test.fixme` until the route validates its id.
+- [#98](https://github.com/tahopetis/strapla/issues/98) — post-close settlement has no reachable path: the spend-create closed-year branch is dead code behind an earlier editability guard. It is the one remaining linked server gap and is filed as a ready-for-human feature decision.
 
-All three are UI-hidden, so a browser test can only assert the visible lock; the missing server guard needs a unit or integration test at the action layer. `closed-year.spec.ts` asserts what the browser can prove and links the issues.
+The earlier gaps here — the allocation-update and recurring-ops-void closed-year guards (#96, #97), the uncaught over-settlement (#99), the ignored Component field (#100), the project page's commitment figure (#101) and the malformed-id 500 (#103) — are fixed and now pinned by tests: action-level unit tests for the two server guards, and regression specs for the inline settlement refusal, the component freeze, the project page and register agreeing on BR-8, and the styled 404 for malformed ids.
 
 Two other findings worth knowing when reading the suite:
 
@@ -95,6 +90,7 @@ Two other findings worth knowing when reading the suite:
 - Spend-category administration — there is no UI; categories are seeded by the migration.
 - Pixel/visual regression, PDF fidelity, accessibility auditing, and mobile viewports.
 - Anything requiring a second role — v1 has one role (Administrator).
+- A hard 404 **status** for malformed dynamic record ids: the guard now renders the app's styled "Page not found" before any query, but the signed-in shell streams while the session is resolved, so the wire status can stay 200 (a soft 404). A true status needs a proxy-level check.
 
 ## Adding to the suite
 
