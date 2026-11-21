@@ -194,10 +194,32 @@ test.describe('unauthenticated boundaries', () => {
 });
 
 // #103 (https://github.com/tahopetis/strapla/issues/103): a dynamic segment that
-// is not a UUID reaches Postgres and throws, so the error boundary renders
-// instead of the styled 404. When the route validates its id, flip this on.
-test.fixme('renders the styled 404 for a malformed record id (#103) @t3', async ({ page }) => {
-  const response = await page.goto('/plan/annual/close');
-  expect(response?.status()).toBe(404);
+// is not a UUID used to reach Postgres, which threw (22P02), so the error
+// boundary rendered instead of the styled 404. Every dynamic record route now
+// validates its ids at the boundary with `isRecordId` and takes the not-found
+// path before any query.
+//
+// The HTTP status is deliberately not asserted: `app/loading.tsx` streams the
+// signed-in shell while `requireUser()` runs, so Next.js has committed to 200
+// before a page-level `notFound()` can fire (the documented "soft 404", see
+// https://github.com/vercel/next.js/discussions/76501). The contract this test
+// proves is the app's own page: the styled 404, never the error boundary.
+test('renders the styled 404 for a malformed record id (#103) @t3', async ({ page }) => {
+  const malformedRoutes = [
+    '/plan/annual/close',
+    '/plan/annual/not-a-uuid/close',
+    '/plan/annual/not-a-uuid/recurring-ops/not-a-uuid',
+    '/plan/programs/not-a-uuid',
+    '/plan/projects/not-a-uuid',
+    '/plan/projects/not-a-uuid/allocations/not-a-uuid',
+  ];
+  for (const route of malformedRoutes) {
+    await page.goto(route);
+    await expect(page.getByRole('heading', { name: 'Page not found' }), route).toBeVisible();
+  }
+
+  // A well-formed id for a record that does not exist is indistinguishable from
+  // a malformed one: the same styled 404 rather than a database error.
+  await page.goto('/plan/projects/00000000-0000-0000-0000-000000000000');
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
 });

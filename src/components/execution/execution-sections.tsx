@@ -11,7 +11,7 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/form';
-import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import { Badge, Card, EmptyState, Money, labelClass } from '@/components/ui';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 import type { CommitmentRow, SettlementOption, SpendRow } from '@/server/plan/execution-queries';
@@ -518,19 +518,33 @@ export function SpendSection({
                             <div className="mt-3 grid gap-4 lg:grid-cols-2">
                               <Form action={updateSpendAction} className="grid gap-2">
                                 <HiddenField name="id" value={row.spend.id} />
-                                <SelectField
-                                  label="Component"
-                                  name="component"
-                                  options={
-                                    allowCapex
-                                      ? [
-                                          { value: 'capex', label: 'Capex' },
-                                          { value: 'opex', label: 'Opex' },
-                                        ]
-                                      : [{ value: 'opex', label: 'Opex' }]
-                                  }
-                                  defaultValue={row.spend.component}
-                                />
+                                {row.settlementLinks.length === 0 ? (
+                                  <SelectField
+                                    label="Component"
+                                    name="component"
+                                    options={
+                                      allowCapex
+                                        ? [
+                                            { value: 'capex', label: 'Capex' },
+                                            { value: 'opex', label: 'Opex' },
+                                          ]
+                                        : [{ value: 'opex', label: 'Opex' }]
+                                    }
+                                    defaultValue={row.spend.component}
+                                  />
+                                ) : (
+                                  <div>
+                                    <span className={labelClass}>Component</span>
+                                    <p className="mt-1 text-sm uppercase text-slate-700">
+                                      {row.spend.component}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      Component is fixed once the spend has settlements; void and
+                                      re-enter to change it.
+                                    </p>
+                                    <HiddenField name="component" value={row.spend.component} />
+                                  </div>
+                                )}
                                 <MoneyField
                                   label="Amount"
                                   name="amount"

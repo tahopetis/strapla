@@ -18,6 +18,7 @@ import { RecurringOpsSection } from '@/components/plan/recurring-ops-section';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
+import { isRecordId } from '@/lib/record-id';
 import type { AnnualPlanDetail, ProgramRow } from '@/server/plan/annual-queries';
 import { getAnnualPlanDetail } from '@/server/plan/annual-queries';
 import { listCustomFieldDefinitions, readCustomFieldValuesMap } from '@/server/custom-fields/data';
@@ -42,6 +43,7 @@ export default async function AnnualPlanPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { id } = await params;
+  if (!isRecordId(id)) notFound();
   const { error, message } = await searchParams;
   const detail = await getAnnualPlanDetail(id);
   if (!detail) notFound();

@@ -5,6 +5,7 @@ import { CloseYearForm } from '@/components/plan/close-year-form';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
 import { formatDate } from '@/lib/format';
+import { isRecordId } from '@/lib/record-id';
 import { getCloseState } from '@/server/plan/close-queries';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,7 @@ export default async function CloseYearPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { id } = await params;
+  if (!isRecordId(id)) notFound();
   const { error, message } = await searchParams;
   const state = await getCloseState(id);
   if (!state) notFound();

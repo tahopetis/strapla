@@ -1,8 +1,9 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import {
   annualPlans,
   annualPrograms,
+  commitmentEntries,
   ijinPrinsipRecords,
   projectYearAllocations,
   projects,
@@ -18,6 +19,10 @@ import { projectFundingFlags, type FundingFlag } from '@/domain/funding';
 import { pricingFlags, type PricingFlags } from '@/domain/plan';
 
 /** Read queries for projects, ijin prinsip and their pricing flags (M1 #8). */
+
+function num(value: string | number | null | undefined): number {
+  return Number(value ?? 0);
+}
 
 export interface ProjectListRow {
   project: Project;
@@ -73,6 +78,9 @@ export interface ProjectDetail {
   flags: PricingFlags;
   fundingFlags: FundingFlag[];
   totalAllocated: number;
+  /** Non-voided commitment entries recorded in-app against this project's allocations. */
+  inAppCommitments: number;
+  /** Opening committed + in-app commitments: the figure the register reports (BR-8). */
   lifetimeCommitments: number;
 }
 
@@ -99,21 +107,40 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
   const row = rows[0];
   if (!row) return null;
 
-  const allocationRows = await getDb()
-    .select({
-      allocationCapex: projectYearAllocations.allocationCapex,
-      allocationOpex: projectYearAllocations.allocationOpex,
-    })
-    .from(projectYearAllocations)
-    .where(
-      and(eq(projectYearAllocations.projectId, id), isNull(projectYearAllocations.voidedAt)),
-    );
+  const [allocationRows, commitmentRows] = await Promise.all([
+    getDb()
+      .select({
+        allocationCapex: projectYearAllocations.allocationCapex,
+        allocationOpex: projectYearAllocations.allocationOpex,
+      })
+      .from(projectYearAllocations)
+      .where(
+        and(eq(projectYearAllocations.projectId, id), isNull(projectYearAllocations.voidedAt)),
+      ),
+    // Same definition as the project register (execution-aggregates): non-voided
+    // commitment entries attached to the project's non-voided allocations.
+    getDb()
+      .select({ total: sql<string>`coalesce(sum(${commitmentEntries.amount}), 0)::text` })
+      .from(commitmentEntries)
+      .innerJoin(
+        projectYearAllocations,
+        eq(commitmentEntries.projectYearAllocationId, projectYearAllocations.id),
+      )
+      .where(
+        and(
+          eq(projectYearAllocations.projectId, id),
+          isNull(projectYearAllocations.voidedAt),
+          isNull(commitmentEntries.voidedAt),
+        ),
+      ),
+  ]);
 
   const totalAllocated = allocationRows.reduce(
     (sum, allocation) => sum + allocation.allocationCapex + allocation.allocationOpex,
     0,
   );
-  const lifetimeCommitments = row.project.openingCommitted;
+  const inAppCommitments = num(commitmentRows[0]?.total);
+  const lifetimeCommitments = row.project.openingCommitted + inAppCommitments;
 
   return {
     project: row.project,
@@ -133,11 +160,12 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
       submittedPrice: row.project.submittedPrice,
       finalDealPrice: row.project.finalDealPrice,
       openingCommitted: row.project.openingCommitted,
-      inAppCommitments: 0,
+      inAppCommitments,
       allocatedFullLife: row.project.allocatedBudgetFullLife,
       totalAllocated,
     }),
     totalAllocated,
+    inAppCommitments,
     lifetimeCommitments,
   };
 }

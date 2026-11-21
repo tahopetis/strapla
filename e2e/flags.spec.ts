@@ -19,8 +19,9 @@ import { expect, test, type Page } from '@playwright/test';
  * - BR-7  allocation above the program's available budget
  *         (`programBudgetPosition`); the program card says "over-allocated".
  * - BR-8  lifetime commitments (opening + in-app) above the contract value
- *         (`projectFundingFlags`), rendered as `commitments_over_contract` in
- *         the project register report.
+ *         (`projectFundingFlags`), rendered on the project page as
+ *         "commitments over contract (BR-8)" and in the project register
+ *         report as `commitments_over_contract`.
  * - BR-9  final deal price above the ijin prinsip approved budget
  *         -> project page label "over approved budget (BR-9)".
  * - BR-18 final deal price above the submitted price
@@ -230,10 +231,28 @@ test('flags an over-allocated program, over-committed contract and envelope over
   await page.getByRole('button', { name: 'Add commitment' }).click();
   await expect(page.getByText(/Commitment PO-2028-E2E-2 recorded\./)).toBeVisible();
 
-  // The register's flag engine counts in-app commitments: 950.000.000 committed
-  // against a 900.000.000 contract value (BR-8), plus the full-life overrun.
+  // BR-8 on the project page (#101): its lifetime figure now includes in-app
+  // commitments, 50.000.000 + 900.000.000 = 950.000.000 against the 900.000.000
+  // contract value, so the flag appears on the surface where commitments are
+  // recorded (ADR-0003 §6).
+  await openProject(page, 'Allocation flags probe 2028');
+  const projectLifetime = page
+    .getByText('Lifetime commitments (opening + in-app)', { exact: true })
+    .locator('..')
+    .locator('dd');
+  await expect(projectLifetime).toHaveText('Rp 950.000.000');
+  await expect(page.getByText('commitments over contract (BR-8)', { exact: true })).toBeVisible();
+  const projectLifetimeText = (await projectLifetime.innerText()).trim();
+
+  // The register's flag engine counts the same in-app commitments (BR-8), plus
+  // the full-life overrun, and reports the same lifetime figure: the project
+  // page and the register must not disagree (#101).
   await page.goto('/reports/project-register');
   const registerRow = page.locator('tbody tr').filter({ hasText: 'Allocation flags probe 2028' });
+  const registerHeaders = await page.locator('thead th').allTextContents();
+  const lifetimeColumn = registerHeaders.indexOf('Lifetime commitments');
+  expect(lifetimeColumn).toBeGreaterThanOrEqual(0);
+  await expect(registerRow.locator('td').nth(lifetimeColumn)).toHaveText(projectLifetimeText);
   await expect(registerRow.getByText('commitments_over_contract', { exact: true })).toBeVisible();
   await expect(
     registerRow.getByText('project_allocations_over_full_life', { exact: true }),

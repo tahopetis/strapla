@@ -4,7 +4,8 @@ import { rp } from './support/money';
 /**
  * Edits (tier T2): the audited update paths for an annual program, a recurring
  * ops item, a project year allocation, a commitment entry and a spend entry —
- * including the two guards that freeze money which is already settled.
+ * including the guards that freeze a settled spend: its component and its
+ * settlement classification.
  *
  * Prerequisite: the foundation journey has run (FY2027 closed, FY2028 active,
  * SI-01 and PRG-2028-001 exist). Every record here is created new in FY2028
@@ -292,7 +293,9 @@ test('refuses a commitment edit below the settled amount, then allows raising it
   ).toBeVisible();
 });
 
-test('freezes a settled spend classification but allows a vendor edit @t2', async ({ page }) => {
+test('changes an unsettled spend component, then freezes it and the classification @t2', async ({
+  page,
+}) => {
   const fixture = {
     program: { code: 'EDITS-PRG-4', name: 'Edits spend program' },
     project: { code: 'EDITS-PRJ-4', name: 'Edits spend project' },
@@ -302,6 +305,8 @@ test('freezes a settled spend classification but allows a vendor edit @t2', asyn
 
   await recordCommitment(page, { amount: '4000000', date: '2028-05-01', reference: 'EDITS-PO-2' });
   const spendForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Record spend' }) });
+
+  // a spend that settles the whole commitment
   await spendForm.locator('select[name="component"]').selectOption('capex');
   await spendForm.locator('input[name="amount"]').fill('4000000');
   await spendForm.locator('input[name="spentOn"]').fill('2028-06-01');
@@ -314,31 +319,81 @@ test('freezes a settled spend classification but allows a vendor edit @t2', asyn
     page.locator('tbody tr', { hasText: 'EDITS-PO-2' }).getByText('settled', { exact: true }),
   ).toBeVisible();
 
-  const spendRow = page.locator('tbody tr', { hasText: 'EDITS-SP-2' });
-  await spendRow.locator('summary', { hasText: 'Manage' }).click();
-  const editForm = spendRow.locator('form').filter({ has: page.getByRole('button', { name: 'Save spend' }) });
+  // a second spend with no settlement: its component is still editable
+  await spendForm.locator('select[name="component"]').selectOption('capex');
+  await spendForm.locator('input[name="amount"]').fill('1000000');
+  await spendForm.locator('input[name="spentOn"]').fill('2028-06-02');
+  await spendForm.locator('input[name="vendor"]').fill('PT Edits Vendor');
+  await spendForm.locator('input[name="reference"]').fill('EDITS-SP-3');
+  await page.getByRole('button', { name: 'Record spend' }).click();
+  await expect(page.getByText('Spend entry EDITS-SP-3 recorded.')).toBeVisible();
 
-  // #100: the Component select this form renders is never written by updateSpend,
-  // so a component change is silently ignored and cannot be asserted. The guard
-  // that does exist is on the settlement classification, asserted below.
-  // the settlement classification is frozen once the entry settled something
-  await editForm.locator('select[name="settlementKind"]').selectOption('prior_year_opening');
-  await editForm.locator('textarea[name="reason"]').fill('Try to reclassify a settled spend.');
-  await editForm.getByRole('button', { name: 'Save spend' }).click();
+  // #100: the component of an unsettled spend is persisted and shown
+  const unsettledRow = page.locator('tbody tr', { hasText: 'EDITS-SP-3' });
+  await unsettledRow.locator('summary', { hasText: 'Manage' }).click();
+  const unsettledEditForm = unsettledRow
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save spend' }) });
+  await unsettledEditForm.locator('select[name="component"]').selectOption('opex');
+  await unsettledEditForm.locator('textarea[name="reason"]').fill('Switch the spend to opex.');
+  await unsettledEditForm.getByRole('button', { name: 'Save spend' }).click();
+  await expect(page.getByText('Spend entry EDITS-SP-3 updated.')).toBeVisible();
   await expect(
-    spendRow.getByText(
+    page.locator('tbody tr', { hasText: 'EDITS-SP-3' }).getByText('opex', { exact: true }),
+  ).toBeVisible();
+
+  // once a spend has settlements the component is frozen and the form says why
+  const settledRow = page.locator('tbody tr', { hasText: 'EDITS-SP-2' });
+  await settledRow.locator('summary', { hasText: 'Manage' }).click();
+  const settledEditForm = settledRow
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Save spend' }) });
+  await expect(settledEditForm.locator('select[name="component"]')).toHaveCount(0);
+  await expect(settledEditForm.locator('input[name="component"]')).toHaveValue('capex');
+  await expect(
+    settledRow.getByText(
+      'Component is fixed once the spend has settlements; void and re-enter to change it.',
+    ),
+  ).toBeVisible();
+
+  // a direct update that tries to change the frozen component is refused, not ignored
+  await settledEditForm.locator('input[name="component"]').evaluate((input) => {
+    (input as HTMLInputElement).value = 'opex';
+  });
+  await settledEditForm.locator('textarea[name="reason"]').fill('Try to move a settled spend to opex.');
+  await settledEditForm.getByRole('button', { name: 'Save spend' }).click();
+  await expect(
+    settledRow.getByText('Void the spend entry and re-enter it to change its component.'),
+  ).toBeVisible();
+  await expect(settledEditForm.locator('input[name="component"]')).toHaveValue('capex');
+
+  // the settlement classification is frozen once the entry settled something
+  await settledEditForm.locator('select[name="settlementKind"]').selectOption('prior_year_opening');
+  await settledEditForm.locator('textarea[name="reason"]').fill('Try to reclassify a settled spend.');
+  await settledEditForm.getByRole('button', { name: 'Save spend' }).click();
+  await expect(
+    settledRow.getByText(
       'Void the spend entry and re-enter it to change its settlement classification.',
     ),
   ).toBeVisible();
 
   // the vendor and the description are still editable
-  await editForm.locator('select[name="settlementKind"]').selectOption('current');
-  await editForm.locator('input[name="vendor"]').fill('PT Edits Vendor (revised)');
-  await editForm.locator('textarea[name="description"]').fill('Revised by the edit test.');
-  await editForm.locator('textarea[name="reason"]').fill('Corrected the vendor.');
-  await editForm.getByRole('button', { name: 'Save spend' }).click();
+  await settledEditForm.locator('select[name="settlementKind"]').selectOption('current');
+  await settledEditForm.locator('input[name="vendor"]').fill('PT Edits Vendor (revised)');
+  await settledEditForm.locator('textarea[name="description"]').fill('Revised by the edit test.');
+  await settledEditForm.locator('textarea[name="reason"]').fill('Corrected the vendor.');
+  await settledEditForm.getByRole('button', { name: 'Save spend' }).click();
   await expect(page.getByText('Spend entry EDITS-SP-2 updated.')).toBeVisible();
   await expect(
     page.locator('tbody tr', { hasText: 'EDITS-SP-2' }).getByText('PT Edits Vendor (revised)'),
   ).toBeVisible();
+
+  // the audit entry for the unsettled edit records the component change
+  await page.goto('/admin/audit?entityType=spend_entry');
+  const auditRow = page
+    .locator('tbody tr')
+    .filter({ hasText: 'Switch the spend to opex.' })
+    .first();
+  await auditRow.getByText('Show values').click();
+  await expect(auditRow.locator('pre').nth(1)).toContainText('"component": "opex"');
 });
