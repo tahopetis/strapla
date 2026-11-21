@@ -78,6 +78,7 @@ These are tracked as issues, not silently missing tests:
 - [#98](https://github.com/tahopetis/strapla/issues/98) — the post-close settlement branch in spend-create is unreachable dead code.
 - [#99](https://github.com/tahopetis/strapla/issues/99) — an over-settlement throws an uncaught `SettlementError`, so the allocation route shows the error boundary instead of a field message. The suite pins that surface (and proves nothing was written) until the refusal is fixed.
 - [#100](https://github.com/tahopetis/strapla/issues/100) — the spend edit form renders a Component select that the server action never writes, so the change is silently ignored. The suite pins the current behaviour and the vendor edit that does work.
+- [#103](https://github.com/tahopetis/strapla/issues/103) — a non-UUID dynamic segment (`/plan/annual/close`) reaches Postgres and throws, so the error boundary renders instead of the styled 404. `sweep.spec.ts` carries it as `test.fixme` until the route validates its id.
 
 All three are UI-hidden, so a browser test can only assert the visible lock; the missing server guard needs a unit or integration test at the action layer. `closed-year.spec.ts` asserts what the browser can prove and links the issues.
 

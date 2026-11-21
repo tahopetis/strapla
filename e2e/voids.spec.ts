@@ -336,6 +336,7 @@ test('refuses to void a commitment with settlements and voids an unsettled one @
   // a commitment without settlements can be voided
   await recordCommitment(page, { amount: '5000000', date: '2028-03-02', reference: 'VOID-PO-2' });
   const openRow = page.locator('tbody tr', { hasText: 'VOID-PO-2' });
+  await openRow.locator('summary', { hasText: 'Manage' }).click();
   await openRow.getByRole('button', { name: 'Void commitment' }).click();
   const dialog = openRow.getByRole('dialog');
   await dialog.locator('textarea[name="reason"]').fill('Not needed after all.');

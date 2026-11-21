@@ -62,7 +62,10 @@ test('sweeps the planning routes with real portfolio data @t3', async ({ page })
 
   // The closed FY2027 close page keeps its signed snapshot.
   await page.goto('/plan/annual');
-  await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
+  await Promise.all([
+    page.waitForURL(/\/plan\/annual\/[0-9a-f-]+$/),
+    page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click(),
+  ]);
   const fy2027Url = page.url();
   await expect(page.getByRole('heading', { name: 'FY2027 annual plan', exact: true })).toBeVisible();
   await page.goto(`${fy2027Url}/close`);
@@ -188,4 +191,13 @@ test.describe('unauthenticated boundaries', () => {
     expect(payload).toMatchObject({ status: 'ok', database: 'ok' });
     expect(typeof payload.latencyMs).toBe('number');
   });
+});
+
+// #103 (https://github.com/tahopetis/strapla/issues/103): a dynamic segment that
+// is not a UUID reaches Postgres and throws, so the error boundary renders
+// instead of the styled 404. When the route validates its id, flip this on.
+test.fixme('renders the styled 404 for a malformed record id (#103) @t3', async ({ page }) => {
+  const response = await page.goto('/plan/annual/close');
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
 });
