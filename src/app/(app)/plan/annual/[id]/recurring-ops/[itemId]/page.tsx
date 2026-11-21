@@ -9,6 +9,7 @@ import {
 import { PlanNav } from '@/components/plan-nav';
 import { Flash, PageHeader } from '@/components/ui';
 import { toDateInputValue } from '@/lib/format';
+import { isRecordId } from '@/lib/record-id';
 import {
   getRecurringOpsFunding,
   listSpendCategoryOptions,
@@ -25,6 +26,7 @@ export default async function RecurringOpsFundingPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { id, itemId } = await params;
+  if (!isRecordId(id) || !isRecordId(itemId)) notFound();
   const { error, message } = await searchParams;
   const funding = await getRecurringOpsFunding(itemId, { withCustomFields: true });
   if (!funding || funding.annualPlan.id !== id) notFound();

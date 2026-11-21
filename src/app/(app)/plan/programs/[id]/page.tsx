@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PlanNav } from '@/components/plan-nav';
 import { AnnualPlanBadge, Badge, Card, Money, PageHeader, StatusBadge } from '@/components/ui';
+import { isRecordId } from '@/lib/record-id';
 import { getProgramThread } from '@/server/plan/program-queries';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,7 @@ const linkClass = 'underline decoration-slate-300 underline-offset-2 hover:text-
 
 export default async function ProgramThreadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!isRecordId(id)) notFound();
   const thread = await getProgramThread(id);
   if (!thread) notFound();
 

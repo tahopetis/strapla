@@ -18,6 +18,7 @@ import { ProjectAllocationsSection } from '@/components/plan/project-allocations
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
+import { isRecordId } from '@/lib/record-id';
 import type { ProjectDetail } from '@/server/plan/project-queries';
 import { getProjectDetail } from '@/server/plan/project-queries';
 import { listAllocationProgramOptions, listProjectAllocations } from '@/server/plan/allocation-queries';
@@ -42,6 +43,7 @@ export default async function ProjectPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { id } = await params;
+  if (!isRecordId(id)) notFound();
   const { error, message } = await searchParams;
   const detail = await getProjectDetail(id);
   if (!detail) notFound();

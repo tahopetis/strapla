@@ -9,6 +9,7 @@ import {
 import { PlanNav } from '@/components/plan-nav';
 import { Flash, PageHeader } from '@/components/ui';
 import { toDateInputValue } from '@/lib/format';
+import { isRecordId } from '@/lib/record-id';
 import {
   getAllocationFunding,
   listSpendCategoryOptions,
@@ -25,6 +26,7 @@ export default async function AllocationFundingPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { id, allocationId } = await params;
+  if (!isRecordId(id) || !isRecordId(allocationId)) notFound();
   const { error, message } = await searchParams;
   const funding = await getAllocationFunding(allocationId, { withCustomFields: true });
   if (!funding || funding.project.id !== id) notFound();
