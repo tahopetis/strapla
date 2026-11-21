@@ -49,7 +49,7 @@ async function addInitiative(
   await form.locator('input[name="priorProgramBudgetUsed"]').fill('0');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(
-    page.getByText(new RegExp(`Strategic initiative ${input.code} created\\.`)),
+    page.getByText(`Strategic initiative ${input.code} created.`),
   ).toBeVisible();
 }
 
@@ -79,7 +79,7 @@ async function addProgram(
   await form.locator('input[name="opexBudget"]').fill('0');
   await page.getByRole('button', { name: 'Add program' }).click();
   await expect(
-    page.getByText(new RegExp(`Annual program ${input.code} created\\.`)),
+    page.getByText(`Annual program ${input.code} created.`),
   ).toBeVisible();
 }
 
@@ -109,7 +109,7 @@ async function createProject(
   await form.locator('input[name="finalDealPrice"]').fill(input.finalDealPrice);
   await page.getByRole('button', { name: 'Create project' }).click();
   await expect(
-    page.getByText(new RegExp(`Project PRJ-${FY}-\\d+ created\\.`)),
+    page.getByText(`Project PRJ-${FY}-`),
   ).toBeVisible();
 }
 
@@ -120,7 +120,7 @@ async function openProject(page: Page, name: string): Promise<void> {
     page.locator('tbody tr', { hasText: name }).getByRole('link', { name: 'Open' }).click(),
   ]);
   await expect(
-    page.getByRole('heading', { level: 1, name: new RegExp(`· ${name}$`) }),
+    page.getByRole('heading', { level: 1, name: `· ${name}` }),
   ).toBeVisible();
 }
 

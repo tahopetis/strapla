@@ -782,7 +782,7 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
     await form.locator('select[name="type"]').selectOption('text');
     await form.locator('textarea[name="description"]').fill(description);
     await form.getByRole('button', { name: 'Add field' }).click();
-    await expect(page.getByText(new RegExp(`Custom field “${name}” added\\.`))).toBeVisible();
+    await expect(page.getByText(`Custom field “${name}” added.`)).toBeVisible();
   };
   await addEntityField('Ijin prinsip', 'Approval note', 'What the directors approved.');
   await addEntityField('Project year allocation', 'Allocation note', 'Note kept on this year.');

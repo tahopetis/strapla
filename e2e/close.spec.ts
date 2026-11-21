@@ -162,7 +162,7 @@ test('blocks a wrong typed confirmation without resetting the reference @t2', as
   expect(
     await confirmation.evaluate((element) => (element as HTMLInputElement).validity.patternMismatch),
   ).toBe(true);
-  await expect(page).toHaveURL(new RegExp(`/plan/annual/[0-9a-f-]+/close$`));
+  await expect(page).toHaveURL(/\/plan\/annual\/[0-9a-f-]+\/close$/);
   await expect(page.getByText(`Fiscal year FY${OPEN_YEAR} closed and carry-over recorded.`)).toHaveCount(0);
 
   // the exact phrase satisfies the pattern; the form is not submitted here

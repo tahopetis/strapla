@@ -25,9 +25,19 @@ function decode(value) {
     .replace(/&amp;/g, '&');
 }
 
+// Literal patterns for the three attributes the summary reads. Building a
+// RegExp from the attribute name made this a non-literal regexp, which the
+// security gate (rightly) flags; a fixed table says exactly what is parsed.
+const ATTRIBUTE_PATTERNS = {
+  name: /\bname="([^"]*)"/,
+  classname: /\bclassname="([^"]*)"/,
+  time: /\btime="([^"]*)"/,
+};
+
 function attribute(attributes, name) {
-  const match = attributes.match(new RegExp(`\\b${name}="([^"]*)"`));
-  return match ? decode(match[1]) : '';
+  const pattern = ATTRIBUTE_PATTERNS[name];
+  const match = pattern ? attributes.match(pattern) : null;
+  return match ? decode(match[1] ?? '') : '';
 }
 
 function firstLine(body) {
