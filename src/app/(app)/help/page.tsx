@@ -22,7 +22,7 @@ export default function HelpPage() {
     <div>
       <PageHeader
         title="Help & user guide"
-        description="Quick start, concepts, workflows and troubleshooting. The full guide lives in docs/USER-GUIDE.md in the repository."
+        description="Quick start, concepts, workflows and troubleshooting for v0.5.0 (beta). The full guide lives in docs/USER-GUIDE.md in the repository."
         actions={<PrintButton />}
       />
 
@@ -33,9 +33,9 @@ export default function HelpPage() {
         >
           <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
             <li>
-              Open the app at <span className={codeClass}>/</span>. A fresh installation redirects to{' '}
-              <span className={codeClass}>/setup</span>; create the first administrator there (name, email,
-              password of at least 12 characters).
+              Open <span className={codeClass}>/setup</span> directly on a fresh installation (the home
+              page sends you to <span className={codeClass}>/login</span> until an account exists);
+              create the first administrator there (name, email, password of at least 12 characters).
             </li>
             <li>
               After setup you are signed in. Further accounts are created in{' '}
@@ -128,6 +128,11 @@ Unallocated program budget = budget + carry-in
               </li>
               <li>Current-year spend above the year&apos;s commitments is flagged (BR-11), never blocked.</li>
               <li>
+                A payment recorded after a year closes can settle that year&apos;s commitment; the
+                treatment you choose decides whether the closed-year portion reduces the current
+                year&apos;s remaining.
+              </li>
+              <li>
                 Amounts are whole Rupiah; dots are ignored when typing (<span className={codeClass}>1.234.567</span>{' '}
                 = <span className={codeClass}>1234567</span>).
               </li>
@@ -160,6 +165,15 @@ Unallocated program budget = budget + carry-in
             </div>
           </div>
           <p className="mt-4 text-sm text-slate-600">
+            <strong>Post-close settlement.</strong> If the payment settles a commitment whose fiscal
+            year is closed, the picker marks it <em>CLOSED YEAR</em> and a treatment control appears:
+            charge the closed-year portion to the current year (it counts in current-year spend and
+            remaining), or reserve it in the closed year (excluded from current-year remaining,
+            reported as a prior-year settlement and as a post-close adjustment on the closed year).
+            The choice defaults to charging the current year and is frozen once the spend has
+            settlements.
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
             Edits are audited and require a reason. Commitments cannot be voided while settled; spend cannot be
             reduced below the settled amount. Settlement links are fixed — to change them, void the spend and
             re-enter it.
@@ -180,8 +194,11 @@ Unallocated program budget = budget + carry-in
             </li>
           </ol>
           <p className="mt-3 text-sm text-slate-600">
-            Open commitments are not carried. Closed years are read-only except audited administrator
-            corrections; settlement lifecycle events (paying existing commitments) remain possible.
+            Open commitments are not carried. Closed years are read-only; settlement lifecycle events
+            (paying existing commitments) remain possible, and a payment recorded in the open year can
+            settle a closed-year commitment. A post-close payment&apos;s treatment decides whether its
+            closed-year portion counts in the current year or is reserved in the closed year; the close
+            snapshot and carry-over never change.
           </p>
         </Card>
 
@@ -214,6 +231,14 @@ Unallocated program budget = budget + carry-in
               — create accounts, reset passwords, revoke sessions, deactivate/reactivate. Accounts are never
               deleted.
             </li>
+            <li>
+              <Link href="/admin/custom-fields" className={linkClass}>
+                Custom fields
+              </Link>{' '}
+              — add text, number or date fields to eight record types; they appear on forms, record pages,
+              reports and exports, with per-report filters and remembered columns. Removing a field archives
+              it (values are kept, hidden) and it can be restored.
+            </li>
           </ul>
         </Card>
 
@@ -228,8 +253,9 @@ Unallocated program budget = budget + carry-in
             </FaqItem>
             <FaqItem question="Why can I not edit anything in a fiscal year?">
               <p>
-                The year is closed. Closed years are read-only; only audited administrator corrections are
-                allowed, and settlement lifecycle events can still be recorded.
+                The year is closed. Closed years are read-only; settlement lifecycle events can still be
+                recorded (editing or voiding an existing spend, and paying a closed-year commitment from an
+                open year).
               </p>
             </FaqItem>
             <FaqItem question="Why can I not create an annual allocation?">
@@ -265,10 +291,20 @@ Unallocated program budget = budget + carry-in
                 (see docs/operations.md).
               </p>
             </FaqItem>
+            <FaqItem question="Why can I still settle a closed-year commitment?">
+              <p>
+                Closing stops new plan records, not the settlement lifecycle. A spend recorded in an open
+                year may settle a commitment from a closed year; choose whether the closed-year portion is
+                charged to the current year or reserved in the closed year. The close snapshot and the
+                carry-over figures never change.
+              </p>
+            </FaqItem>
             <FaqItem question="Can I import my spreadsheet, attach documents or send notifications?">
               <p>
-                Not in this version. Data is entered through the forms, documents are referenced by number/link,
-                and there are no email notifications. Reports export as CSV/XLSX.
+                Opening balances can be imported as CSV or XLSX in Plan → Opening balances → Opening
+                import (validate first, then load; nothing is written on a bad file). All other plan data
+                is entered through the forms. Documents are referenced by number and link — there are no
+                file uploads — and there are no email notifications. Reports export as CSV/XLSX.
               </p>
             </FaqItem>
           </div>
@@ -289,8 +325,9 @@ Unallocated program budget = budget + carry-in
               <span className={codeClass}>docs/operations.md</span> — deployment, backups and updates.
             </li>
             <li>
-              <span className={codeClass}>docs/RELEASE-NOTES-2026-12.md</span> — what is in the release and known
-              limitations.
+              <span className={codeClass}>docs/RELEASE-NOTES-0.5.0.md</span> and{' '}
+              <span className={codeClass}>CHANGELOG.md</span> — what is in this release and the full
+              history.
             </li>
           </ul>
           <p className="mt-3 text-xs text-slate-500">

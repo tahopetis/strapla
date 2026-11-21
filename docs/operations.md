@@ -1,11 +1,13 @@
 # Operations
 
-How Strapla is deployed, upgraded, backed up and restored. Keep this file current as the host decision is made. The release go-live sequence is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md) and the first-release scope is in [RELEASE-NOTES-2026-12.md](RELEASE-NOTES-2026-12.md).
+How Strapla is deployed, upgraded, backed up and restored. Keep this file current as the host decision is made. The release go-live sequence is in [GO-LIVE-CHECKLIST.md](GO-LIVE-CHECKLIST.md), the current release is described in [RELEASE-NOTES-0.5.0.md](RELEASE-NOTES-0.5.0.md), and the version/tag policy is in [VERSIONING.md](VERSIONING.md).
 
 ## Images, versions and updates
 
+- Strapla follows [Semantic Versioning](https://semver.org/): releases are tagged `vMAJOR.MINOR.PATCH`, and the current release is **v0.5.0** (beta).
 - GitHub Actions publishes `ghcr.io/tahopetis/strapla` on every push to `main`: `latest`, `sha-<commit>`.
-- Release tags `v*` publish semantic version tags: `v2026.12.0` → `2026.12.0` and `2026.12`.
+- Release tags `v*` publish the SemVer image tags: `v0.5.0` → `0.5.0` and `0.5`. The legacy calendar tag `v2026.12.0` is still available as `2026.12.0` / `2026.12`.
+- `latest` follows the `main` branch, so it is not necessarily the newest release. Pin `STRAPLA_TAG` to a release or `sha-` tag in production.
 - The app header shows the running build (`v<version> · <commit>`), which is the quickest way to confirm what is deployed.
 - Docker Compose will keep using a locally cached image even when a newer one is published. To update:
 
@@ -15,7 +17,7 @@ docker compose up -d --force-recreate app
 docker compose ps            # app should become healthy
 ```
 
-- Pin a release with `STRAPLA_TAG=v2026.12.0` in `.env` (default is `latest`).
+- Pin a release with `STRAPLA_TAG=0.5.0` in `.env` (default is `latest`).
 - Pulling needs no credentials: the GHCR package is public (`ghcr.io/tahopetis/strapla`).
 - `docker compose build app` remains available for local development; it tags the local image with
   `STRAPLA_TAG` and bakes `STRAPLA_VERSION`/`STRAPLA_COMMIT` from the build args.
@@ -37,6 +39,8 @@ Multi-arch images are published to public GHCR by the `docker` workflow:
 
 ```
 ghcr.io/tahopetis/strapla:latest            # latest main
+ghcr.io/tahopetis/strapla:0.5.0             # the v0.5.0 release
+ghcr.io/tahopetis/strapla:0.5               # the v0.5.x line
 ghcr.io/tahopetis/strapla:sha-<shortsha>    # immutable per commit
 ```
 
@@ -48,7 +52,7 @@ docker pull ghcr.io/tahopetis/strapla:sha-<shortsha>
 
 Pushes normally come only from the `docker` workflow (with its own `GITHUB_TOKEN`), so no host holds a registry credential.
 
-Pin `STRAPLA_TAG` to a `sha-` tag in production and promote by changing the tag, not by rebuilding on the host. Images are built for `linux/amd64` and `linux/arm64`; the deployment below was verified on arm64 (see [`docs/checkpoints/m0/deploy-restore-drill.md`](checkpoints/m0/deploy-restore-drill.md)).
+Pin `STRAPLA_TAG` to a release tag (`0.5.0`) or a `sha-` tag in production and promote by changing the tag, not by rebuilding on the host. Images are built for `linux/amd64` and `linux/arm64`; the deployment below was verified on arm64 (see [`docs/checkpoints/m0/deploy-restore-drill.md`](checkpoints/m0/deploy-restore-drill.md)).
 
 ## Deploy (Docker Compose)
 
@@ -56,7 +60,7 @@ Pin `STRAPLA_TAG` to a `sha-` tag in production and promote by changing the tag,
 # on the target host
 export POSTGRES_PASSWORD='<strong-password>'
 export APP_BASE_URL='https://<host>'
-export STRAPLA_TAG='sha-<shortsha>'   # pin a published image
+export STRAPLA_TAG='0.5.0'            # pin the release (or a sha-<shortsha> tag)
 docker compose pull
 docker compose up -d
 ```
@@ -89,9 +93,9 @@ The backup/restore procedure was drilled on 2026-10-25 and the evidence is recor
 
 ## Upgrades
 
-1. Tag or merge to `main`; CI builds `sha-<commit>` and `latest` images.
+1. Merge to `main` for a `latest`/`sha-<commit>` build, or push a release tag (`v0.5.0`) for the SemVer image tags; CI publishes both.
 2. On the host: `docker compose pull && docker compose up -d`.
-3. Verify `/healthz` and sign in.
+3. Verify `/healthz` and sign in; the header shows the new version.
 
 Migrations are forward-only; take a backup before each upgrade.
 

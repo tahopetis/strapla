@@ -95,7 +95,9 @@ async function createPlan(userId: string, input: PlanCreateInput): Promise<Strat
   await getDb().transaction(async (tx) => {
     const existing = await tx.select({ id: strategicPlans.id }).from(strategicPlans).limit(1);
     if (existing.length > 0) {
-      throw new FormError('A strategic plan already exists. Archive it before creating a new one.');
+      throw new FormError(
+        'A strategic plan already exists. This deployment supports one plan; edit the existing plan instead.',
+      );
     }
     [created] = await tx
       .insert(strategicPlans)

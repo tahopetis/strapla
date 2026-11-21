@@ -1,4 +1,4 @@
-# Go-live checklist — December 2026 first release
+# Go-live checklist — first production deployment
 
 Run this checklist with the release candidate image before switching the team over. Everything here
 is verifiable; do not tick an item without seeing the result.
@@ -17,7 +17,7 @@ is verifiable; do not tick an item without seeing the result.
 
 - [ ] Docker Engine and Docker Compose installed; disk and memory checked (PostgreSQL + app need ~1 GB RAM headroom)
 - [ ] Repository checkout on the host with `docker-compose.yml` and `docs/operations.md`
-- [ ] `.env` written: `POSTGRES_PASSWORD` (strong, unique), `APP_BASE_URL=https://<host>`, `STRAPLA_TAG=sha-<release commit>`
+- [ ] `.env` written: `POSTGRES_PASSWORD` (strong, unique), `APP_BASE_URL=https://<host>`, `STRAPLA_TAG=0.5.0` (or a `sha-<commit>` tag)
 - [ ] `docker compose pull` succeeds without a registry login (the GHCR package is public)
 - [ ] Reverse proxy configured with TLS and forwarding to `127.0.0.1:3000` (Caddy recommended)
 - [ ] Firewall: only 80/443 (and SSH) exposed; PostgreSQL **not** exposed publicly
@@ -54,7 +54,7 @@ is verifiable; do not tick an item without seeing the result.
 ## 5. Handover and communication
 
 - [ ] `USER-GUIDE.md` handed to the team; a short walkthrough done
-- [ ] `RELEASE-NOTES-2026-12.md` shared with directors/finance (what is in scope, what is not)
+- [ ] `docs/RELEASE-NOTES-0.5.0.md` shared with directors/finance (what is in scope, what is not)
 - [ ] Who raises defects and where (GitHub issues) communicated
 - [ ] Go/no-go recorded by the portfolio owner
 

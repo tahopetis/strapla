@@ -1,5 +1,11 @@
 # Release notes — Strapla December 2026 (first release)
 
+> **Superseded.** This is the historical note for the legacy calendar-versioned `v2026.12.0`. The
+> current release is [v0.5.0 (beta)](RELEASE-NOTES-0.5.0.md); the full history is in
+> [CHANGELOG.md](../CHANGELOG.md) and the version policy in [VERSIONING.md](VERSIONING.md). The
+> "Not included (by design)" section below described the December cut only — execution, settlement,
+> year close, dashboard and custom fields shipped in v0.5.0.
+
 | Field | Value |
 | --- | --- |
 | Release | 2026.12 (first release) |

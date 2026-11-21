@@ -1,12 +1,12 @@
-# UAT plan — December 2026 first release
+# UAT plan — v0.5.0 beta
 
-Acceptance testing for the **December 2026 release**: plan module (M1), funding module (M2),
-reports/exports and administrator accounts (M2.5). Everything runs against a **fresh database** so
-the opening-balance load can be validated end to end.
+Acceptance testing for the **v0.5.0 beta release**: the complete loop — plan, funding, execution and
+settlement, year close and carry-over, reports/exports, administration and custom fields. Everything
+runs against a **fresh database** so the opening-balance load can be validated end to end.
 
 | Field | Value |
 | --- | --- |
-| Release target | December 2026 (FY2027 annual plan) |
+| Release target | v0.5.0 beta (FY2027 annual plan) |
 | Tester | Portfolio owner (product owner) |
 | Support | Engineering lead (this build team) |
 | Environment | A hosted instance with the release image (see `GO-LIVE-CHECKLIST.md`); for a dry run, the development box works |
@@ -55,7 +55,8 @@ entry/timestamp in the sign-off table below.
 | UAT-13 | Capex/opex split spot-check at program, project, SI and portfolio level | Components shown separately and combined totals agree | SC-8 |
 | UAT-14 | Restore drill on the host: take a backup, restore it into a scratch database, verify counts | Restore succeeds and data matches | R4 |
 | UAT-15 | Sign out/in from a second browser; confirm sessions end on sign-out and on password reset | No session leaks; deactivated account cannot sign in | ADR-0002 |
-| UAT-16 | Record one real spend entry in under one minute | **Deferred to the January M3 release** (execution module not in the December cut) | SC-9 (partial) |
+| UAT-16 | Record one real spend entry in under one minute | The spend form fills and saves from the allocation in under a minute; remaining and BR-11 update immediately | SC-9 |
+| UAT-17 | Record a commitment, settle part of it with a spend, then settle the rest; check the execution columns in the reports | The commitment moves open → partially settled → settled; remaining follows the formula; the reports show commitment, spend and open amounts | SC-9, SC-10 |
 
 ## Defect handling
 
@@ -63,7 +64,7 @@ entry/timestamp in the sign-off table below.
 2. Label `needs-triage`; the engineering lead triages within one working day and labels
    `ready-for-agent` or `ready-for-human`.
 3. Data-value defects that block the plan (wrong totals, broken traceability) are **release blockers**.
-   Cosmetic issues are collected for the January iteration.
+   Cosmetic issues are collected for a follow-up iteration.
 4. Corrections during UAT follow the product rules: no hard deletes; void with a reason; audited edits.
 
 ## Exit criteria
@@ -94,6 +95,8 @@ entry/timestamp in the sign-off table below.
 | UAT-13 |  |  |  |
 | UAT-14 |  |  |  |
 | UAT-15 |  |  |  |
+| UAT-16 |  |  |  |
+| UAT-17 |  |  |  |
 
 ### Task timing baselines (W8)
 

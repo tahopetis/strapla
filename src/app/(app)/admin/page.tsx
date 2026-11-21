@@ -86,7 +86,7 @@ export default async function AdminPage() {
           <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
             <li>Every authenticated user is an administrator; there are no editor or viewer roles.</li>
             <li>There is no self-service signup; accounts are created here.</li>
-            <li>Closed years are read-only except audited administrator corrections.</li>
+            <li>Closed years are read-only; settlement lifecycle events are the only exception.</li>
           </ul>
         </Card>
       </div>

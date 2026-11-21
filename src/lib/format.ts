@@ -45,3 +45,16 @@ export function toDateInputValue(value: Date | string): string {
     parts.find((item) => item.type === type)?.value ?? '';
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
+
+/**
+ * Header build label for `STRAPLA_VERSION`, which carries a release tag
+ * (`v0.5.0`) or a branch name (`main`). Version-like values are normalised to a
+ * single `v` prefix so a tag build never renders `vv0.5.0`; branch names are
+ * shown as they are.
+ */
+export function formatBuildVersion(version: string): string {
+  const trimmed = version.trim();
+  if (!trimmed) return 'dev';
+  const withoutPrefix = trimmed.replace(/^v+/, '');
+  return /^\d+(\.\d+)*$/.test(withoutPrefix) ? `v${withoutPrefix}` : trimmed;
+}
