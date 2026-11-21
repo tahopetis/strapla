@@ -9,12 +9,15 @@ import { rp } from './support/money';
  * browser can still reach (a project created under a closed-year program), and
  * the closed-year summary on the close page so the year cannot be closed twice.
  *
- * Three known server gaps are recorded as `test.fixme`: the UI hides the
- * affordance, so a browser can only assert the visible lock. They are tracked at
- *   #96 allocation update closed-year guard
- *   #97 recurring-ops void allowClosed
+ * One known server gap is recorded as `test.fixme`: the UI hides the
+ * affordance, so a browser can only assert the visible lock. It is tracked at
  *   #98 dead post-close spend branch
- * and the missing guards need an action-level test, not a faked browser path.
+ * and the missing guard needs an action-level test, not a faked browser path.
+ * The #96 (allocation update) and #97 (recurring-ops void) closed-year guards are
+ * proven by action-level tests in
+ *   src/server/plan/allocation-actions.test.ts
+ *   src/server/plan/recurring-actions.test.ts
+ * so their browser cases below pin only the visible lock.
  *
  * Prerequisite: the foundation journey has run (FY2027 closed by "E2E-CLOSE-FY2027",
  * FY2028 active).
@@ -156,11 +159,11 @@ test('refuses a project created under a closed-year program @t2', async ({ page 
 });
 
 // #96 (https://github.com/tahopetis/strapla/issues/96): the allocation UPDATE
-// action never checks whether the allocation's annual plan is closed — only the
-// void action does. The project page hides the edit form because the project's
-// originating year is closed, so the browser can pin the visible lock only; the
-// missing server guard needs an action-level test.
-test.fixme('refuses an allocation update in a closed year on the server (#96) @t2', async ({
+// action now refuses a closed annual plan on the server (proven in
+// src/server/plan/allocation-actions.test.ts). The project page hides the edit
+// form because the project's originating year is closed, so this browser case
+// pins the visible lock only.
+test('refuses an allocation update in a closed year on the server (#96) @t2', async ({
   page,
 }) => {
   await page.goto('/plan/projects');
@@ -174,11 +177,12 @@ test.fixme('refuses an allocation update in a closed year on the server (#96) @t
   await expect(page.locator('main form')).toHaveCount(0);
 });
 
-// #97 (https://github.com/tahopetis/strapla/issues/97): voidItem passes
-// `allowClosed: true`, so a recurring-ops void is accepted on the server for a
-// closed year. The annual plan page hides the void trigger when the year is
-// closed, so only the visible lock can be asserted here.
-test.fixme('refuses a recurring-ops void in a closed year on the server (#97) @t2', async ({
+// #97 (https://github.com/tahopetis/strapla/issues/97): the recurring-ops void
+// no longer passes `allowClosed` to the editability guard, so a closed year is
+// refused on the server (proven in src/server/plan/recurring-actions.test.ts).
+// The annual plan page hides the void trigger when the year is closed, so this
+// browser case pins the visible lock only.
+test('refuses a recurring-ops void in a closed year on the server (#97) @t2', async ({
   page,
 }) => {
   await openAnnualPlan(page, CLOSED_YEAR);

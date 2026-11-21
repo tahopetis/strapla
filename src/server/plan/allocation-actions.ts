@@ -287,6 +287,9 @@ async function updateAllocation(
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
   requireAllocationEditable(context);
+  if (context.annualPlan.status === 'closed') {
+    throw new FormError('This fiscal year is closed; allocations cannot be updated.');
+  }
   requireProjectActiveYear(context.project, context.annualPlan.fiscalYear);
 
   let updated: ProjectYearAllocation | undefined;

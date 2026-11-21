@@ -66,11 +66,11 @@ async function loadAnnualPlanContext(annualPlanId: string): Promise<Context> {
   return row;
 }
 
-function requireEditable(context: Context, options: { allowClosed?: boolean } = {}): void {
+function requireEditable(context: Context): void {
   if (context.strategicPlan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
   }
-  if (context.annualPlan.status === 'closed' && !options.allowClosed) {
+  if (context.annualPlan.status === 'closed') {
     throw new FormError('This fiscal year is closed and read-only.');
   }
 }
@@ -199,7 +199,7 @@ async function updateItem(
 async function voidItem(userId: string, id: string, reason: string): Promise<RecurringOpsItem> {
   const loaded = await loadItem(id);
   if (loaded.item.voidedAt) throw new FormError('This item is already voided.');
-  requireEditable(loaded.context, { allowClosed: true });
+  requireEditable(loaded.context);
 
   let updated: RecurringOpsItem | undefined;
   await getDb().transaction(async (tx) => {
