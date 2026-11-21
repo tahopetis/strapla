@@ -71,7 +71,7 @@ test('sweeps the planning routes with real portfolio data @t3', async ({ page })
   await page.goto(`${fy2027Url}/close`);
   await expect(page.getByRole('heading', { name: 'Close FY2027', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Fiscal year closed' })).toBeVisible();
-  await expect(page.getByText('E2E-CLOSE-FY2027')).toBeVisible();
+  await expect(page.getByText('E2E-CLOSE-FY2027').first()).toBeVisible();
 
   // Recurring-ops execution detail for the FY2027 item.
   await page.goto(fy2027Url);
