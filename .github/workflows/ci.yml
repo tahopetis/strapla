@@ -48,5 +48,8 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm db:migrate
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm e2e
+      - run: pnpm exec playwright install --with-deps chromium ffmpeg
+      # Routine CI keeps the journey and the read-only sweep, not the full
+      # regression: the rule specs in the t2 project run on demand through
+      # .github/workflows/regression.yml (see docs/REGRESSION.md).
+      - run: pnpm exec playwright test --project=foundation --project=t3
