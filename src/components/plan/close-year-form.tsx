@@ -388,8 +388,7 @@ export function CloseYearForm({
         <p className="mt-3 text-xs text-slate-500">
           Carry amounts start blank: enter an amount for every field — type 0 for none. A blank field
           blocks the close. After the close, settlement lifecycle events (paying existing commitments) can still be
-          recorded and are audited; all other edits on the closed year are blocked except audited
-          administrator corrections.
+          recorded and are audited; all other edits on the closed year are blocked.
         </p>
       </Card>
     </form>

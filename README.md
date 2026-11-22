@@ -6,27 +6,43 @@ Built from the project charter ([`docs/CHARTER.md`](docs/CHARTER.md)) and the ar
 
 ## Status
 
+**v0.5.0 (beta)** — released 2026-11-22. The full loop works end to end: plan it, fund it, execute
+it, close the year, and report it.
+
 | Milestone | State |
 | --- | --- |
 | **M0 Skeleton** | Done: Next.js 16 + PostgreSQL 18 + Drizzle, sessions and local auth, audit plumbing, CI, Docker images, deployment and restore drill |
 | **M1 Plan** | Done: strategic plan and SIs, annual plans, programs with continuation, projects with ijin prinsip, recurring ops, opening balances, E2E happy path |
 | **M2 Funding** | Done: project year allocations, balances and flag engine, pricing chain/contract value, reports with CSV/XLSX exports and print views |
-| **M2.5 Insight** | Release-ready: administrator accounts, audit trail, UAT plan, opening-balance load workplan and go-live checklist done — awaiting host + owner UAT |
-| **M3 Execution** | Spend entries, commitments, settlement |
+| **M2.5 Insight** | Done: administrator accounts, audit trail, UAT plan, opening-balance load workplan and go-live checklist |
+| **M3 Execution** | Done: commitments, spend entries and settlement (partial, cross-year, prior-year opening and post-close treatment) |
 | **M4 Multi-year** | Done: year close + carry-over, closed-year locks, program threads |
 | **M5 Insight** | Done: portfolio dashboard, audit search + CSV export, reporting polish |
 
-The issue tracker holds the work breakdown; milestones mirror the charter. The app has an in-app **Help** page with the quick guide; the full guide is [docs/USER-GUIDE.md](docs/USER-GUIDE.md).
+The issue tracker holds the work breakdown; milestones mirror the charter. The app has an in-app
+**Help** page with the quick guide; the full guide is [docs/USER-GUIDE.md](docs/USER-GUIDE.md).
 
-Readiness documents for the December release: [UAT plan](docs/UAT-PLAN.md), [opening-balance load](docs/OPENING-BALANCE-LOAD.md), [go-live checklist](docs/GO-LIVE-CHECKLIST.md), [user guide](docs/USER-GUIDE.md), [release notes](docs/RELEASE-NOTES-2026-12.md).
+Release documents: [CHANGELOG](CHANGELOG.md), [v0.5.0 release notes](docs/RELEASE-NOTES-0.5.0.md),
+[versioning and release process](docs/VERSIONING.md), [UAT plan](docs/UAT-PLAN.md),
+[opening-balance load](docs/OPENING-BALANCE-LOAD.md), [go-live checklist](docs/GO-LIVE-CHECKLIST.md),
+[operations](docs/operations.md).
 
 ## Images, versions and updates
 
-GitHub Actions builds and publishes the multi-arch image on every push to `main`:
+Strapla follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`); the `0.x` line is
+the public beta. Releases are tagged `vMAJOR.MINOR.PATCH`; the current release is **v0.5.0**. The
+policy, the release checklist and the hotfix procedure are in
+[docs/VERSIONING.md](docs/VERSIONING.md).
 
-- `latest` — the current `main` build
+GitHub Actions builds and publishes the multi-arch image (`linux/amd64`, `linux/arm64`) for
+`ghcr.io/tahopetis/strapla`:
+
+- `latest` — the current `main` build (not necessarily the newest release)
 - `sha-<commit>` — one immutable tag per commit
-- `v<year>.<month>.<patch>` / `<year>.<month>` — release tags (for example `v2026.12.0` → `2026.12.0`, `2026.12`)
+- `0.5.0` / `0.5` — the v0.5.0 release (SemVer image tags carry no `v` prefix)
+
+The legacy calendar tag `v2026.12.0` is still published as `2026.12.0` / `2026.12`; it is
+superseded by v0.5.0. See the [changelog](CHANGELOG.md) for the release history.
 
 The running build is shown in the app header (version · commit), so you can always see which image is live.
 
@@ -38,8 +54,8 @@ docker compose pull app
 docker compose up -d --force-recreate app
 ```
 
-To pin a release, set `STRAPLA_TAG=v2026.12.0` in `.env`. The image is published publicly, so
-pulling needs no registry login.
+To pin a release, set `STRAPLA_TAG=0.5.0` in `.env`. The image is published publicly, so pulling
+needs no registry login.
 
 ## Local development
 

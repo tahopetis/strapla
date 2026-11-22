@@ -79,7 +79,7 @@ The gaps that used to live here are all fixed and pinned by tests: the allocatio
 
 Two other findings worth knowing when reading the suite:
 
-- The README and `RELEASE-NOTES-2026-12.md` describe **M3 Execution** (spend entries, commitments, settlement) as a future January release, but the feature is built and reachable in this codebase. The suite covers it; the documentation is stale.
+- The legacy `RELEASE-NOTES-2026-12.md` describes **M3 Execution** (spend entries, commitments, settlement) as a future January release; the feature shipped in v0.5.0 and the suite covers it. The old release note is kept for history and marked superseded; the README lists every milestone as done.
 - Before this suite, CI never uploaded Playwright traces, so a failing run was undiagnosable. The regression workflow uploads the HTML report, JUnit XML and traces/video on failure, and writes a per-test table into the job summary.
 
 ## Not covered

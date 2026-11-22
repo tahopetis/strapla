@@ -46,16 +46,13 @@ Work strictly top-down; each step assumes the previous one is complete.
 - Flags never block entry: an over-allocation or over-approved project is allowed so the real data
   can be recorded; flags are resolved later with the owner.
 
-## Import foundation (W3a) — field list, template, parser
+## Import foundation — field list, template, parser
 
-The one-time load is being prepared for a bulk import before the wizard lands. This is the W3
-Phase A foundation (**W3a**); the four-step wizard is Phase B (**W3b**) — see the
-[UX enhancement proposal](UX-ENHANCEMENT-PROPOSAL.md) **W3**. The foundation in this repository
-is deliberately headless: a declared field list, CSV/XLSX template generation, a typed
-parser/validator with line-level errors, and a dry-run harness. **There is no UI, no server action
-and no database write in this foundation** — the parser returns validated rows or errors and nothing
-else. The code lives in `src/lib/opening-import/` so the CSV/XLSX file I/O stays out of the
-framework-free `src/domain/` layer.
+The bulk import started as a headless foundation (W3a): a declared field list, CSV/XLSX template
+generation, a typed parser/validator with line-level errors, and a dry-run harness. The four-step
+wizard shipped on top of it in v0.5.0 — see [Loading with the wizard](#loading-with-the-wizard-w3b)
+below. The code lives in `src/lib/opening-import/` so the CSV/XLSX file I/O stays out of the
+framework-free `src/domain/` layer; the wizard's server actions live in `src/server/plan/`.
 
 ### The three data sets
 
@@ -74,9 +71,9 @@ three data sets.** It is stored per project *per fiscal year* on `project_year_a
 (`allocation + carry-in − open commitments − spend`, ADR-0003 §2 and the “Opening balances” table in
 `data-model.md`). A project row is one whole-life
 record, so folding a per-year figure into it would blur the project-versus-annual-money distinction.
-The app already enters allocation carry-in when the annual allocation is created (load order step 6),
-and that stays the manual path until the Phase B wizard adds an allocation level. The W3a data sets
-therefore stop at the project columns above.
+The app enters allocation carry-in when the annual allocation is created (load order step 6), and
+that remains the manual path: the wizard imports the three data sets above and does not add an
+allocation level. The data sets therefore stop at the project columns.
 
 ### Owner-added columns
 
@@ -141,7 +138,7 @@ never writes: validation is pure, so a failed file cannot partially apply. Undec
 rejected rather than dropped, duplicate and missing required headers fail the file, and every bad
 value is reported (all rows, one pass) with its physical line number — spreadsheet row number for
 XLSX. A blank optional cell returns `null`; a blank required cell fails the row. Referential checks
-(does the SI code exist?) belong to the Phase B load, which resolves and writes the rows; year
+(does the SI code exist?) belong to the wizard load, which resolves and writes the rows; year
 ranges and `endFiscalYear >= startFiscalYear` are domain rules applied there too, not by the type
 validator. The modules import one another with explicit `.ts` specifiers so the CLI runs directly on
 Node 24 type stripping with no build step; `allowImportingTsExtensions` in `tsconfig.json` keeps

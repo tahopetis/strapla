@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { SubmitButton } from '@/components/form';
+import { formatBuildVersion } from '@/lib/format';
 import { logoutAction } from '@/server/auth/actions';
 import { requireUser } from '@/server/auth/session';
 
@@ -15,9 +16,10 @@ const navigation = [
   { href: '/help', label: 'Help' },
 ];
 
-const buildVersion = process.env.STRAPLA_VERSION ?? 'dev';
-const buildCommit = process.env.STRAPLA_COMMIT ?? null;
-const versionLabel = buildCommit ? `${buildVersion} · ${buildCommit.slice(0, 7)}` : buildVersion;
+const buildVersion = formatBuildVersion(process.env.STRAPLA_VERSION ?? 'dev');
+const buildCommit = process.env.STRAPLA_COMMIT;
+const shortCommit = buildCommit && buildCommit !== 'dev' ? buildCommit.slice(0, 7) : null;
+const versionLabel = shortCommit ? `${buildVersion} · ${shortCommit}` : buildVersion;
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
@@ -35,7 +37,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               className="hidden rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-500 sm:inline"
               title="Running build (version · commit)"
             >
-              v{versionLabel}
+              {versionLabel}
             </span>
           </div>
           <div className="flex items-center gap-4">
