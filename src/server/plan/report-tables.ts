@@ -6,6 +6,8 @@ import {
   getProjectRegisterReport,
   getSiFiveYearReport,
   type BudgetVsActualRow,
+  type SiFiveYearComponent,
+  type SiFiveYearReport,
 } from './report-queries';
 
 /** Builds the export document for a report key; shared by CSV and XLSX downloads. */
@@ -20,7 +22,7 @@ export const REPORT_TITLES: Record<ReportKey, string> = {
 };
 
 const EXECUTION_NOTE =
-  'Commitments and actual spend come from the execution module. Prior-year settlements are spend paying earlier-year commitments (excluded from the current year); prior-year opening payments settle pre-app commitments. Post-close adjustments are closed-year settlements kept as a reserve; they never enter the locked close snapshot or the carry-over figures.';
+  'Program budgets and project year allocations are effective: the initial figure plus every posted revision delta (a de-allocation is a revision line). Carry-in is a separate input. Commitments and actual spend come from the execution module. Prior-year settlements are spend paying earlier-year commitments (excluded from the current year); prior-year opening payments settle pre-app commitments. Post-close adjustments are closed-year settlements kept as a reserve; they never enter the locked close snapshot or the carry-over figures.';
 
 function table(name: string, columns: ExportColumn[]): ExportTable {
   return { name, columns, rows: [] };
@@ -113,6 +115,79 @@ export function postCloseAdjustmentTable(rows: readonly BudgetVsActualRow[]): Ex
   return postClose;
 }
 
+/**
+ * The SI five-year view and its totals, as one table with the capex and opex
+ * figures side by side (ADR-0006 §5). Envelope, prior consumption, effective
+ * program budget, consumption and headroom are all per component, so a capex
+ * overrun can never be netted against opex headroom. Shared by the screen and
+ * the CSV/XLSX export.
+ */
+export function siFiveYearExportTables(data: SiFiveYearReport): ExportTable[] {
+  const main = table('SI five-year view', [
+    { key: 'code', header: 'SI code' },
+    { key: 'name', header: 'Strategic initiative' },
+    { key: 'owner', header: 'Owner' },
+    ...siComponentColumns('Capex'),
+    ...siComponentColumns('Opex'),
+  ]);
+  main.rows = data.rows.map((row) => ({
+    id: row.initiative.id,
+    code: row.initiative.code,
+    name: row.initiative.name,
+    owner: row.initiative.owner,
+    ...siComponentCells('capex', row.capex),
+    ...siComponentCells('opex', row.opex),
+  }));
+
+  const total = table('Totals', [
+    { key: 'label', header: 'Total' },
+    ...siComponentColumns('Capex'),
+    ...siComponentColumns('Opex'),
+  ]);
+  total.rows = [
+    {
+      label: 'Portfolio',
+      ...siComponentCells('capex', data.totals.capex),
+      ...siComponentCells('opex', data.totals.opex),
+    },
+  ];
+
+  return [main, total];
+}
+
+function siComponentColumns(component: 'Capex' | 'Opex'): ExportColumn[] {
+  const key = component.toLowerCase();
+  return [
+    { key: `${key}Envelope`, header: `${component} envelope`, kind: 'money' },
+    { key: `${key}Prior`, header: `${component} prior consumed`, kind: 'money' },
+    { key: `${key}ProgramBudget`, header: `${component} program budgets`, kind: 'money' },
+    { key: `${key}Allocated`, header: `${component} allocated`, kind: 'money' },
+    { key: `${key}Committed`, header: `${component} committed`, kind: 'money' },
+    { key: `${key}Spent`, header: `${component} spent`, kind: 'money' },
+    { key: `${key}Consumed`, header: `${component} consumed`, kind: 'money' },
+    { key: `${key}Headroom`, header: `${component} headroom`, kind: 'money' },
+    { key: `${key}Status`, header: `${component} status` },
+  ];
+}
+
+function siComponentCells(
+  component: 'capex' | 'opex',
+  row: SiFiveYearComponent,
+): Record<string, string | number> {
+  const label = component === 'capex' ? 'capex' : 'opex';
+  return {
+    [`${component}Envelope`]: row.envelope,
+    [`${component}Prior`]: row.priorConsumed,
+    [`${component}ProgramBudget`]: row.programBudget,
+    [`${component}Allocated`]: row.allocation,
+    [`${component}Committed`]: row.commitment,
+    [`${component}Spent`]: row.spend,
+    [`${component}Consumed`]: row.consumed,
+    [`${component}Headroom`]: row.headroom,
+    [`${component}Status`]: row.over ? `over ${label} envelope` : `within ${label} envelope`,
+  };
+}
+
 export async function buildReportDocument(
   report: ReportKey,
   planId: string,
@@ -124,71 +199,12 @@ export async function buildReportDocument(
 
   if (report === 'si-five-year') {
     const data = await getSiFiveYearReport(planId);
-    const main = table('SI five-year view', [
-      { key: 'code', header: 'SI code' },
-      { key: 'name', header: 'Strategic initiative' },
-      { key: 'owner', header: 'Owner' },
-      { key: 'envelope', header: 'Envelope', kind: 'money' },
-      { key: 'prior', header: 'Prior consumed', kind: 'money' },
-      { key: 'programCapex', header: 'Program capex', kind: 'money' },
-      { key: 'programOpex', header: 'Program opex', kind: 'money' },
-      { key: 'allocationCapex', header: 'Allocated capex', kind: 'money' },
-      { key: 'allocationOpex', header: 'Allocated opex', kind: 'money' },
-      { key: 'commitmentCapex', header: 'Committed capex', kind: 'money' },
-      { key: 'commitmentOpex', header: 'Committed opex', kind: 'money' },
-      { key: 'spendCapex', header: 'Spent capex', kind: 'money' },
-      { key: 'spendOpex', header: 'Spent opex', kind: 'money' },
-      { key: 'consumed', header: 'Consumed (prior + programs)', kind: 'money' },
-      { key: 'headroom', header: 'Headroom', kind: 'money' },
-      { key: 'status', header: 'Status' },
-    ]);
-    main.rows = data.rows.map((row) => ({
-      id: row.initiative.id,
-      code: row.initiative.code,
-      name: row.initiative.name,
-      owner: row.initiative.owner,
-      envelope: row.initiative.envelopeAmount,
-      prior: row.initiative.priorProgramBudgetUsed,
-      programCapex: row.programCapex,
-      programOpex: row.programOpex,
-      allocationCapex: row.allocationCapex,
-      allocationOpex: row.allocationOpex,
-      commitmentCapex: row.commitmentCapex,
-      commitmentOpex: row.commitmentOpex,
-      spendCapex: row.spendCapex,
-      spendOpex: row.spendOpex,
-      consumed: row.consumed,
-      headroom: row.headroom,
-      status: row.over ? 'over envelope' : 'within envelope',
-    }));
-    const total = table('Totals', [
-      { key: 'label', header: 'Total' },
-      { key: 'envelope', header: 'Envelope', kind: 'money' },
-      { key: 'prior', header: 'Prior consumed', kind: 'money' },
-      { key: 'programs', header: 'Program budgets', kind: 'money' },
-      { key: 'allocated', header: 'Allocated', kind: 'money' },
-      { key: 'consumed', header: 'Consumed', kind: 'money' },
-      { key: 'headroom', header: 'Headroom', kind: 'money' },
-      { key: 'status', header: 'Status' },
-    ]);
-    total.rows = [
-      {
-        label: 'Portfolio',
-        envelope: data.totals.envelope,
-        prior: data.totals.priorConsumed,
-        programs: data.totals.programCapex + data.totals.programOpex,
-        allocated: data.totals.allocationCapex + data.totals.allocationOpex,
-        consumed: data.totals.consumed,
-        headroom: data.totals.headroom,
-        status: data.totals.over ? 'over envelope' : 'within envelope',
-      },
-    ];
     return {
       title: REPORT_TITLES[report],
       subtitle: planName,
       generatedAt,
       note,
-      tables: applyCustomFieldGroups([main, total], groups),
+      tables: applyCustomFieldGroups(siFiveYearExportTables(data), groups),
     };
   }
 
@@ -200,15 +216,19 @@ export async function buildReportDocument(
       { key: 'siCode', header: 'SI' },
       { key: 'programCode', header: 'Program' },
       { key: 'programName', header: 'Program name' },
-      { key: 'capexBudget', header: 'Capex budget', kind: 'money' },
-      { key: 'opexBudget', header: 'Opex budget', kind: 'money' },
+      { key: 'capexBudget', header: 'Capex initial budget', kind: 'money' },
+      { key: 'revisionCapex', header: 'Capex revisions', kind: 'money' },
+      { key: 'effectiveCapexBudget', header: 'Capex effective budget', kind: 'money' },
       { key: 'carryInCapex', header: 'Capex carry-in', kind: 'money' },
-      { key: 'carryInOpex', header: 'Opex carry-in', kind: 'money' },
       { key: 'availableCapex', header: 'Capex available', kind: 'money' },
-      { key: 'availableOpex', header: 'Opex available', kind: 'money' },
       { key: 'allocatedCapex', header: 'Capex allocated', kind: 'money' },
-      { key: 'allocatedOpex', header: 'Opex allocated', kind: 'money' },
       { key: 'unallocatedCapex', header: 'Capex unallocated', kind: 'money' },
+      { key: 'opexBudget', header: 'Opex initial budget', kind: 'money' },
+      { key: 'revisionOpex', header: 'Opex revisions', kind: 'money' },
+      { key: 'effectiveOpexBudget', header: 'Opex effective budget', kind: 'money' },
+      { key: 'carryInOpex', header: 'Opex carry-in', kind: 'money' },
+      { key: 'availableOpex', header: 'Opex available', kind: 'money' },
+      { key: 'allocatedOpex', header: 'Opex allocated', kind: 'money' },
       { key: 'unallocatedOpex', header: 'Opex unallocated', kind: 'money' },
       { key: 'commitmentCapex', header: 'Capex committed', kind: 'money' },
       { key: 'commitmentOpex', header: 'Opex committed', kind: 'money' },
@@ -224,14 +244,18 @@ export async function buildReportDocument(
       programCode: row.programCode,
       programName: row.programName,
       capexBudget: row.capexBudget,
-      opexBudget: row.opexBudget,
+      revisionCapex: row.revisionCapex,
+      effectiveCapexBudget: row.effectiveCapexBudget,
       carryInCapex: row.carryInCapex,
-      carryInOpex: row.carryInOpex,
       availableCapex: row.availableCapex,
-      availableOpex: row.availableOpex,
       allocatedCapex: row.allocatedCapex,
-      allocatedOpex: row.allocatedOpex,
       unallocatedCapex: row.unallocatedCapex,
+      opexBudget: row.opexBudget,
+      revisionOpex: row.revisionOpex,
+      effectiveOpexBudget: row.effectiveOpexBudget,
+      carryInOpex: row.carryInOpex,
+      availableOpex: row.availableOpex,
+      allocatedOpex: row.allocatedOpex,
       unallocatedOpex: row.unallocatedOpex,
       commitmentCapex: row.commitmentCapex,
       commitmentOpex: row.commitmentOpex,

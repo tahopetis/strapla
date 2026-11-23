@@ -57,8 +57,8 @@ export default async function AllocationFundingPage({
           title="Allocation and execution"
           description="Commitments and spend for this fiscal-year slice; remaining follows ADR-0003."
           totals={funding.totals}
-          allocationCapex={funding.allocation.allocationCapex}
-          allocationOpex={funding.allocation.allocationOpex}
+          allocationCapex={funding.effectiveAllocation.capex}
+          allocationOpex={funding.effectiveAllocation.opex}
           carryInCapex={funding.allocation.carryInCapex}
           carryInOpex={funding.allocation.carryInOpex}
           allowCapex

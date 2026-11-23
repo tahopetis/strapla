@@ -67,24 +67,69 @@ export function formatEntityCode(kind: EntityCodeKind, fiscalYear: number, seque
   return `${CODE_PREFIXES[kind]}-${fiscalYear}-${String(sequence).padStart(3, '0')}`;
 }
 
-export interface EnvelopeCheck {
+export interface EnvelopeComponentCheck {
+  /** The component's five-year ceiling. */
+  envelope: Rupiah;
+  /** Program budget already consumed before the first in-app fiscal year. */
+  prior: Rupiah;
+  /** Sum of the component's effective in-app program budgets. */
+  programs: Rupiah;
+  /** prior + programs. Carry-in is deliberately absent (ADR-0006 §5). */
   consumed: Rupiah;
   remaining: Rupiah;
   over: boolean;
 }
 
+export interface EnvelopeCheck {
+  capex: EnvelopeComponentCheck;
+  opex: EnvelopeComponentCheck;
+  /** Either component is over its envelope; the flag never blocks (BR-17). */
+  over: boolean;
+}
+
 /**
- * BR-2: prior program budget consumed plus cumulative program budgets may not
- * exceed the five-year SI envelope. Exceeding is flagged, never blocked.
+ * BR-2 for one component: prior program budget consumed plus the cumulative
+ * program budgets may not exceed the component's five-year envelope. Exceeding
+ * is flagged, never blocked. Carry-in is not part of the check: it was already
+ * counted in the source year's program budget (ADR-0006 §5).
+ */
+export function envelopeComponentCheck(input: {
+  envelope: Rupiah;
+  prior: Rupiah;
+  programBudgets: readonly Rupiah[];
+}): EnvelopeComponentCheck {
+  const envelope = assertRupiah(input.envelope);
+  const prior = assertRupiah(input.prior);
+  const programs = sumRupiah(input.programBudgets);
+  const consumed = prior + programs;
+  const remaining = envelope - consumed;
+  return { envelope, prior, programs, consumed, remaining, over: remaining < 0 };
+}
+
+/**
+ * The SI envelope and the BR-2 check are held per component (ADR-0006 §5):
+ * capex and opex never share headroom, so an overrun in one component leaves
+ * the other's remaining headroom untouched.
  */
 export function envelopeCheck(input: {
-  envelopeAmount: Rupiah;
-  priorProgramBudgetUsed: Rupiah;
-  programBudgets: readonly Rupiah[];
+  envelopeCapex: Rupiah;
+  envelopeOpex: Rupiah;
+  priorCapex: Rupiah;
+  priorOpex: Rupiah;
+  programCapex: readonly Rupiah[];
+  programOpex: readonly Rupiah[];
 }): EnvelopeCheck {
-  const consumed = assertRupiah(input.priorProgramBudgetUsed) + sumRupiah(input.programBudgets);
-  const remaining = assertRupiah(input.envelopeAmount) - consumed;
-  return { consumed, remaining, over: remaining < 0 };
+  const capex = envelopeComponentCheck({
+    envelope: input.envelopeCapex,
+    prior: input.priorCapex,
+    programBudgets: input.programCapex,
+  });
+  const opex = envelopeComponentCheck({
+    envelope: input.envelopeOpex,
+    prior: input.priorOpex,
+    programBudgets: input.programOpex,
+  });
+  return { capex, opex, over: capex.over || opex.over };
 }
 
 export interface ProgramAvailability {

@@ -1,4 +1,5 @@
 import { assertRupiah, remaining, type Rupiah } from './money';
+import { applyDeltas, type ComponentAmounts } from './revisions';
 
 /**
  * Funding rules for M2 (charter §6.5–6.7, ADR-0003). Pure functions used by
@@ -43,6 +44,35 @@ export function programBudgetPosition(input: {
     capex: position(input.capexBudget, input.carryInCapex, input.allocatedCapex),
     opex: position(input.opexBudget, input.carryInOpex, input.allocatedOpex),
   };
+}
+
+/**
+ * The program position with its effective budget (#112, ADR-0006 §4): the
+ * initial budget plus every posted revision delta, per component. This is the
+ * one place where a revision delta meets availability, unallocated budget and
+ * the over-allocation flag, so every screen shows the same money.
+ */
+export function revisedProgramBudgetPosition(input: {
+  capexBudget: Rupiah;
+  opexBudget: Rupiah;
+  revision: ComponentAmounts;
+  carryInCapex: Rupiah;
+  carryInOpex: Rupiah;
+  allocatedCapex: Rupiah;
+  allocatedOpex: Rupiah;
+}): ProgramBudgetPosition {
+  const effective = applyDeltas(
+    { capex: input.capexBudget, opex: input.opexBudget },
+    input.revision,
+  );
+  return programBudgetPosition({
+    capexBudget: effective.capex,
+    opexBudget: effective.opex,
+    carryInCapex: input.carryInCapex,
+    carryInOpex: input.carryInOpex,
+    allocatedCapex: input.allocatedCapex,
+    allocatedOpex: input.allocatedOpex,
+  });
 }
 
 export interface AllocationPosition {

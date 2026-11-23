@@ -120,14 +120,19 @@ test('renders all four reports with the live portfolio figures @t2', async ({ pa
   await page.goto('/reports/si-five-year');
   await expect(page.getByRole('heading', { level: 1, name: 'SI five-year view' })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Initiative', exact: true })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: 'Envelope', exact: true })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: 'Prior consumed', exact: true })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: 'Headroom', exact: true })).toBeVisible();
-  // SI-01 carries the foundation envelope and the prior program budget consumed.
+  await expect(page.getByRole('columnheader', { name: 'Capex envelope', exact: true })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Opex envelope', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('columnheader', { name: 'Capex prior consumed', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Opex headroom', exact: true })).toBeVisible();
+  // SI-01 carries the foundation's capex and opex envelopes and prior figures.
   const initiativeRow = page.locator('tbody tr').filter({ hasText: 'SI-01' });
   await expect(initiativeRow).toContainText('Digital Workplace');
-  await expect(initiativeRow).toContainText(rp(5_000_000_000));
-  await expect(initiativeRow).toContainText(rp(750_000_000));
+  await expect(initiativeRow).toContainText(rp(4_000_000_000));
+  await expect(initiativeRow).toContainText(rp(1_000_000_000));
+  await expect(initiativeRow).toContainText(rp(600_000_000));
+  await expect(initiativeRow).toContainText(rp(150_000_000));
   await expect(page.locator('tfoot').getByText('Portfolio total')).toBeVisible();
 
   // ------------------------------- Annual plan by SI and program
@@ -196,17 +201,17 @@ test('exports every report as CSV and XLSX with the live rows @t2', async ({ pag
   // ------------------------------------------------------------------ CSV
   const siCsv = await fetchCsv(page.request, '/reports/export/si-five-year?format=csv');
   expect(siCsv).toContain(
-    'SI code,Strategic initiative,Owner,Envelope,Prior consumed,Program capex',
+    'SI code,Strategic initiative,Owner,Capex envelope,Capex prior consumed,Capex program budgets',
   );
   expect(siCsv).toContain('SI-01,Digital Workplace');
-  expect(siCsv).toContain(',5000000000,750000000,');
+  expect(siCsv).toContain(',4000000000,600000000,');
 
   const annualCsv = await fetchCsv(page.request, '/reports/export/annual-plan?format=csv');
   expect(annualCsv).toContain(
-    'Fiscal year,Plan status,SI,Program,Program name,Capex budget,Opex budget',
+    'Fiscal year,Plan status,SI,Program,Program name,Capex initial budget,Capex revisions,Capex effective budget',
   );
   expect(annualCsv).toContain(
-    '2027,closed,SI-01,PRG-2027-001,Workplace Modernisation 2027,1200000000,300000000',
+    '2027,closed,SI-01,PRG-2027-001,Workplace Modernisation 2027,1200000000,0,1200000000,0,1200000000',
   );
 
   const registerCsv = await fetchCsv(page.request, '/reports/export/project-register?format=csv');
@@ -241,8 +246,8 @@ test('exports every report as CSV and XLSX with the live rows @t2', async ({ pag
   );
   expect(siRow[0]).toBe('SI-01');
   expect(siRow[1]).toBe('Digital Workplace');
-  expect(siRow[3]).toBe(5_000_000_000);
-  expect(siRow[4]).toBe(750_000_000);
+  expect(siRow[3]).toBe(4_000_000_000);
+  expect(siRow[4]).toBe(600_000_000);
   expect(sheetRows(siWorkbook, 'SI five-year view')[0]?.[0]).toBe('SI code');
 
   const annualWorkbook = await fetchWorkbook(
@@ -261,7 +266,10 @@ test('exports every report as CSV and XLSX with the live rows @t2', async ({ pag
   );
   expect(annualRow[4]).toBe('Workplace Modernisation 2027');
   expect(annualRow[5]).toBe(1_200_000_000);
-  expect(annualRow[6]).toBe(300_000_000);
+  expect(annualRow[6]).toBe(0);
+  expect(annualRow[7]).toBe(1_200_000_000);
+  expect(annualRow[12]).toBe(300_000_000);
+  expect(annualRow[14]).toBe(300_000_000);
 
   const registerWorkbook = await fetchWorkbook(
     page.request,
@@ -363,8 +371,10 @@ test('adds the custom fields and values that the report filters match @t2', asyn
   await initiativeForm.locator('input[name="code"]').fill('SI-8801');
   await initiativeForm.locator('input[name="name"]').fill('Report filter initiative');
   await initiativeForm.locator('input[name="owner"]').fill('E2E Reports Owner');
-  await initiativeForm.locator('input[name="envelopeAmount"]').fill('250000000');
-  await initiativeForm.locator('input[name="priorProgramBudgetUsed"]').fill('0');
+  await initiativeForm.locator('input[name="envelopeCapex"]').fill('250000000');
+  await initiativeForm.locator('input[name="envelopeOpex"]').fill('0');
+  await initiativeForm.locator('input[name="priorCapex"]').fill('0');
+  await initiativeForm.locator('input[name="priorOpex"]').fill('0');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(page.getByText(/Strategic initiative SI-8801 created\./)).toBeVisible();
 

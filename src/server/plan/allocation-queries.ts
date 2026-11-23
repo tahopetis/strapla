@@ -13,6 +13,7 @@ import {
 } from '@/db/schema';
 import { allocationRemaining, type AllocationPosition } from '@/domain/funding';
 import { getAllocationFunding } from './execution-queries';
+import { getRevisionDeltasForEntities } from './revision-queries';
 
 /** Read queries for project year allocations (M2 #12). */
 
@@ -20,6 +21,9 @@ export interface ProjectAllocationRow {
   allocation: ProjectYearAllocation;
   annualPlan: AnnualPlan;
   program: AnnualProgram;
+  /** Allocation amount plus posted revision deltas (ADR-0006 §4). */
+  effectiveCapex: number;
+  effectiveOpex: number;
   position: AllocationPosition;
   br11Capex: boolean;
   br11Opex: boolean;
@@ -47,6 +51,8 @@ export async function listProjectAllocations(projectId: string): Promise<Project
         allocation: row.allocation,
         annualPlan: row.annualPlan,
         program: row.program,
+        effectiveCapex: funding?.effectiveAllocation.capex ?? row.allocation.allocationCapex,
+        effectiveOpex: funding?.effectiveAllocation.opex ?? row.allocation.allocationOpex,
         position: funding
           ? { capex: funding.totals.remainingCapex, opex: funding.totals.remainingOpex }
           : allocationRemaining({
@@ -96,6 +102,7 @@ export async function listAllocationProgramOptions(
 
   const existing = await db
     .select({
+      id: projectYearAllocations.id,
       annualPlanId: projectYearAllocations.annualPlanId,
       fiscalYear: annualPlans.fiscalYear,
       allocationCapex: projectYearAllocations.allocationCapex,
@@ -108,6 +115,9 @@ export async function listAllocationProgramOptions(
     );
 
   const usedPlanIds = existing.map((row) => row.annualPlanId);
+  const deltas = await getRevisionDeltasForEntities({
+    allocationIds: existing.map((row) => row.id),
+  });
 
   const programRows = await db
     .select({
@@ -138,10 +148,10 @@ export async function listAllocationProgramOptions(
       value: row.id,
       label: `FY${row.fiscalYear} · ${row.code} · ${row.name}`,
     })),
-    totalAllocated: existing.reduce(
-      (sum, row) => sum + row.allocationCapex + row.allocationOpex,
-      0,
-    ),
+    totalAllocated: existing.reduce((sum, row) => {
+      const delta = deltas.byAllocation.get(row.id) ?? { capex: 0, opex: 0 };
+      return sum + row.allocationCapex + delta.capex + row.allocationOpex + delta.opex;
+    }, 0),
     currentFiscalYears: existing.map((row) => row.fiscalYear).sort((a, b) => a - b),
   };
 }

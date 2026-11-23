@@ -113,21 +113,39 @@ const STRATEGIC_INITIATIVE_FIELDS: readonly OpeningField[] = [
     example: 'Consolidate citizen-facing services on one platform.',
   },
   {
-    name: 'envelopeAmount',
-    label: 'Envelope amount (Rp)',
+    name: 'envelopeCapex',
+    label: 'Capex envelope (Rp)',
     type: NUMBER,
     required: true,
-    description: 'Five-year budget ceiling of the initiative, whole Rupiah.',
-    example: '12500000000',
+    description:
+      'Five-year capex budget ceiling of the initiative, whole Rupiah. Capex and opex never share headroom.',
+    example: '9500000000',
   },
   {
-    name: 'priorProgramBudgetUsed',
-    label: 'Prior program budget consumed (Rp)',
+    name: 'envelopeOpex',
+    label: 'Opex envelope (Rp)',
+    type: NUMBER,
+    required: true,
+    description: 'Five-year opex budget ceiling of the initiative, whole Rupiah.',
+    example: '3000000000',
+  },
+  {
+    name: 'priorCapex',
+    label: 'Prior program budget consumed — capex (Rp)',
     type: NUMBER,
     required: false,
     description:
-      'Opening balance: program budget already consumed before the first in-app fiscal year.',
-    example: '3250000000',
+      'Opening balance: capex program budget already consumed before the first in-app fiscal year.',
+    example: '2200000000',
+  },
+  {
+    name: 'priorOpex',
+    label: 'Prior program budget consumed — opex (Rp)',
+    type: NUMBER,
+    required: false,
+    description:
+      'Opening balance: opex program budget already consumed before the first in-app fiscal year.',
+    example: '1050000000',
   },
   {
     name: 'notes',
@@ -384,7 +402,7 @@ export const OPENING_DATA_SETS: Record<OpeningDataSetId, OpeningDataSet> = {
     id: 'strategic-initiatives',
     title: 'Strategic initiatives',
     description:
-      'Strategic initiatives with their five-year envelope and the prior program budget consumed opening figure.',
+      'Strategic initiatives with their capex and opex five-year envelopes and the prior program budget consumed opening figures.',
     fields: STRATEGIC_INITIATIVE_FIELDS,
   },
   'annual-programs': {

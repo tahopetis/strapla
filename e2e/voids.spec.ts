@@ -150,7 +150,10 @@ test('voids a strategic initiative and refuses one that has programs @t2', async
   await createForm.locator('input[name="code"]').fill('VOID-SI-1');
   await createForm.locator('input[name="name"]').fill('Void initiative');
   await createForm.locator('input[name="owner"]').fill('Head of Tests');
-  await createForm.locator('input[name="envelopeAmount"]').fill('100000000');
+  await createForm.locator('input[name="envelopeCapex"]').fill('100000000');
+  await createForm.locator('input[name="envelopeOpex"]').fill('0');
+  await createForm.locator('input[name="priorCapex"]').fill('0');
+  await createForm.locator('input[name="priorOpex"]').fill('0');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(page.getByText('Strategic initiative VOID-SI-1 created.')).toBeVisible();
 

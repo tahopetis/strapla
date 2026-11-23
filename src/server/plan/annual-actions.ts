@@ -23,6 +23,7 @@ import {
   type ProgramUpdateInput,
 } from '@/domain/inputs';
 import { withCustomFields } from '@/domain/custom-fields';
+import { isComponentShift } from '@/domain/revisions';
 import { planContainsFiscalYear } from '@/domain/plan';
 import type { FormState } from '@/lib/form-state';
 import {
@@ -77,6 +78,56 @@ async function loadAnnualPlan(id: string): Promise<AnnualPlanWithStrategic> {
   const row = rows[0];
   if (!row) throw new FormError('Annual plan not found.');
   return row;
+}
+
+/**
+ * Once the plan is active its program budgets are frozen (#112, ADR-0006 §4):
+ * a change is an immutable budget revision from the annual plan's revision
+ * page, never an in-place edit. Non-amount fields stay editable.
+ */
+const BUDGET_FROZEN_MESSAGE =
+  'Once the annual plan is active a program budget changes only by a posted budget revision. Open the annual plan to post a revision; name, notes and the strategic initiative stay editable.';
+
+const PROGRAM_BUDGET_FROZEN_MESSAGE =
+  'A program created while the annual plan is active starts with a zero budget; fund it with a budget revision.';
+
+const COMPONENT_SHIFT_MESSAGE =
+  'Capex and opex never shift into each other: this change raises one component while lowering the other. Edit the components independently.';
+
+function requireBudgetFrozen(
+  loaded: { program: AnnualProgram; annualPlan: AnnualPlan },
+  input: {
+    capexBudget: number;
+    opexBudget: number;
+  },
+): void {
+  if (loaded.annualPlan.status === 'active') {
+    if (
+      input.capexBudget === loaded.program.capexBudget &&
+      input.opexBudget === loaded.program.opexBudget
+    ) {
+      return;
+    }
+    throw new FormError(BUDGET_FROZEN_MESSAGE);
+  }
+  // A draft plan is still edited in place, but the components never shift.
+  if (
+    isComponentShift(
+      { capex: loaded.program.capexBudget, opex: loaded.program.opexBudget },
+      { capex: input.capexBudget, opex: input.opexBudget },
+    )
+  ) {
+    throw new FormError(COMPONENT_SHIFT_MESSAGE);
+  }
+}
+
+function requireZeroStartingBudget(
+  annualPlan: AnnualPlan,
+  input: { capexBudget: number; opexBudget: number },
+): void {
+  if (annualPlan.status !== 'active') return;
+  if (input.capexBudget === 0 && input.opexBudget === 0) return;
+  throw new FormError(PROGRAM_BUDGET_FROZEN_MESSAGE);
 }
 
 async function requireEditableAnnualPlan(
@@ -246,6 +297,7 @@ async function createProgram(
   custom: CustomFieldPayload,
 ): Promise<AnnualProgram> {
   const { annualPlan, strategicPlan } = await requireEditableAnnualPlan(input.annualPlanId);
+  requireZeroStartingBudget(annualPlan, input);
   await validateInitiative(input.siId, strategicPlan.id);
   await validateContinuation({
     prevProgramId: input.prevProgramId,
@@ -336,6 +388,7 @@ async function updateProgram(
   const loaded = await loadProgram(input.id);
   if (loaded.program.voidedAt) throw new FormError('This program is voided and read-only.');
   await requireEditableAnnualPlan(loaded.annualPlan.id);
+  requireBudgetFrozen(loaded, input);
   await validateInitiative(input.siId, loaded.strategicPlan.id);
   await validateContinuation({
     prevProgramId: input.prevProgramId,

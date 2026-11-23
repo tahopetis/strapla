@@ -55,24 +55,93 @@ describe('formatEntityCode', () => {
   });
 });
 
-describe('envelopeCheck (BR-2)', () => {
-  it('computes consumed and remaining headroom', () => {
+describe('envelopeCheck (BR-2 per component)', () => {
+  it('computes consumed and remaining headroom per component', () => {
     const check = envelopeCheck({
-      envelopeAmount: 10_000,
-      priorProgramBudgetUsed: 2_000,
-      programBudgets: [1_000, 1_500],
+      envelopeCapex: 10_000,
+      envelopeOpex: 4_000,
+      priorCapex: 2_000,
+      priorOpex: 500,
+      programCapex: [1_000, 1_500],
+      programOpex: [250],
     });
-    expect(check).toEqual({ consumed: 4_500, remaining: 5_500, over: false });
+    expect(check.capex).toEqual({
+      envelope: 10_000,
+      prior: 2_000,
+      programs: 2_500,
+      consumed: 4_500,
+      remaining: 5_500,
+      over: false,
+    });
+    expect(check.opex).toEqual({
+      envelope: 4_000,
+      prior: 500,
+      programs: 250,
+      consumed: 750,
+      remaining: 3_250,
+      over: false,
+    });
+    expect(check.over).toBe(false);
   });
 
-  it('flags when consumed exceeds the envelope, never throws', () => {
+  it('flags when consumed exceeds the component envelope, never throws', () => {
     const check = envelopeCheck({
-      envelopeAmount: 1_000,
-      priorProgramBudgetUsed: 900,
-      programBudgets: [200],
+      envelopeCapex: 1_000,
+      envelopeOpex: 1_000,
+      priorCapex: 900,
+      priorOpex: 0,
+      programCapex: [200],
+      programOpex: [],
     });
+    expect(check.capex.over).toBe(true);
+    expect(check.capex.remaining).toBe(-100);
     expect(check.over).toBe(true);
-    expect(check.remaining).toBe(-100);
+  });
+
+  it('exceeding capex does not consume opex headroom', () => {
+    const check = envelopeCheck({
+      envelopeCapex: 1_000,
+      envelopeOpex: 5_000,
+      priorCapex: 900,
+      priorOpex: 0,
+      programCapex: [200],
+      programOpex: [1_000],
+    });
+    // Capex is 100 over; the opex envelope keeps its full 5,000 of headroom and
+    // is not reduced by the capex overrun.
+    expect(check.capex.over).toBe(true);
+    expect(check.opex.over).toBe(false);
+    expect(check.opex.remaining).toBe(4_000);
+    expect(check.over).toBe(true);
+  });
+
+  it('exceeding opex does not consume capex headroom', () => {
+    const check = envelopeCheck({
+      envelopeCapex: 5_000,
+      envelopeOpex: 1_000,
+      priorCapex: 0,
+      priorOpex: 900,
+      programCapex: [1_000],
+      programOpex: [200],
+    });
+    expect(check.opex.over).toBe(true);
+    expect(check.capex.over).toBe(false);
+    expect(check.capex.remaining).toBe(4_000);
+    expect(check.over).toBe(true);
+  });
+
+  it('counts prior consumed plus program budgets and never carry-in (ADR-0006 §5)', () => {
+    // Carry-in is excluded by construction: the check has no carry-in input,
+    // because it was already counted in the source year's program budget.
+    const check = envelopeCheck({
+      envelopeCapex: 1_000,
+      envelopeOpex: 0,
+      priorCapex: 100,
+      priorOpex: 0,
+      programCapex: [50],
+      programOpex: [],
+    });
+    expect(check.capex.consumed).toBe(150);
   });
 });
 

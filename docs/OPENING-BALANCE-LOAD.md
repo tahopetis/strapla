@@ -18,7 +18,7 @@ once, during UAT, against a **clean database**.
 | --- | --- | --- |
 | FY2026 annual plan and program budgets | Program carry-in (unallocated program budget carried forward) | One figure per program per component |
 | FY2026 project allocations and closes | Project opening allocated / open commitments / spent, and allocation carry-in | Committed-but-unpaid amounts are open commitments, not carry-over |
-| FY2026 SI envelope consumption | SI prior program budget consumed | Total program budgets used before FY2027 |
+| FY2026 SI envelope consumption | SI capex and opex envelopes, and prior program budget consumed per component | Two figures per component for each initiative; the envelope is a policy number, never split automatically |
 | FY2027 plan draft | SIs, programs, projects, recurring operations and allocations to build in-app | Entered normally, not as opening figures |
 | Contract and ijin prinsip register | Project full-life figures, approved amount, document number/date/link | Part of project creation (UAT-05) |
 
@@ -29,7 +29,7 @@ Work strictly top-down; each step assumes the previous one is complete.
 | Step | Records | Fields to enter | Where |
 | --- | --- | --- | --- |
 | 1 | Strategic plan | Horizon 2026–2030, then activate | `/plan/strategic` |
-| 2 | Strategic initiatives | Code, name, owner, objective, envelope, **prior program budget consumed** | `/plan/strategic` |
+| 2 | Strategic initiatives | Code, name, owner, objective, **capex/opex envelope**, **prior program budget consumed — capex / opex** | `/plan/strategic` |
 | 3 | FY2027 annual plan | Create as draft, add notes, activate later | `/plan/annual` |
 | 4 | Annual programs | Code, name, SI, capex/opex budget, **capex/opex carry-in**, continuation link | `/plan/annual/[id]` |
 | 5 | Projects | Code (auto), name, years, full-life allocated, submitted price, final deal price, **opening allocated / open commitments / spent**, ijin prinsip record | `/plan/projects` → project |
@@ -62,7 +62,7 @@ parser: it declares each column's header, type, required flag and description.
 
 | Data set | Contains | Opening figures |
 | --- | --- | --- |
-| `strategic-initiatives` | Code, name, owner, objective, envelope, notes | Prior program budget consumed |
+| `strategic-initiatives` | Code, name, owner, objective, capex/opex envelope, notes | Prior program budget consumed — capex, prior program budget consumed — opex |
 | `annual-programs` | Code, name, SI code, continuation link, capex/opex budgets, notes | Capex carry-in, opex carry-in |
 | `projects` | Code, name, originating program, external reference, owner, description, fiscal years, full-life allocated/submitted/final prices, ijin prinsip record | Opening allocated, opening open commitments, opening actual spend |
 
@@ -166,7 +166,7 @@ For each data set:
    included in its audit snapshot. The import creates records; it does not update them.
 
 After each load, the **Import** card on `/plan/opening-balances` shows the record counts per data set,
-and the control-total card compares the eight spreadsheet control totals with the in-app totals.
+and the control-total card compares the ten spreadsheet control totals with the in-app totals.
 Enter the totals, save, review every difference, then sign off with a reason. The sign-off is a
 one-time audited action; later corrections are audited edits.
 
@@ -174,18 +174,31 @@ one-time audited action; later corrections are audited edits.
 
 `/plan/opening-balances` must show:
 
-1. **SI envelope reconciliation** — envelope, prior consumed, in-app program budgets, headroom; each
-   SI within or explicitly flagged.
-2. **Program carry-in** — budget + carry-in available per component for every FY2027 program.
+1. **SI envelope reconciliation per component** — capex and opex envelopes, prior consumed per
+   component, effective in-app program budgets and headroom; each SI within or explicitly flagged.
+   Capex and opex never share headroom (ADR-0006 §5).
+2. **Program carry-in** — effective budget + carry-in available per component for every FY2027
+   program.
 3. **Project opening position** — opening allocated / open commitments / spent per project.
 4. **Reconciliation totals** — match these against the spreadsheet control totals.
+
+### The split columns and the 0010 migration
+
+Migration `0010` drops the old single SI envelope and prior-consumed figures and the old single
+opening control totals, and adds the per-component columns with a default of `0`. It performs no
+automatic split — the envelope is a policy number, not a derivation. Before deploying, capture the
+old single figures from the spreadsheets; re-enter them per component through the SI edit form
+(`/plan/strategic`) or the `strategic-initiatives` import data set. The sign-off cannot be
+meaningful until both component envelopes and both prior-consumed figures are entered.
 
 Record the comparison here and sign:
 
 | Control total | Spreadsheet | Strapla | Difference | OK |
 | --- | --- | --- | --- | --- |
-| Total envelope (all SIs) |  |  |  |  |
-| Prior program budget consumed (all SIs) |  |  |  |  |
+| Total capex envelope (all SIs) |  |  |  |  |
+| Total opex envelope (all SIs) |  |  |  |  |
+| Prior program budget consumed — capex (all SIs) |  |  |  |  |
+| Prior program budget consumed — opex (all SIs) |  |  |  |  |
 | FY2027 program budgets (capex + opex) |  |  |  |  |
 | Program carry-in (capex + opex) |  |  |  |  |
 | Project opening allocated |  |  |  |  |

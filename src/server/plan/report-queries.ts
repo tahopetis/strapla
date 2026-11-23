@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import {
   annualPlans,
@@ -14,156 +14,214 @@ import {
   type StrategicInitiative,
 } from '@/db/schema';
 import {
-  programBudgetPosition,
   projectFundingFlags,
+  revisedProgramBudgetPosition,
   type FundingFlag,
 } from '@/domain/funding';
+import { envelopeComponentCheck } from '@/domain/plan';
+import { NO_DELTAS, applyDeltas, type ComponentAmounts } from '@/domain/revisions';
 import { loadExecutionAggregates } from './execution-aggregates';
+import { getRevisionDeltasForEntities } from './revision-queries';
 
 /**
  * Report queries for M2 #15. Commitments and spend are zero until M3; the
  * report shapes already carry those columns so M3 only changes the queries.
  */
 
-function num(value: string | number | null | undefined): number {
-  return Number(value ?? 0);
-}
-
 // ---------------------------------------------------------------- SI five-year
 
-export interface SiFiveYearRow {
-  initiative: StrategicInitiative;
-  programCapex: number;
-  programOpex: number;
-  allocationCapex: number;
-  allocationOpex: number;
-  commitmentCapex: number;
-  commitmentOpex: number;
-  spendCapex: number;
-  spendOpex: number;
+/**
+ * One component of an SI's five-year position (ADR-0006 §5). The envelope check
+ * is per component: capex and opex never share headroom, so an overrun in one
+ * leaves the other's remaining untouched. `programBudget` is the effective
+ * budget — initial plus posted revision deltas — never the initial column
+ * alone (#112, ADR-0006 §4).
+ */
+export interface SiFiveYearComponent {
+  envelope: number;
+  priorConsumed: number;
+  programBudget: number;
+  allocation: number;
+  commitment: number;
+  spend: number;
   consumed: number;
   headroom: number;
   over: boolean;
 }
 
+export interface SiFiveYearRow {
+  initiative: StrategicInitiative;
+  capex: SiFiveYearComponent;
+  opex: SiFiveYearComponent;
+}
+
 export interface SiFiveYearReport {
   rows: SiFiveYearRow[];
   totals: {
-    envelope: number;
-    priorConsumed: number;
-    programCapex: number;
-    programOpex: number;
-    allocationCapex: number;
-    allocationOpex: number;
-    consumed: number;
-    headroom: number;
-    over: boolean;
-    commitmentCapex: number;
-    commitmentOpex: number;
-    spendCapex: number;
-    spendOpex: number;
+    capex: SiFiveYearComponent;
+    opex: SiFiveYearComponent;
+  };
+}
+
+function componentPosition(input: {
+  envelope: number;
+  priorConsumed: number;
+  programBudget: number;
+  allocation: number;
+  commitment: number;
+  spend: number;
+}): SiFiveYearComponent {
+  const check = envelopeComponentCheck({
+    envelope: input.envelope,
+    prior: input.priorConsumed,
+    programBudgets: [input.programBudget],
+  });
+  return {
+    envelope: check.envelope,
+    priorConsumed: check.prior,
+    programBudget: check.programs,
+    allocation: input.allocation,
+    commitment: input.commitment,
+    spend: input.spend,
+    consumed: check.consumed,
+    headroom: check.remaining,
+    over: check.over,
+  };
+}
+
+function emptyComponentTotal(): SiFiveYearComponent {
+  return {
+    envelope: 0,
+    priorConsumed: 0,
+    programBudget: 0,
+    allocation: 0,
+    commitment: 0,
+    spend: 0,
+    consumed: 0,
+    headroom: 0,
+    over: false,
+  };
+}
+
+function addComponentTotal(
+  total: SiFiveYearComponent,
+  row: SiFiveYearComponent,
+): SiFiveYearComponent {
+  return {
+    envelope: total.envelope + row.envelope,
+    priorConsumed: total.priorConsumed + row.priorConsumed,
+    programBudget: total.programBudget + row.programBudget,
+    allocation: total.allocation + row.allocation,
+    commitment: total.commitment + row.commitment,
+    spend: total.spend + row.spend,
+    consumed: total.consumed + row.consumed,
+    headroom: total.headroom + row.headroom,
+    over: false,
   };
 }
 
 export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearReport> {
   const db = getDb();
-  const initiatives = await db
-    .select()
-    .from(strategicInitiatives)
-    .where(and(eq(strategicInitiatives.planId, planId), isNull(strategicInitiatives.voidedAt)))
-    .orderBy(asc(strategicInitiatives.code));
-
-  const programRows = await db
-    .select({
-      siId: annualPrograms.siId,
-      capex: sql<string>`coalesce(sum(${annualPrograms.capexBudget}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${annualPrograms.opexBudget}), 0)::text`,
-    })
-    .from(annualPrograms)
-    .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
-    .where(and(eq(annualPlans.planId, planId), isNull(annualPrograms.voidedAt)))
-    .groupBy(annualPrograms.siId);
-
-  const allocationRows = await db
-    .select({
-      siId: annualPrograms.siId,
-      capex: sql<string>`coalesce(sum(${projectYearAllocations.allocationCapex}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${projectYearAllocations.allocationOpex}), 0)::text`,
-    })
-    .from(projectYearAllocations)
-    .innerJoin(annualPrograms, eq(projectYearAllocations.annualProgramId, annualPrograms.id))
-    .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
-    .where(
-      and(
-        eq(annualPlans.planId, planId),
-        isNull(projectYearAllocations.voidedAt),
-        isNull(annualPrograms.voidedAt),
+  const [initiatives, programRows, allocationRows] = await Promise.all([
+    db
+      .select()
+      .from(strategicInitiatives)
+      .where(and(eq(strategicInitiatives.planId, planId), isNull(strategicInitiatives.voidedAt)))
+      .orderBy(asc(strategicInitiatives.code)),
+    db
+      .select({
+        id: annualPrograms.id,
+        siId: annualPrograms.siId,
+        capexBudget: annualPrograms.capexBudget,
+        opexBudget: annualPrograms.opexBudget,
+      })
+      .from(annualPrograms)
+      .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
+      .where(and(eq(annualPlans.planId, planId), isNull(annualPrograms.voidedAt))),
+    db
+      .select({
+        id: projectYearAllocations.id,
+        siId: annualPrograms.siId,
+        capex: projectYearAllocations.allocationCapex,
+        opex: projectYearAllocations.allocationOpex,
+      })
+      .from(projectYearAllocations)
+      .innerJoin(annualPrograms, eq(projectYearAllocations.annualProgramId, annualPrograms.id))
+      .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
+      .where(
+        and(
+          eq(annualPlans.planId, planId),
+          isNull(projectYearAllocations.voidedAt),
+          isNull(annualPrograms.voidedAt),
+        ),
       ),
-    )
-    .groupBy(annualPrograms.siId);
+  ]);
 
-  const programMap = new Map(programRows.map((row) => [row.siId, row]));
-  const allocationMap = new Map(allocationRows.map((row) => [row.siId, row]));
+  // Effective budgets and allocations: the initial figure plus posted revision
+  // deltas (#112, ADR-0006 §4). A de-allocation is a revision line too, so the
+  // allocation columns are effective as well.
+  const deltas = await getRevisionDeltasForEntities({
+    programIds: programRows.map((row) => row.id),
+    allocationIds: allocationRows.map((row) => row.id),
+  });
+
+  const programsBySi = new Map<string, ComponentAmounts>();
+  for (const program of programRows) {
+    const delta = deltas.byProgram.get(program.id) ?? NO_DELTAS;
+    const current = programsBySi.get(program.siId) ?? { capex: 0, opex: 0 };
+    current.capex += program.capexBudget + delta.capex;
+    current.opex += program.opexBudget + delta.opex;
+    programsBySi.set(program.siId, current);
+  }
+
+  const allocationsBySi = new Map<string, ComponentAmounts>();
+  for (const allocation of allocationRows) {
+    const delta = deltas.byAllocation.get(allocation.id) ?? NO_DELTAS;
+    const current = allocationsBySi.get(allocation.siId) ?? { capex: 0, opex: 0 };
+    current.capex += allocation.capex + delta.capex;
+    current.opex += allocation.opex + delta.opex;
+    allocationsBySi.set(allocation.siId, current);
+  }
+
   const execution = await loadExecutionAggregates(planId);
 
   const rows: SiFiveYearRow[] = initiatives.map((initiative) => {
-    const program = programMap.get(initiative.id);
-    const allocation = allocationMap.get(initiative.id);
+    const programs = programsBySi.get(initiative.id) ?? { capex: 0, opex: 0 };
+    const allocations = allocationsBySi.get(initiative.id) ?? { capex: 0, opex: 0 };
     const executionTotals = execution.bySi.get(initiative.id);
-    const programCapex = num(program?.capex);
-    const programOpex = num(program?.opex);
-    const allocationCapex = num(allocation?.capex);
-    const allocationOpex = num(allocation?.opex);
-    const consumed = initiative.priorProgramBudgetUsed + programCapex + programOpex;
-    const headroom = initiative.envelopeAmount - consumed;
     return {
       initiative,
-      programCapex,
-      programOpex,
-      allocationCapex,
-      allocationOpex,
-      commitmentCapex: executionTotals?.commitmentCapex ?? 0,
-      commitmentOpex: executionTotals?.commitmentOpex ?? 0,
-      spendCapex: executionTotals?.spendCapex ?? 0,
-      spendOpex: executionTotals?.spendOpex ?? 0,
-      consumed,
-      headroom,
-      over: headroom < 0,
+      capex: componentPosition({
+        envelope: initiative.envelopeCapex,
+        priorConsumed: initiative.priorProgramBudgetUsedCapex,
+        programBudget: programs.capex,
+        allocation: allocations.capex,
+        commitment: executionTotals?.commitmentCapex ?? 0,
+        spend: executionTotals?.spendCapex ?? 0,
+      }),
+      opex: componentPosition({
+        envelope: initiative.envelopeOpex,
+        priorConsumed: initiative.priorProgramBudgetUsedOpex,
+        programBudget: programs.opex,
+        allocation: allocations.opex,
+        commitment: executionTotals?.commitmentOpex ?? 0,
+        spend: executionTotals?.spendOpex ?? 0,
+      }),
     };
   });
 
   const totals = rows.reduce(
     (total, row) => ({
-      envelope: total.envelope + row.initiative.envelopeAmount,
-      priorConsumed: total.priorConsumed + row.initiative.priorProgramBudgetUsed,
-      programCapex: total.programCapex + row.programCapex,
-      programOpex: total.programOpex + row.programOpex,
-      allocationCapex: total.allocationCapex + row.allocationCapex,
-      allocationOpex: total.allocationOpex + row.allocationOpex,
-      consumed: total.consumed + row.consumed,
-      headroom: total.headroom + row.headroom,
-      commitmentCapex: total.commitmentCapex + row.commitmentCapex,
-      commitmentOpex: total.commitmentOpex + row.commitmentOpex,
-      spendCapex: total.spendCapex + row.spendCapex,
-      spendOpex: total.spendOpex + row.spendOpex,
+      capex: addComponentTotal(total.capex, row.capex),
+      opex: addComponentTotal(total.opex, row.opex),
     }),
-    {
-      envelope: 0,
-      priorConsumed: 0,
-      programCapex: 0,
-      programOpex: 0,
-      allocationCapex: 0,
-      allocationOpex: 0,
-      consumed: 0,
-      headroom: 0,
-      commitmentCapex: 0,
-      commitmentOpex: 0,
-      spendCapex: 0,
-      spendOpex: 0,
-    },
+    { capex: emptyComponentTotal(), opex: emptyComponentTotal() },
   );
+  // The summed component headroom is exactly the portfolio's remaining envelope.
+  totals.capex.over = totals.capex.headroom < 0;
+  totals.opex.over = totals.opex.headroom < 0;
 
-  return { rows, totals: { ...totals, over: totals.headroom < 0 } };
+  return { rows, totals };
 }
 
 // ---------------------------------------------------------------- annual plan
@@ -177,8 +235,15 @@ export interface AnnualPlanProgramRow {
   programName: string;
   siCode: string;
   siName: string;
+  /** Initial budget as recorded on the program; the money rules use the effective figures. */
   capexBudget: number;
   opexBudget: number;
+  /** Posted revision deltas, per component (#112, ADR-0006 §4). */
+  revisionCapex: number;
+  revisionOpex: number;
+  /** Initial budget plus posted revision deltas: what availability is built from. */
+  effectiveCapexBudget: number;
+  effectiveOpexBudget: number;
   carryInCapex: number;
   carryInOpex: number;
   allocatedCapex: number;
@@ -225,8 +290,15 @@ export interface AnnualPlanReport {
   programs: AnnualPlanProgramRow[];
   recurringOps: AnnualPlanRecurringOpsRow[];
   totals: {
+    /** Initial budgets, per component. */
     capexBudget: number;
     opexBudget: number;
+    /** Posted revision deltas, per component. */
+    revisionCapex: number;
+    revisionOpex: number;
+    /** Initial budget plus posted deltas, per component. */
+    effectiveCapexBudget: number;
+    effectiveOpexBudget: number;
     carryInCapex: number;
     carryInOpex: number;
     allocatedCapex: number;
@@ -264,27 +336,46 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
 
   const allocationRows = await db
     .select({
+      id: projectYearAllocations.id,
       programId: projectYearAllocations.annualProgramId,
-      capex: sql<string>`coalesce(sum(${projectYearAllocations.allocationCapex}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${projectYearAllocations.allocationOpex}), 0)::text`,
+      capex: projectYearAllocations.allocationCapex,
+      opex: projectYearAllocations.allocationOpex,
     })
     .from(projectYearAllocations)
     .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
-    .where(and(eq(annualPlans.planId, planId), isNull(projectYearAllocations.voidedAt)))
-    .groupBy(projectYearAllocations.annualProgramId);
-  const allocationMap = new Map(allocationRows.map((row) => [row.programId, row]));
+    .where(and(eq(annualPlans.planId, planId), isNull(projectYearAllocations.voidedAt)));
+
+  // Effective budgets and allocations everywhere: initial amount plus posted
+  // revision deltas (#112, ADR-0006 §4). A de-allocation is a revision line too.
+  const deltas = await getRevisionDeltasForEntities({
+    programIds: programRows.map((row) => row.programId),
+    allocationIds: allocationRows.map((row) => row.id),
+  });
+
+  const allocationMap = new Map<string, ComponentAmounts>();
+  for (const allocation of allocationRows) {
+    const delta = deltas.byAllocation.get(allocation.id) ?? NO_DELTAS;
+    const current = allocationMap.get(allocation.programId) ?? { capex: 0, opex: 0 };
+    current.capex += allocation.capex + delta.capex;
+    current.opex += allocation.opex + delta.opex;
+    allocationMap.set(allocation.programId, current);
+  }
 
   const programs: AnnualPlanProgramRow[] = programRows.map((row) => {
-    const allocation = allocationMap.get(row.programId);
-    const allocatedCapex = num(allocation?.capex);
-    const allocatedOpex = num(allocation?.opex);
-    const position = programBudgetPosition({
+    const allocated = allocationMap.get(row.programId) ?? NO_DELTAS;
+    const revision = deltas.byProgram.get(row.programId) ?? NO_DELTAS;
+    const effective = applyDeltas(
+      { capex: row.capexBudget, opex: row.opexBudget },
+      revision,
+    );
+    const position = revisedProgramBudgetPosition({
       capexBudget: row.capexBudget,
       opexBudget: row.opexBudget,
+      revision,
       carryInCapex: row.carryInCapex,
       carryInOpex: row.carryInOpex,
-      allocatedCapex,
-      allocatedOpex,
+      allocatedCapex: allocated.capex,
+      allocatedOpex: allocated.opex,
     });
     return {
       programId: row.programId,
@@ -296,10 +387,14 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       siName: row.siName,
       capexBudget: row.capexBudget,
       opexBudget: row.opexBudget,
+      revisionCapex: revision.capex,
+      revisionOpex: revision.opex,
+      effectiveCapexBudget: effective.capex,
+      effectiveOpexBudget: effective.opex,
       carryInCapex: row.carryInCapex,
       carryInOpex: row.carryInOpex,
-      allocatedCapex,
-      allocatedOpex,
+      allocatedCapex: allocated.capex,
+      allocatedOpex: allocated.opex,
       commitmentCapex: execution.byProgram.get(row.programId)?.commitmentCapex ?? 0,
       commitmentOpex: execution.byProgram.get(row.programId)?.commitmentOpex ?? 0,
       spendCapex: execution.byProgram.get(row.programId)?.spendCapex ?? 0,
@@ -359,6 +454,10 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
     (total, row) => ({
       capexBudget: total.capexBudget + row.capexBudget,
       opexBudget: total.opexBudget + row.opexBudget,
+      revisionCapex: total.revisionCapex + row.revisionCapex,
+      revisionOpex: total.revisionOpex + row.revisionOpex,
+      effectiveCapexBudget: total.effectiveCapexBudget + row.effectiveCapexBudget,
+      effectiveOpexBudget: total.effectiveOpexBudget + row.effectiveOpexBudget,
       carryInCapex: total.carryInCapex + row.carryInCapex,
       carryInOpex: total.carryInOpex + row.carryInOpex,
       allocatedCapex: total.allocatedCapex + row.allocatedCapex,
@@ -371,6 +470,10 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
     {
       capexBudget: 0,
       opexBudget: 0,
+      revisionCapex: 0,
+      revisionOpex: 0,
+      effectiveCapexBudget: 0,
+      effectiveOpexBudget: 0,
       carryInCapex: 0,
       carryInOpex: 0,
       allocatedCapex: 0,
@@ -457,24 +560,47 @@ export async function getProjectRegisterReport(
 
   const allocationRows = await db
     .select({
+      id: projectYearAllocations.id,
       projectId: projectYearAllocations.projectId,
-      capex: sql<string>`coalesce(sum(${projectYearAllocations.allocationCapex}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${projectYearAllocations.allocationOpex}), 0)::text`,
-      carryCapex: sql<string>`coalesce(sum(${projectYearAllocations.carryInCapex}), 0)::text`,
-      carryOpex: sql<string>`coalesce(sum(${projectYearAllocations.carryInOpex}), 0)::text`,
+      capex: projectYearAllocations.allocationCapex,
+      opex: projectYearAllocations.allocationOpex,
+      carryCapex: projectYearAllocations.carryInCapex,
+      carryOpex: projectYearAllocations.carryInOpex,
     })
     .from(projectYearAllocations)
     .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
-    .where(and(eq(annualPlans.planId, planId), isNull(projectYearAllocations.voidedAt)))
-    .groupBy(projectYearAllocations.projectId);
-  const allocationMap = new Map(allocationRows.map((row) => [row.projectId, row]));
+    .where(and(eq(annualPlans.planId, planId), isNull(projectYearAllocations.voidedAt)));
+
+  // Effective allocations: a posted de-allocation reduces the project's slice
+  // (#112, ADR-0006 §4), so the register never shows the pre-revision amount.
+  const deltas = await getRevisionDeltasForEntities({
+    allocationIds: allocationRows.map((row) => row.id),
+  });
+  const allocationMap = new Map<
+    string,
+    { capex: number; opex: number; carryCapex: number; carryOpex: number }
+  >();
+  for (const allocation of allocationRows) {
+    const delta = deltas.byAllocation.get(allocation.id) ?? NO_DELTAS;
+    const current = allocationMap.get(allocation.projectId) ?? {
+      capex: 0,
+      opex: 0,
+      carryCapex: 0,
+      carryOpex: 0,
+    };
+    current.capex += allocation.capex + delta.capex;
+    current.opex += allocation.opex + delta.opex;
+    current.carryCapex += allocation.carryCapex;
+    current.carryOpex += allocation.carryOpex;
+    allocationMap.set(allocation.projectId, current);
+  }
 
   const rows: ProjectRegisterReportRow[] = projectRows.map((row) => {
     const allocation = allocationMap.get(row.project.id);
-    const allocationCapex = num(allocation?.capex);
-    const allocationOpex = num(allocation?.opex);
-    const carryInCapex = num(allocation?.carryCapex);
-    const carryInOpex = num(allocation?.carryOpex);
+    const allocationCapex = allocation?.capex ?? 0;
+    const allocationOpex = allocation?.opex ?? 0;
+    const carryInCapex = allocation?.carryCapex ?? 0;
+    const carryInOpex = allocation?.carryOpex ?? 0;
     const totalAllocated = allocationCapex + allocationOpex;
     const executionTotals = execution.byProject.get(row.project.id);
     const inAppCommitments =

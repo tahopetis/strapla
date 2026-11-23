@@ -21,6 +21,7 @@ import {
 } from '@/db/schema';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { allocationRemaining } from '@/domain/funding';
+import { applyDeltas, NO_DELTAS, type ComponentAmounts } from '@/domain/revisions';
 import {
   commitmentStatus,
   currentYearSpend,
@@ -32,6 +33,7 @@ import {
   listCustomFieldDefinitions,
   readCustomFieldValuesMap,
 } from '@/server/custom-fields/data';
+import { getRevisionDeltasForEntities } from './revision-queries';
 
 /** Read queries for commitments, spend and settlement (M3 #18/#19). */
 
@@ -98,6 +100,10 @@ export interface AllocationFunding {
   totals: FundingTotals;
   settlementOptions: SettlementOption[];
   customFields: ExecutionCustomFields;
+  /** Posted revision deltas on this allocation, per component (ADR-0006 §4). */
+  revisionDelta: ComponentAmounts;
+  /** allocation amount + revision deltas: what remaining is computed from. */
+  effectiveAllocation: ComponentAmounts;
 }
 
 /**
@@ -515,6 +521,12 @@ export async function getAllocationFunding(
 
   const commitments = await loadCommitmentRows({ allocationId });
   const spends = await loadSpendRows({ allocationId }, header.annualPlan.fiscalYear);
+  const deltas = await getRevisionDeltasForEntities({ allocationIds: [allocationId] });
+  const revisionDelta = deltas.byAllocation.get(allocationId) ?? NO_DELTAS;
+  const effectiveAllocation = applyDeltas(
+    { capex: header.allocation.allocationCapex, opex: header.allocation.allocationOpex },
+    revisionDelta,
+  );
 
   return {
     allocation: header.allocation,
@@ -524,12 +536,14 @@ export async function getAllocationFunding(
     program: { code: header.programCode, name: header.programName },
     commitments,
     spends,
+    revisionDelta,
+    effectiveAllocation,
     totals: totalsFromRows({
       commitments,
       spends,
       fiscalYear: header.annualPlan.fiscalYear,
-      allocationCapex: header.allocation.allocationCapex,
-      allocationOpex: header.allocation.allocationOpex,
+      allocationCapex: effectiveAllocation.capex,
+      allocationOpex: effectiveAllocation.opex,
       carryInCapex: header.allocation.carryInCapex,
       carryInOpex: header.allocation.carryInOpex,
     }),

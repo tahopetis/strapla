@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Money, PageHeader, Stat, StatusBadge } from '@/components/ui';
+import type { EnvelopeComponentCheck } from '@/domain/plan';
 import { getCurrentStrategicPlan, getPlanOverview } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
@@ -61,52 +62,71 @@ export default async function PlanOverviewPage() {
           description={`Fiscal years ${plan.startFiscalYear}–${plan.endFiscalYear}`}
           actions={<StatusBadge status={plan.status} />}
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Stat label="Strategic initiatives" value={overview.initiativeCount} />
             <Stat label="Annual plans" value={overview.annualPlanCount} />
             <Stat label="Annual programs" value={overview.programCount} />
             <Stat label="Projects" value={overview.projectCount} />
+            <Stat label="Capex envelope" value={<Money value={overview.envelopeCapexTotal} />} />
+            <Stat label="Opex envelope" value={<Money value={overview.envelopeOpexTotal} />} />
           </div>
         </Card>
 
         <Card
           title="Five-year envelope"
-          description="Envelope versus prior program budget consumed plus in-app program budgets (BR-2). Flags never block entry."
+          description="Envelope versus prior program budget consumed plus in-app program budgets, per component (BR-2). Capex and opex never share headroom, and a flag never blocks entry."
           actions={
             envelope.over ? (
-              <Badge tone="danger">Over envelope</Badge>
+              <Badge tone="danger">Over an envelope</Badge>
             ) : (
-              <Badge tone="success">Within envelope</Badge>
+              <Badge tone="success">Within both envelopes</Badge>
             )
           }
         >
-          <dl className="grid gap-4 text-sm sm:grid-cols-3">
-            <div>
-              <dt className="text-slate-500">Total envelope</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={overview.envelopeTotal} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Consumed (prior + programs)</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={envelope.consumed} />
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Remaining</dt>
-              <dd className="mt-1 text-lg font-semibold">
-                <Money value={envelope.remaining} />
-              </dd>
-            </div>
-          </dl>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <EnvelopeComponentBlock title="Capex" check={envelope.capex} />
+            <EnvelopeComponentBlock title="Opex" check={envelope.opex} />
+          </div>
           <p className="mt-4 text-xs text-slate-500">
             Prior consumed comes from the opening balances. In-app program budgets appear as annual plans are
-            built.
+            built. Carry-in is excluded from the check: it was already counted in the source year.
           </p>
         </Card>
 
       </div>
+    </div>
+  );
+}
+
+function EnvelopeComponentBlock({ title, check }: { title: string; check: EnvelopeComponentCheck }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
+        <Badge tone={check.over ? 'danger' : 'success'}>
+          {check.over ? `over ${title.toLowerCase()}` : `within ${title.toLowerCase()}`}
+        </Badge>
+      </div>
+      <dl className="mt-2 grid gap-4 text-sm sm:grid-cols-3">
+        <div>
+          <dt className="text-slate-500">Envelope</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            <Money value={check.envelope} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Consumed (prior + programs)</dt>
+          <dd className="mt-1 text-lg font-semibold">
+            <Money value={check.consumed} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-slate-500">Remaining</dt>
+          <dd className={`mt-1 text-lg font-semibold ${check.over ? 'text-red-700' : ''}`}>
+            <Money value={check.remaining} />
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }

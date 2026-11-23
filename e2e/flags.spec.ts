@@ -13,9 +13,10 @@ import { expect, test, type Page } from '@playwright/test';
  * showing, which is asserted through the action's own flash message.
  *
  * Rule keys are the ones the domain uses:
- * - BR-2  envelope: prior program budget consumed + program budgets <= envelope
- *         (`envelopeCheck`); the strategic page says "Over envelope", the
- *         SI five-year report renders the badge "over envelope".
+ * - BR-2  envelope: prior program budget consumed + effective program budgets
+ *         <= the component's envelope (`envelopeCheck`); the strategic page
+ *         says "Over envelope", the SI five-year report renders the component
+ *         badge "over capex envelope" / "over opex envelope".
  * - BR-7  allocation above the program's available budget
  *         (`programBudgetPosition`); the program card says "over-allocated".
  * - BR-8  lifetime commitments (opening + in-app) above the contract value
@@ -37,7 +38,7 @@ const OWNER = 'E2E Flags Owner';
 
 async function addInitiative(
   page: Page,
-  input: { code: string; name: string; envelopeAmount: string },
+  input: { code: string; name: string; envelopeCapex: string; envelopeOpex: string },
 ): Promise<void> {
   await page.goto('/plan/strategic');
   const form = page
@@ -46,8 +47,10 @@ async function addInitiative(
   await form.locator('input[name="code"]').fill(input.code);
   await form.locator('input[name="name"]').fill(input.name);
   await form.locator('input[name="owner"]').fill(OWNER);
-  await form.locator('input[name="envelopeAmount"]').fill(input.envelopeAmount);
-  await form.locator('input[name="priorProgramBudgetUsed"]').fill('0');
+  await form.locator('input[name="envelopeCapex"]').fill(input.envelopeCapex);
+  await form.locator('input[name="envelopeOpex"]').fill(input.envelopeOpex);
+  await form.locator('input[name="priorCapex"]').fill('0');
+  await form.locator('input[name="priorOpex"]').fill('0');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(
     page.getByText(`Strategic initiative ${input.code} created.`),
@@ -128,12 +131,13 @@ async function openProject(page: Page, name: string): Promise<void> {
 test('flags an over-allocated program, over-committed contract and envelope overrun @t2', async ({
   page,
 }) => {
-  // A dedicated initiative with a small envelope: the FY2028 program below costs
-  // more than the envelope, so BR-2 is proved on this row only.
+  // A dedicated initiative with a small capex envelope: the FY2028 program below
+  // costs more than the capex envelope, so BR-2 is proved on this row only.
   await addInitiative(page, {
     code: 'SI-7701',
     name: 'Flags envelope initiative',
-    envelopeAmount: '100000000',
+    envelopeCapex: '100000000',
+    envelopeOpex: '0',
   });
   await addProgram(page, {
     code: 'PRG-2028-7701',
@@ -153,7 +157,7 @@ test('flags an over-allocated program, over-committed contract and envelope over
   // The same envelope overrun is a row badge in the SI five-year report.
   await page.goto('/reports/si-five-year');
   const envelopeRow = page.locator('tbody tr').filter({ hasText: 'SI-7701' });
-  await expect(envelopeRow.getByText('over envelope', { exact: true })).toBeVisible();
+  await expect(envelopeRow.getByText('over capex envelope', { exact: true })).toBeVisible();
 
   // Project in the open year, under the program created above.
   await createProject(page, {
@@ -264,7 +268,8 @@ test('flags a deal price above the approved and submitted figures @t2', async ({
   await addInitiative(page, {
     code: 'SI-7702',
     name: 'Flags pricing initiative',
-    envelopeAmount: '1000000000',
+    envelopeCapex: '1000000000',
+    envelopeOpex: '0',
   });
   await addProgram(page, {
     code: 'PRG-2028-7702',

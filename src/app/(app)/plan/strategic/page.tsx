@@ -224,18 +224,24 @@ function InitiativesSection({
       </div>
 
       {editable ? (
-        <Card title="Add initiative" description="An initiative has one five-year envelope; the initiative code is per plan.">
+        <Card
+          title="Add initiative"
+          description="An initiative has a capex and an opex five-year envelope that never share headroom; the initiative code is per plan."
+        >
           <Form action={createInitiativeAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <HiddenField name="planId" value={plan.id} />
             <TextField label="Code" name="code" required placeholder="SI-01" maxLength={20} />
             <TextField label="Name" name="name" required maxLength={160} />
             <TextField label="Owner" name="owner" maxLength={160} />
-            <MoneyField label="Five-year envelope" name="envelopeAmount" required />
+            <MoneyField label="Capex envelope" name="envelopeCapex" required />
+            <MoneyField label="Opex envelope" name="envelopeOpex" required />
             <MoneyField
-              label="Prior program budget consumed"
-              name="priorProgramBudgetUsed"
+              label="Prior program budget consumed (capex)"
+              name="priorCapex"
+              required
               hint="Opening balance before the first in-app fiscal year."
             />
+            <MoneyField label="Prior program budget consumed (opex)" name="priorOpex" required />
             <TextField label="Notes" name="notes" />
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Objective" name="objective" rows={2} />
@@ -278,7 +284,9 @@ function InitiativeCard({
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
 }) {
-  const { initiative, programBudget, check } = row;
+  const { initiative, programCapex, programOpex, programCount, check } = row;
+  const capex = check.capex;
+  const opex = check.opex;
   return (
     <Card
       title={`${initiative.code} · ${initiative.name}`}
@@ -287,32 +295,84 @@ function InitiativeCard({
         check.over ? <Badge tone="danger">Over envelope</Badge> : <Badge tone="success">Within envelope</Badge>
       }
     >
-      <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 lg:grid-cols-2">
         <div>
-          <dt className="text-slate-500">Envelope</dt>
-          <dd className="mt-1 font-medium">
-            <Money value={initiative.envelopeAmount} />
-          </dd>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capex</h3>
+            <Badge tone={capex.over ? 'danger' : 'success'}>
+              {capex.over ? 'over capex envelope' : 'within capex envelope'}
+            </Badge>
+          </div>
+          <dl className="mt-2 grid gap-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">Envelope</dt>
+              <dd className="mt-1 font-medium">
+                <Money value={initiative.envelopeCapex} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Prior consumed</dt>
+              <dd className="mt-1 font-medium">
+                <Money value={initiative.priorProgramBudgetUsedCapex} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">In-app program budgets</dt>
+              <dd className="mt-1 font-medium">
+                <Money value={programCapex} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Headroom</dt>
+              <dd className={`mt-1 font-medium ${capex.over ? 'text-red-700' : ''}`}>
+                <Money value={capex.remaining} />
+              </dd>
+            </div>
+          </dl>
         </div>
         <div>
-          <dt className="text-slate-500">Prior consumed</dt>
-          <dd className="mt-1 font-medium">
-            <Money value={initiative.priorProgramBudgetUsed} />
-          </dd>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Opex</h3>
+            <Badge tone={opex.over ? 'danger' : 'success'}>
+              {opex.over ? 'over opex envelope' : 'within opex envelope'}
+            </Badge>
+          </div>
+          <dl className="mt-2 grid gap-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">Envelope</dt>
+              <dd className="mt-1 font-medium">
+                <Money value={initiative.envelopeOpex} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Prior consumed</dt>
+              <dd className="mt-1 font-medium">
+                <Money value={initiative.priorProgramBudgetUsedOpex} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">In-app program budgets</dt>
+              <dd className="mt-1 font-medium">
+                <Money value={programOpex} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Headroom</dt>
+              <dd className={`mt-1 font-medium ${opex.over ? 'text-red-700' : ''}`}>
+                <Money value={opex.remaining} />
+              </dd>
+            </div>
+          </dl>
         </div>
-        <div>
-          <dt className="text-slate-500">In-app program budgets</dt>
-          <dd className="mt-1 font-medium">
-            <Money value={programBudget} />
-          </dd>
-        </div>
-        <div>
-          <dt className="text-slate-500">Headroom</dt>
-          <dd className={`mt-1 font-medium ${check.over ? 'text-red-700' : ''}`}>
-            <Money value={check.remaining} />
-          </dd>
-        </div>
-      </dl>
+      </div>
+
+      {initiative.envelopeCapex + initiative.envelopeOpex === 0 && programCount > 0 ? (
+        <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          This initiative has no capex/opex envelope split yet. The old single envelope is not
+          carried over automatically: set both component envelopes (and both prior consumed
+          figures) in the edit form below.
+        </p>
+      ) : null}
 
       {initiative.objective ? <p className="mt-3 text-sm text-slate-600">{initiative.objective}</p> : null}
 
@@ -327,11 +387,29 @@ function InitiativeCard({
               <TextField label="Code" name="code" defaultValue={initiative.code} required maxLength={20} />
               <TextField label="Name" name="name" defaultValue={initiative.name} required maxLength={160} />
               <TextField label="Owner" name="owner" defaultValue={initiative.owner} maxLength={160} />
-              <MoneyField label="Five-year envelope" name="envelopeAmount" defaultValue={initiative.envelopeAmount} required />
               <MoneyField
-                label="Prior program budget consumed"
-                name="priorProgramBudgetUsed"
-                defaultValue={initiative.priorProgramBudgetUsed}
+                label="Capex envelope"
+                name="envelopeCapex"
+                defaultValue={initiative.envelopeCapex}
+                required
+              />
+              <MoneyField
+                label="Opex envelope"
+                name="envelopeOpex"
+                defaultValue={initiative.envelopeOpex}
+                required
+              />
+              <MoneyField
+                label="Prior program budget consumed (capex)"
+                name="priorCapex"
+                defaultValue={initiative.priorProgramBudgetUsedCapex}
+                required
+              />
+              <MoneyField
+                label="Prior program budget consumed (opex)"
+                name="priorOpex"
+                defaultValue={initiative.priorProgramBudgetUsedOpex}
+                required
               />
               <TextField label="Notes" name="notes" defaultValue={initiative.notes} />
               <div className="sm:col-span-2">

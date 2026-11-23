@@ -9,7 +9,7 @@ const reports = [
     href: '/reports/si-five-year',
     title: 'SI five-year view',
     description:
-      'Envelope, prior consumption, in-app program budgets, allocations, commitments and spend per strategic initiative across the horizon.',
+      'Capex and opex envelopes separately, with prior consumption, effective program budgets, allocations, commitments, spend and headroom per strategic initiative across the horizon.',
   },
   {
     href: '/reports/annual-plan',

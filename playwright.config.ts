@@ -53,7 +53,7 @@ export default defineConfig({
       // Every mutation and rule the foundation only touches on the happy path.
       name: 't2',
       testMatch:
-        /(auth|voids|edits|execution|closed-year|close|opening-balances|admin|reports|flags)\.spec\.ts/,
+        /(auth|voids|edits|execution|closed-year|close|opening-balances|revisions|admin|reports|flags)\.spec\.ts/,
       dependencies: ['foundation'],
       use: { storageState: authFile },
     },

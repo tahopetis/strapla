@@ -49,6 +49,9 @@ export default async function AnnualPlanPage({
   if (!detail) notFound();
 
   const editable = detail.annualPlan.status !== 'closed' && detail.strategicPlan.status !== 'archived';
+  // Once the plan is active the program budgets are frozen (#112, ADR-0006 §4):
+  // the form keeps the non-amount fields and points at the revision register.
+  const budgetEditable = editable && detail.annualPlan.status !== 'active';
   const canActivate =
     editable && detail.annualPlan.status === 'draft' && detail.strategicPlan.status === 'active';
 
@@ -121,9 +124,33 @@ export default async function AnnualPlanPage({
           ) : null}
         </Card>
 
+        <Card
+          title="Budget revisions"
+          description="Once the plan is active its program budgets change only through numbered, immutable revisions."
+          actions={
+            detail.revisions.awaitingDecision > 0 ? (
+              <Badge tone="warning">{detail.revisions.awaitingDecision} awaiting decision</Badge>
+            ) : (
+              <Badge>{detail.revisions.count}</Badge>
+            )
+          }
+        >
+          <p className="text-sm text-slate-600">
+            {detail.annualPlan.status === 'active'
+              ? `${detail.revisions.count} revision${detail.revisions.count === 1 ? '' : 's'} posted for FY${detail.annualPlan.fiscalYear}. Program budgets below show the effective budget — the initial budget plus every posted delta.`
+              : 'Revisions begin when the plan is activated. While it is a draft the program budgets are edited in place.'}
+          </p>
+          <p className="mt-3 text-sm">
+            <Link href={`/plan/annual/${detail.annualPlan.id}/revisions`} className={linkClass}>
+              Open the revision register
+            </Link>
+          </p>
+        </Card>
+
         <ProgramsSection
           detail={detail}
           editable={editable}
+          budgetEditable={budgetEditable}
           customFields={programFields}
           customValues={programValues}
         />
@@ -142,11 +169,13 @@ export default async function AnnualPlanPage({
 function ProgramsSection({
   detail,
   editable,
+  budgetEditable,
   customFields,
   customValues,
 }: {
   detail: AnnualPlanDetail;
   editable: boolean;
+  budgetEditable: boolean;
   customFields: readonly CustomFieldDefinition[];
   customValues: Map<string, CustomFieldValues>;
 }) {
@@ -187,8 +216,25 @@ function ProgramsSection({
               options={detail.continuationOptions}
               hint="Optional: the prior fiscal year's program of the same SI."
             />
-            <MoneyField label="Capex budget" name="capexBudget" defaultValue={0} required />
-            <MoneyField label="Opex budget" name="opexBudget" defaultValue={0} required />
+            {budgetEditable ? (
+              <>
+                <MoneyField label="Capex budget" name="capexBudget" defaultValue={0} required />
+                <MoneyField label="Opex budget" name="opexBudget" defaultValue={0} required />
+              </>
+            ) : (
+              <>
+                <HiddenField name="capexBudget" value="0" />
+                <HiddenField name="opexBudget" value="0" />
+                <p className="sm:col-span-2 lg:col-span-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  A program created while the plan is active starts with a zero budget; fund it
+                  with a{' '}
+                  <Link href={`/plan/annual/${detail.annualPlan.id}/revisions`} className="underline">
+                    budget revision
+                  </Link>
+                  .
+                </p>
+              </>
+            )}
             <MoneyField
               label="Capex carry-in"
               name="carryInCapex"
@@ -222,6 +268,7 @@ function ProgramsSection({
               row={row}
               detail={detail}
               editable={editable}
+              budgetEditable={budgetEditable}
               customFields={customFields}
               customValues={customValues.get(row.program.id)}
             />
@@ -236,12 +283,14 @@ function ProgramCard({
   row,
   detail,
   editable,
+  budgetEditable,
   customFields,
   customValues,
 }: {
   row: ProgramRow;
   detail: AnnualPlanDetail;
   editable: boolean;
+  budgetEditable: boolean;
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
 }) {
@@ -264,7 +313,7 @@ function ProgramCard({
     >
       <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <dt className="text-slate-500">Capex available (budget + carry-in)</dt>
+          <dt className="text-slate-500">Capex available (effective budget + carry-in)</dt>
           <dd className="mt-1 font-medium">
             <Money value={availability.capexAvailable} />
           </dd>
@@ -283,7 +332,7 @@ function ProgramCard({
           </dd>
         </div>
         <div>
-          <dt className="text-slate-500">Opex available (budget + carry-in)</dt>
+          <dt className="text-slate-500">Opex available (effective budget + carry-in)</dt>
           <dd className="mt-1 font-medium">
             <Money value={availability.opexAvailable} />
           </dd>
@@ -302,6 +351,13 @@ function ProgramCard({
           </dd>
         </div>
       </dl>
+
+      <p className="mt-3 text-sm text-slate-600">
+        Effective budget: capex <Money value={row.effectiveCapexBudget} /> (initial{' '}
+        <Money value={program.capexBudget} />, revisions <Money value={row.revisionCapex} />) · opex{' '}
+        <Money value={row.effectiveOpexBudget} /> (initial <Money value={program.opexBudget} />,
+        revisions <Money value={row.revisionOpex} />).
+      </p>
 
       <p className="mt-3 text-xs text-slate-500">
         Allocations above the program budget are flagged, never blocked (BR-7/BR-17). Project allocations are
@@ -340,8 +396,38 @@ function ProgramCard({
                 options={detail.continuationOptions}
                 defaultValue={program.prevProgramId ?? ''}
               />
-              <MoneyField label="Capex budget" name="capexBudget" defaultValue={program.capexBudget} required />
-              <MoneyField label="Opex budget" name="opexBudget" defaultValue={program.opexBudget} required />
+              {budgetEditable ? (
+                <>
+                  <MoneyField
+                    label="Capex budget"
+                    name="capexBudget"
+                    defaultValue={program.capexBudget}
+                    required
+                  />
+                  <MoneyField
+                    label="Opex budget"
+                    name="opexBudget"
+                    defaultValue={program.opexBudget}
+                    required
+                  />
+                </>
+              ) : (
+                <>
+                  <HiddenField name="capexBudget" value={String(program.capexBudget)} />
+                  <HiddenField name="opexBudget" value={String(program.opexBudget)} />
+                  <p className="sm:col-span-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Budgets are frozen while the plan is active. Name, notes and the strategic
+                    initiative stay editable; a budget change is{' '}
+                    <Link
+                      href={`/plan/annual/${detail.annualPlan.id}/revisions`}
+                      className="underline"
+                    >
+                      a posted revision
+                    </Link>
+                    .
+                  </p>
+                </>
+              )}
               <MoneyField label="Capex carry-in" name="carryInCapex" defaultValue={program.carryInCapex} />
               <MoneyField label="Opex carry-in" name="carryInOpex" defaultValue={program.carryInOpex} />
               <div className="sm:col-span-2">

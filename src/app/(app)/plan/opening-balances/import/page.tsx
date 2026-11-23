@@ -76,8 +76,8 @@ export default async function OpeningImportPage() {
         <Card title="Load order" description="Each data set depends on the one before it.">
           <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
             <li>
-              <strong>Strategic initiatives</strong> — creates the initiatives and their prior program budget
-              consumed.
+              <strong>Strategic initiatives</strong> — creates the initiatives with their capex and opex
+              envelopes and their prior program budget consumed (capex and opex).
             </li>
             <li>
               <strong>Annual programs</strong> — creates the programs and their carry-in; each row&apos;s SI

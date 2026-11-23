@@ -22,6 +22,7 @@ import {
   type AllocationUpdateInput,
 } from '@/domain/inputs';
 import { withCustomFields } from '@/domain/custom-fields';
+import { isComponentShift } from '@/domain/revisions';
 import type { FormState } from '@/lib/form-state';
 import {
   FormError,
@@ -137,6 +138,28 @@ function requireProjectEditable(project: Project, strategicPlanStatus: Strategic
 
 function requireAllocationEditable(context: AllocationContext): void {
   requireProjectEditable(context.project, context.strategicPlan.status);
+}
+
+/**
+ * Capex and opex never shift into each other (ADR-0006 §4), on every path: an
+ * allocation edit that raises one component while lowering the other is a
+ * component shift, not an allocation change. This is the only refusal an
+ * allocation edit adds; the warning-only flags keep their old semantics.
+ */
+function requireNoComponentShift(
+  current: { allocationCapex: number; allocationOpex: number },
+  next: { allocationCapex: number; allocationOpex: number },
+): void {
+  if (
+    isComponentShift(
+      { capex: current.allocationCapex, opex: current.allocationOpex },
+      { capex: next.allocationCapex, opex: next.allocationOpex },
+    )
+  ) {
+    throw new FormError(
+      'Capex and opex never shift into each other: this change raises one component while lowering the other. Edit the components independently.',
+    );
+  }
 }
 
 function requireProjectActiveYear(project: Project, fiscalYear: number): void {
@@ -290,6 +313,7 @@ async function updateAllocation(
   if (context.annualPlan.status === 'closed') {
     throw new FormError('This fiscal year is closed; allocations cannot be updated.');
   }
+  requireNoComponentShift(context.allocation, input);
   requireProjectActiveYear(context.project, context.annualPlan.fiscalYear);
 
   let updated: ProjectYearAllocation | undefined;

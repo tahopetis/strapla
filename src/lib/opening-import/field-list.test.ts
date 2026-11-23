@@ -31,7 +31,12 @@ describe('opening data sets', () => {
 
   it('declares the opening figures on their own surfaces', () => {
     const initiativeFields = names('strategic-initiatives');
-    expect(initiativeFields).toContain('priorProgramBudgetUsed');
+    expect(initiativeFields).toContain('envelopeCapex');
+    expect(initiativeFields).toContain('envelopeOpex');
+    expect(initiativeFields).toContain('priorCapex');
+    expect(initiativeFields).toContain('priorOpex');
+    expect(initiativeFields).not.toContain('envelopeAmount');
+    expect(initiativeFields).not.toContain('priorProgramBudgetUsed');
 
     const programFields = names('annual-programs');
     expect(programFields).toContain('carryInCapex');

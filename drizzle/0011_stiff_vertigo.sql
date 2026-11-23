@@ -1,0 +1,1 @@
+CREATE INDEX "budget_revision_lines_entity_idx" ON "budget_revision_lines" USING btree ("entity_type","entity_id");

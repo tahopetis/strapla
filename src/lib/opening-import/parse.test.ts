@@ -5,7 +5,7 @@ import { parseOpeningImport } from './parse';
 import { buildCsvTemplate } from './template';
 
 const SI_HEADER =
-  'Code,Name,Owner,Objective,Envelope amount (Rp),Prior program budget consumed (Rp),Notes';
+  'Code,Name,Owner,Objective,Capex envelope (Rp),Opex envelope (Rp),Prior program budget consumed — capex (Rp),Prior program budget consumed — opex (Rp),Notes';
 
 function parseCsv(csv: string, dataSet: Parameters<typeof parseOpeningImport>[0]['dataSet'] = 'strategic-initiatives') {
   return parseOpeningImport({ dataSet, bytes: csv });
@@ -21,8 +21,8 @@ describe('parseOpeningImport — a good CSV file', () => {
     const result = await parseCsv(
       [
         SI_HEADER,
-        'SI-01,Digital service platform,Chief Information Officer,Consolidate services.,12500000000,3250000000,Signed off.',
-        'SI-02,Network,"O\'Brien, network team",,1000000,0,',
+        'SI-01,Digital service platform,Chief Information Officer,Consolidate services.,9500000000,3000000000,2200000000,1050000000,Signed off.',
+        'SI-02,Network,"O\'Brien, network team",,1000000,0,0,0,',
       ].join('\r\n'),
     );
 
@@ -36,8 +36,10 @@ describe('parseOpeningImport — a good CSV file', () => {
         name: 'Digital service platform',
         owner: 'Chief Information Officer',
         objective: 'Consolidate services.',
-        envelopeAmount: 12_500_000_000,
-        priorProgramBudgetUsed: 3_250_000_000,
+        envelopeCapex: 9_500_000_000,
+        envelopeOpex: 3_000_000_000,
+        priorCapex: 2_200_000_000,
+        priorOpex: 1_050_000_000,
         notes: 'Signed off.',
       },
     });
@@ -48,8 +50,10 @@ describe('parseOpeningImport — a good CSV file', () => {
         name: 'Network',
         owner: "O'Brien, network team",
         objective: null,
-        envelopeAmount: 1_000_000,
-        priorProgramBudgetUsed: 0,
+        envelopeCapex: 1_000_000,
+        envelopeOpex: 0,
+        priorCapex: 0,
+        priorOpex: 0,
         notes: null,
       },
     });
@@ -59,19 +63,19 @@ describe('parseOpeningImport — a good CSV file', () => {
     const result = await parseCsv(
       [
         SI_HEADER,
-        'SI-01,Digital,"Owner",,100,0,"First line',
+        'SI-01,Digital,"Owner",,100,0,0,0,"First line',
         'second line"',
-        'BAD,Name,,,not-a-number,0,',
+        'BAD,Name,,,not-a-number,0,0,0,',
       ].join('\n'),
     );
 
     const errors = errorsOf(result);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({ line: 4, column: 'Envelope amount (Rp)' });
+    expect(errors[0]).toMatchObject({ line: 4, column: 'Capex envelope (Rp)' });
   });
 
   it('fills columns that are absent from the file with null', async () => {
-    const result = await parseCsv('Code,Name,Envelope amount (Rp)\r\nSI-01,Digital,1000');
+    const result = await parseCsv('Code,Name,Capex envelope (Rp),Opex envelope (Rp)\r\nSI-01,Digital,1000,250');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.rows[0]?.values).toEqual({
@@ -79,8 +83,10 @@ describe('parseOpeningImport — a good CSV file', () => {
       name: 'Digital',
       owner: null,
       objective: null,
-      envelopeAmount: 1000,
-      priorProgramBudgetUsed: null,
+      envelopeCapex: 1000,
+      envelopeOpex: 250,
+      priorCapex: null,
+      priorOpex: null,
       notes: null,
     });
   });
@@ -93,13 +99,13 @@ describe('parseOpeningImport — a good CSV file', () => {
         '',
         SI_HEADER,
         '',
-        'SI-01,Digital,,,1000,0,',
-        'BAD,Name,,,abc,0,',
+        'SI-01,Digital,,,1000,0,0,0,',
+        'BAD,Name,,,abc,0,0,0,',
       ].join('\r\n'),
     );
 
     const errors = errorsOf(result);
-    expect(errors[0]).toMatchObject({ line: 7, column: 'Envelope amount (Rp)' });
+    expect(errors[0]).toMatchObject({ line: 7, column: 'Capex envelope (Rp)' });
   });
 
   it('parses a header-only template as zero rows', async () => {
@@ -116,7 +122,7 @@ describe('parseOpeningImport — a good CSV file', () => {
 describe('parseOpeningImport — unknown and missing columns', () => {
   it('rejects an undeclared column instead of dropping it', async () => {
     const errors = errorsOf(
-      await parseCsv(`${SI_HEADER},Cost centre\r\nSI-01,Digital,,,1000,0,,CC-1`),
+      await parseCsv(`${SI_HEADER},Cost centre\r\nSI-01,Digital,,,1000,0,0,0,,CC-1`),
     );
     expect(errors).toContainEqual({
       line: 1,
@@ -127,7 +133,7 @@ describe('parseOpeningImport — unknown and missing columns', () => {
   });
 
   it('rejects a duplicate column header', async () => {
-    const errors = errorsOf(await parseCsv(`${SI_HEADER},Name\r\nSI-01,Digital,,,1000,0,,again`));
+    const errors = errorsOf(await parseCsv(`${SI_HEADER},Name\r\nSI-01,Digital,,,1000,0,0,0,,again`));
     expect(errors).toContainEqual({
       line: 1,
       column: 'Name',
@@ -139,22 +145,22 @@ describe('parseOpeningImport — unknown and missing columns', () => {
     const errors = errorsOf(await parseCsv('Code,Name\r\nSI-01,Digital'));
     expect(errors).toContainEqual({
       line: 1,
-      column: 'Envelope amount (Rp)',
-      message: 'Missing required column "Envelope amount (Rp)".',
+      column: 'Capex envelope (Rp)',
+      message: 'Missing required column "Capex envelope (Rp)".',
     });
   });
 
   it('rejects a row with more values than declared columns', async () => {
-    const errors = errorsOf(await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,1000,0,,extra`));
+    const errors = errorsOf(await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,1000,0,0,0,,extra`));
     expect(errors).toContainEqual({
       line: 2,
       column: 'Row',
-      message: 'The row has 8 values but the file declares 7 columns.',
+      message: 'The row has 10 values but the file declares 9 columns.',
     });
   });
 
   it('rejects a data cell with no column header above it', async () => {
-    const errors = errorsOf(await parseCsv(`${SI_HEADER},\r\nSI-01,Digital,,,1000,0,,CC-1`));
+    const errors = errorsOf(await parseCsv(`${SI_HEADER},\r\nSI-01,Digital,,,1000,0,0,0,,CC-1`));
     expect(errors[0]).toMatchObject({ line: 2, column: 'Row' });
   });
 
@@ -167,20 +173,20 @@ describe('parseOpeningImport — unknown and missing columns', () => {
 describe('parseOpeningImport — declared types', () => {
   it('parses number columns: digits, grouped thousands, spaces and an Rp prefix', async () => {
     for (const input of ['1234567', '1.234.567', '1 234 567', 'Rp 1.234.567', 'Rp1234567']) {
-      const result = await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,${input},0,`);
+      const result = await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,${input},0,0,0,`);
       expect(result.ok, input).toBe(true);
-      if (result.ok) expect(result.rows[0]?.values.envelopeAmount).toBe(1_234_567);
+      if (result.ok) expect(result.rows[0]?.values.envelopeCapex).toBe(1_234_567);
     }
   });
 
   it('rejects number values that are not whole, non-negative Rupiah', async () => {
     for (const [input, message] of [
-      ['abc', 'Envelope amount (Rp) must be a whole, non-negative number (got "abc").'],
-      ['-5', 'Envelope amount (Rp) must be a whole, non-negative number (got "-5").'],
-      ['1.5', 'Envelope amount (Rp) must be a whole, non-negative number (got "1.5").'],
+      ['abc', 'Capex envelope (Rp) must be a whole, non-negative number (got "abc").'],
+      ['-5', 'Capex envelope (Rp) must be a whole, non-negative number (got "-5").'],
+      ['1.5', 'Capex envelope (Rp) must be a whole, non-negative number (got "1.5").'],
     ] as const) {
-      const errors = errorsOf(await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,${input},0,`));
-      expect(errors).toContainEqual({ line: 2, column: 'Envelope amount (Rp)', message });
+      const errors = errorsOf(await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,${input},0,0,0,`));
+      expect(errors).toContainEqual({ line: 2, column: 'Capex envelope (Rp)', message });
     }
   });
 
@@ -221,7 +227,7 @@ describe('parseOpeningImport — declared types', () => {
     expect(errors).toEqual([
       { line: 2, column: 'Code', message: 'Code is required.' },
     ]);
-    const ok = await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,1000,,`);
+    const ok = await parseCsv(`${SI_HEADER}\r\nSI-01,Digital,,,1000,0,,`);
     expect(ok.ok).toBe(true);
   });
 
@@ -231,8 +237,8 @@ describe('parseOpeningImport — declared types', () => {
         [
           SI_HEADER,
           'SI-01,Digital,,,abc,0,',
-          'SI-02,Network,,,1000,0,',
-          'SI-03,,,,-1,0,',
+          'SI-02,Network,,,1000,0,0,0,',
+          'SI-03,,,,-1,0,0,0,',
         ].join('\r\n'),
       ),
     );
@@ -394,7 +400,7 @@ describe('parseOpeningImport — owner-added columns, template round trip', () =
     const header = `${SI_HEADER},Risk score`;
     const result = await parseOpeningImport({
       dataSet: 'strategic-initiatives',
-      bytes: `${header}\r\nSI-01,Digital,,,1000,0,,high`,
+      bytes: `${header}\r\nSI-01,Digital,,,1000,0,0,0,,high`,
       ownerColumns: [riskScore],
     });
     const errors = errorsOf(result);
@@ -420,7 +426,7 @@ describe('parseOpeningImport — owner-added columns, template round trip', () =
 
     const accepted = await parseOpeningImport({
       dataSet: 'strategic-initiatives',
-      bytes: `${header}\r\nSI-01,Digital,,,1000,0,,-42`,
+      bytes: `${header}\r\nSI-01,Digital,,,1000,0,0,0,,-42`,
       ownerColumns: [riskScore],
     });
     expect(accepted.ok).toBe(true);
@@ -430,7 +436,7 @@ describe('parseOpeningImport — owner-added columns, template round trip', () =
       const errors = errorsOf(
         await parseOpeningImport({
           dataSet: 'strategic-initiatives',
-          bytes: `${header}\r\nSI-01,Digital,,,1000,0,,${value}`,
+          bytes: `${header}\r\nSI-01,Digital,,,1000,0,0,0,,${value}`,
           ownerColumns: [riskScore],
         }),
       );
@@ -441,7 +447,7 @@ describe('parseOpeningImport — owner-added columns, template round trip', () =
 
   it('returns no rows when any row fails', async () => {
     const result = await parseCsv(
-      [SI_HEADER, 'SI-01,Digital,,,1000,0,', 'BAD,Name,,,abc,0,'].join('\r\n'),
+      [SI_HEADER, 'SI-01,Digital,,,1000,0,0,0,', 'BAD,Name,,,abc,0,0,0,'].join('\r\n'),
     );
     expect(result).toMatchObject({ ok: false });
     expect('rows' in result).toBe(false);

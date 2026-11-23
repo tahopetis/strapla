@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import {
   annualPlans,
@@ -11,8 +11,7 @@ import {
   type OpeningBalanceReconciliation,
   type StrategicPlan,
 } from '@/db/schema';
-import type { EnvelopeCheck } from '@/domain/plan';
-import { listInitiativeEnvelopeRows } from './queries';
+import { envelopeCheck, type EnvelopeCheck } from '@/domain/plan';
 import type { OpeningLoadContext } from './opening-load';
 import { listProjects, type ProjectListRow } from './project-queries';
 
@@ -26,9 +25,12 @@ export interface OpeningInitiativeRow {
   id: string;
   code: string;
   name: string;
-  envelopeAmount: number;
-  priorProgramBudgetUsed: number;
-  programBudget: number;
+  envelopeCapex: number;
+  envelopeOpex: number;
+  priorProgramBudgetUsedCapex: number;
+  priorProgramBudgetUsedOpex: number;
+  programCapex: number;
+  programOpex: number;
   check: EnvelopeCheck;
 }
 
@@ -46,8 +48,11 @@ export interface OpeningBalancesOverview {
   programs: OpeningProgramRow[];
   projects: ProjectListRow[];
   totals: {
-    envelope: number;
-    priorProgramBudgetUsed: number;
+    envelopeCapex: number;
+    envelopeOpex: number;
+    priorProgramBudgetUsedCapex: number;
+    priorProgramBudgetUsedOpex: number;
+    /** In-app program budgets (capex + opex); the control total is combined. */
     inAppProgramBudgets: number;
     programCarryInCapex: number;
     programCarryInOpex: number;
@@ -61,16 +66,54 @@ export interface OpeningBalancesOverview {
 export async function getOpeningBalancesOverview(planId: string): Promise<OpeningBalancesOverview> {
   const db = getDb();
 
-  const initiativeRows = await listInitiativeEnvelopeRows(planId);
-  const initiatives: OpeningInitiativeRow[] = initiativeRows.map((row) => ({
-    id: row.initiative.id,
-    code: row.initiative.code,
-    name: row.initiative.name,
-    envelopeAmount: row.initiative.envelopeAmount,
-    priorProgramBudgetUsed: row.initiative.priorProgramBudgetUsed,
-    programBudget: row.programBudget,
-    check: row.check,
-  }));
+  // Opening figures are the go-live baseline: the per-component check and the
+  // control totals use the program budgets as recorded at opening, not the
+  // effective budgets later revision deltas produce (ADR-0006 §5).
+  const [initiativeRows, initialBudgetRows] = await Promise.all([
+    db
+      .select()
+      .from(strategicInitiatives)
+      .where(and(eq(strategicInitiatives.planId, planId), isNull(strategicInitiatives.voidedAt)))
+      .orderBy(asc(strategicInitiatives.code)),
+    db
+      .select({
+        siId: annualPrograms.siId,
+        capex: sql<string>`coalesce(sum(${annualPrograms.capexBudget}), 0)::text`,
+        opex: sql<string>`coalesce(sum(${annualPrograms.opexBudget}), 0)::text`,
+      })
+      .from(annualPrograms)
+      .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
+      .where(and(eq(annualPlans.planId, planId), isNull(annualPrograms.voidedAt)))
+      .groupBy(annualPrograms.siId),
+  ]);
+  const initialBudgets = new Map(
+    initialBudgetRows.map((row) => [
+      row.siId,
+      { capex: Number(row.capex ?? '0'), opex: Number(row.opex ?? '0') },
+    ]),
+  );
+  const initiatives: OpeningInitiativeRow[] = initiativeRows.map((initiative) => {
+    const budgets = initialBudgets.get(initiative.id) ?? { capex: 0, opex: 0 };
+    return {
+      id: initiative.id,
+      code: initiative.code,
+      name: initiative.name,
+      envelopeCapex: initiative.envelopeCapex,
+      envelopeOpex: initiative.envelopeOpex,
+      priorProgramBudgetUsedCapex: initiative.priorProgramBudgetUsedCapex,
+      priorProgramBudgetUsedOpex: initiative.priorProgramBudgetUsedOpex,
+      programCapex: budgets.capex,
+      programOpex: budgets.opex,
+      check: envelopeCheck({
+        envelopeCapex: initiative.envelopeCapex,
+        envelopeOpex: initiative.envelopeOpex,
+        priorCapex: initiative.priorProgramBudgetUsedCapex,
+        priorOpex: initiative.priorProgramBudgetUsedOpex,
+        programCapex: [budgets.capex],
+        programOpex: [budgets.opex],
+      }),
+    };
+  });
 
   const programRows = await db
     .select({
@@ -97,9 +140,20 @@ export async function getOpeningBalancesOverview(planId: string): Promise<Openin
   const projects = await listProjects(planId);
 
   const totals = {
-    envelope: initiatives.reduce((sum, row) => sum + row.envelopeAmount, 0),
-    priorProgramBudgetUsed: initiatives.reduce((sum, row) => sum + row.priorProgramBudgetUsed, 0),
-    inAppProgramBudgets: initiatives.reduce((sum, row) => sum + row.programBudget, 0),
+    envelopeCapex: initiatives.reduce((sum, row) => sum + row.envelopeCapex, 0),
+    envelopeOpex: initiatives.reduce((sum, row) => sum + row.envelopeOpex, 0),
+    priorProgramBudgetUsedCapex: initiatives.reduce(
+      (sum, row) => sum + row.priorProgramBudgetUsedCapex,
+      0,
+    ),
+    priorProgramBudgetUsedOpex: initiatives.reduce(
+      (sum, row) => sum + row.priorProgramBudgetUsedOpex,
+      0,
+    ),
+    inAppProgramBudgets: initiatives.reduce(
+      (sum, row) => sum + row.programCapex + row.programOpex,
+      0,
+    ),
     programCarryInCapex: programs.reduce((sum, row) => sum + row.program.carryInCapex, 0),
     programCarryInOpex: programs.reduce((sum, row) => sum + row.program.carryInOpex, 0),
     projectOpeningAllocated: projects.reduce((sum, row) => sum + row.project.openingAllocated, 0),

@@ -130,11 +130,13 @@ function AllocationCard({
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
 }) {
-  const { allocation, annualPlan, program, position } = row;
+  const { allocation, annualPlan, program, position, effectiveCapex, effectiveOpex } = row;
+  const revised =
+    effectiveCapex !== allocation.allocationCapex || effectiveOpex !== allocation.allocationOpex;
   return (
     <Card
       title={`FY${annualPlan.fiscalYear} · ${program.code} · ${program.name}`}
-      description={`Allocation status: ${annualPlan.status}`}
+      description={`Allocation status: ${annualPlan.status}${revised ? ' · includes posted revisions' : ''}`}
       actions={
         <div className="flex flex-wrap gap-1">
           <AnnualPlanBadge annualPlanId={annualPlan.id} tone="info">
@@ -149,7 +151,7 @@ function AllocationCard({
         <div>
           <dt className="text-slate-500">Capex allocation</dt>
           <dd className="mt-1 font-medium">
-            <Money value={allocation.allocationCapex} />
+            <Money value={effectiveCapex} />
           </dd>
         </div>
         <div>
@@ -167,7 +169,7 @@ function AllocationCard({
         <div>
           <dt className="text-slate-500">Opex allocation</dt>
           <dd className="mt-1 font-medium">
-            <Money value={allocation.allocationOpex} />
+            <Money value={effectiveOpex} />
           </dd>
         </div>
         <div>

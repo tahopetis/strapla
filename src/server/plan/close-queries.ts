@@ -14,9 +14,11 @@ import {
   type ProjectYearAllocation,
   type StrategicPlan,
 } from '@/db/schema';
-import { programBudgetPosition } from '@/domain/funding';
+import { revisedProgramBudgetPosition } from '@/domain/funding';
+import { NO_DELTAS } from '@/domain/revisions';
 import { nextFiscalYear } from '@/domain/close';
 import { getAllocationFunding } from './execution-queries';
+import { getRevisionDeltasForPlan } from './revision-queries';
 
 /** Queries for the year-close review and the carry-over snapshot (M4 #21). */
 
@@ -74,6 +76,9 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
   const loaded = planRows[0];
   if (!loaded) return null;
 
+  // The close candidates use effective budgets and allocations (ADR-0006 §4).
+  const deltaMaps = await getRevisionDeltasForPlan(planId);
+
   const targetRows = await db
     .select()
     .from(annualPlans)
@@ -106,9 +111,10 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
 
   const allocatedByProgram = new Map<string, { capex: number; opex: number }>();
   for (const row of allocationRows) {
+    const delta = deltaMaps.byAllocation.get(row.allocation.id) ?? NO_DELTAS;
     const current = allocatedByProgram.get(row.program.id) ?? { capex: 0, opex: 0 };
-    current.capex += row.allocation.allocationCapex;
-    current.opex += row.allocation.allocationOpex;
+    current.capex += row.allocation.allocationCapex + delta.capex;
+    current.opex += row.allocation.allocationOpex + delta.opex;
     allocatedByProgram.set(row.program.id, current);
   }
 
@@ -137,9 +143,10 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
 
   const programs: CloseProgramRow[] = programRows.map((program) => {
     const allocated = allocatedByProgram.get(program.id) ?? { capex: 0, opex: 0 };
-    const position = programBudgetPosition({
+    const position = revisedProgramBudgetPosition({
       capexBudget: program.capexBudget,
       opexBudget: program.opexBudget,
+      revision: deltaMaps.byProgram.get(program.id) ?? NO_DELTAS,
       carryInCapex: program.carryInCapex,
       carryInOpex: program.carryInOpex,
       allocatedCapex: allocated.capex,

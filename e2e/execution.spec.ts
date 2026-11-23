@@ -395,7 +395,10 @@ test('settles an FY2028 commitment from FY2029 without moving either year @t2', 
     .filter({ has: page.getByRole('button', { name: 'Add initiative' }) });
   await initiativeForm.locator('input[name="code"]').fill(initiative.code);
   await initiativeForm.locator('input[name="name"]').fill(initiative.name);
-  await initiativeForm.locator('input[name="envelopeAmount"]').fill('500000000');
+  await initiativeForm.locator('input[name="envelopeCapex"]').fill('500000000');
+  await initiativeForm.locator('input[name="envelopeOpex"]').fill('0');
+  await initiativeForm.locator('input[name="priorCapex"]').fill('0');
+  await initiativeForm.locator('input[name="priorOpex"]').fill('0');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(page.getByText(`Strategic initiative ${initiative.code} created.`)).toBeVisible();
   const siLabel = `${initiative.code} · ${initiative.name}`;

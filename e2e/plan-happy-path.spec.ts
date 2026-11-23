@@ -102,8 +102,10 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await initiativeForm.locator('input[name="code"]').fill('SI-01');
   await initiativeForm.locator('input[name="name"]').fill('Digital Workplace');
   await initiativeForm.locator('input[name="owner"]').fill('Head of IT');
-  await initiativeForm.locator('input[name="envelopeAmount"]').fill('5000000000');
-  await initiativeForm.locator('input[name="priorProgramBudgetUsed"]').fill('750000000');
+  await initiativeForm.locator('input[name="envelopeCapex"]').fill('4000000000');
+  await initiativeForm.locator('input[name="envelopeOpex"]').fill('1000000000');
+  await initiativeForm.locator('input[name="priorCapex"]').fill('600000000');
+  await initiativeForm.locator('input[name="priorOpex"]').fill('150000000');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(page.getByText(/Strategic initiative SI-01 created\./)).toBeVisible();
   await expect(page.getByText('SI-01 · Digital Workplace')).toBeVisible();
@@ -380,7 +382,8 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await expect(page.getByText('Control totals and sign-off')).toBeVisible();
   await expect(page.getByText('PRG-2027-001').first()).toBeVisible();
   await expect(page.getByText('PRJ-2027-001').first()).toBeVisible();
-  await expect(page.getByText('Rp 750.000.000').first()).toBeVisible();
+  // The SI-01 prior consumed figure is split per component (capex 600M, opex 150M).
+  await expect(page.getByText('Rp 600.000.000').first()).toBeVisible();
   endTiming('reconciliation', reconciliationStartedAt);
 
   // ------------------------------- W9: an administrator adds a project field
@@ -490,8 +493,10 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
       'Name',
       'Owner',
       'Objective',
-      'Envelope amount (Rp)',
-      'Prior program budget consumed (Rp)',
+      'Capex envelope (Rp)',
+      'Opex envelope (Rp)',
+      'Prior program budget consumed — capex (Rp)',
+      'Prior program budget consumed — opex (Rp)',
       'Notes',
     ],
     [
@@ -499,8 +504,10 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
       'Imported initiative one',
       'Head of Importing',
       'Exercise the opening import.',
-      '1000000000',
-      '100000000',
+      '800000000',
+      '200000000',
+      '80000000',
+      '20000000',
       '',
     ],
     [
@@ -508,8 +515,10 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
       'Imported initiative two',
       'Head of Importing',
       'Exercise the opening import.',
-      '500000000',
-      '25000000',
+      '400000000',
+      '100000000',
+      '20000000',
+      '5000000',
       '',
     ],
   ]);
@@ -549,8 +558,10 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
 
   // control totals and the one-time sign-off
   const controlValues = {
-    controlEnvelope: '0',
-    controlPriorProgramBudgetUsed: '0',
+    controlEnvelopeCapex: '0',
+    controlEnvelopeOpex: '0',
+    controlPriorProgramBudgetUsedCapex: '0',
+    controlPriorProgramBudgetUsedOpex: '0',
     controlProgramBudgets: '0',
     controlProgramCarryIn: '0',
     controlProjectOpeningAllocated: '0',

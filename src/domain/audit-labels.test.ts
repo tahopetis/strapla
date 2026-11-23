@@ -14,6 +14,12 @@ describe('audit labels', () => {
     expect(auditEntityTypeLabel('custom_field')).toBe('Custom field');
   });
 
+  it('names the budget revision actions and entity in readable words', () => {
+    expect(auditActionLabel('revision_post')).toBe('Budget revision posted');
+    expect(auditActionLabel('revision_decision')).toBe('Budget revision decision recorded');
+    expect(auditEntityTypeLabel('budget_revision')).toBe('Budget revision');
+  });
+
   it('keeps the raw token while a token has no human label yet', () => {
     expect(auditActionLabel('status_change')).toBe('status_change');
     expect(auditEntityTypeLabel('strategic_plan')).toBe('strategic_plan');
