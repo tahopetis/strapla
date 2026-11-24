@@ -145,6 +145,9 @@ test('posts a revision with the decision awaited, then records it, and freezes t
   const awaitingRevision = page.locator('li').filter({ hasText: 'REV-2030-001' });
   await awaitingRevision.getByText('Record the decision reference').click();
   await awaitingRevision.locator('input[name="decisionReference"]').fill('SC-2030-01');
+  await awaitingRevision
+    .locator('textarea[name="reason"]')
+    .fill('Steering committee decision recorded.');
   await awaitingRevision.getByRole('button', { name: 'Record decision' }).click();
   await expect(page.getByText('Decision reference recorded for REV-2030-001.')).toBeVisible();
   await expect(page.getByText('awaiting decision reference')).toHaveCount(0);
@@ -167,7 +170,7 @@ test('posts a balanced switch and refuses an unbalanced one and one above the fl
       { program: PROGRAMS.receiver, capex: '25000000' },
     ],
   });
-  await expect(page.getByText(/Capex lines do not balance/)).toBeVisible();
+  await expect(page.getByText(/Capex lines do not balance/).first()).toBeVisible();
   await expect(page.locator('li').filter({ hasText: 'REV-2030-002' })).toHaveCount(0);
 
   // ---------------------------------------------------- a balanced switch
