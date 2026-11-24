@@ -22,6 +22,7 @@ import { rp } from './support/money';
  */
 
 const REVISION_YEAR = 2030;
+const FLOOR_PROJECT = { code: 'REV-2030-PRJ', name: 'Revision floor project' };
 const PROGRAMS = {
   donor: { code: 'PRG-2030-01', name: 'Network renewal' },
   receiver: { code: 'PRG-2030-02', name: 'Device refresh' },
@@ -83,6 +84,49 @@ const postRevision = async (
     if (line.opex !== undefined) await deltaField(page, line.program, 'opex').fill(line.opex);
   }
   await form.getByRole('button', { name: 'Post revision' }).click();
+};
+
+/**
+ * A 20M FY2030 allocation under the donor program, so the switch floor can be
+ * separated from the negative-budget guard: after the 40M switch the donor
+ * still has budget but no longer enough unallocated to cover a 50M switch.
+ */
+const createFloorAllocation = async (page: Page): Promise<void> => {
+  await page.goto('/plan/projects');
+  const projectForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Create project' }) });
+  await projectForm
+    .locator('select[name="originatingProgramId"]')
+    .selectOption({
+      label: `${PROGRAMS.donor.code} · ${PROGRAMS.donor.name} (FY${REVISION_YEAR}, SI-01)`,
+    });
+  await projectForm.locator('input[name="code"]').fill(FLOOR_PROJECT.code);
+  await projectForm.locator('input[name="name"]').fill(FLOOR_PROJECT.name);
+  await projectForm.locator('input[name="startFiscalYear"]').fill(String(REVISION_YEAR));
+  await projectForm.locator('input[name="endFiscalYear"]').fill(String(REVISION_YEAR));
+  await projectForm.locator('input[name="allocatedBudgetFullLife"]').fill('20000000');
+  await projectForm.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.getByText(`Project ${FLOOR_PROJECT.code} created.`)).toBeVisible();
+
+  await page
+    .locator('tbody tr', { hasText: FLOOR_PROJECT.name })
+    .getByRole('link', { name: 'Open' })
+    .click();
+  const allocationForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add allocation' }) });
+  await allocationForm
+    .locator('select[name="annualProgramId"]')
+    .selectOption({
+      label: `FY${REVISION_YEAR} · ${PROGRAMS.donor.code} · ${PROGRAMS.donor.name}`,
+    });
+  await allocationForm.locator('input[name="allocationCapex"]').fill('20000000');
+  await allocationForm.locator('input[name="allocationOpex"]').fill('0');
+  await allocationForm.getByRole('button', { name: 'Add allocation' }).click();
+  await expect(
+    page.getByText(`Project year allocation FY${REVISION_YEAR} created.`),
+  ).toBeVisible();
 };
 
 test('posts a revision with the decision awaited, then records it, and freezes the budget form @t2', async ({
@@ -158,7 +202,9 @@ test('posts a balanced switch and refuses an unbalanced one and one above the fl
   page,
 }) => {
   // FY2030 is active with PRG-2030-01 holding Rp 100.000.000 of unallocated
-  // capex and PRG-2030-02 at zero (the previous test posted it).
+  // capex and PRG-2030-02 at zero (the previous test posted it). Add a 20M
+  // allocation so the switch floor has something to run out of.
+  await createFloorAllocation(page);
   await openAnnualPlan(page, REVISION_YEAR);
   await openRevisionRegister(page);
 
@@ -190,13 +236,14 @@ test('posts a balanced switch and refuses an unbalanced one and one above the fl
   await expect(page.getByText('SC-2030-02')).toBeVisible();
 
   // ------------------------------------------ more than is unallocated
-  // PRG-2030-01 now has Rp 60.000.000 unallocated: a 70.000.000 switch must be
-  // refused with the floor message and never reach the register.
+  // A 20M allocation sits under the donor program. After the 40M switch the
+  // donor has 60M budget and 40M unallocated; a 50M switch stays above zero but
+  // cannot be covered, so the floor refuses it and it never reaches the register.
   await postRevision(page, {
     reason: 'Switch above the unallocated budget',
     lines: [
-      { program: PROGRAMS.donor, capex: '-70000000' },
-      { program: PROGRAMS.receiver, capex: '70000000' },
+      { program: PROGRAMS.donor, capex: '-50000000' },
+      { program: PROGRAMS.receiver, capex: '50000000' },
     ],
   });
   await expect(page.getByText(/this switch takes/)).toBeVisible();
