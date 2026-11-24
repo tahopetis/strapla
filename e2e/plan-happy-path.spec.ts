@@ -119,17 +119,6 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
 
-  // W1a: the annual plan activation is in the page header too.
-  await activateFromHeader('Activate annual plan', 'FY2027 budget approved.');
-  await expect(page.getByText(/Annual plan FY2027 activated\./)).toBeVisible();
-
-  // W1a: the fiscal-year badge on the dashboard links to the annual plan page.
-  await page.goto('/dashboard');
-  const activeFiscalYear = page.getByRole('link', { name: 'FY2027 active annual plan' });
-  await expect(activeFiscalYear).toBeVisible();
-  await activeFiscalYear.click();
-  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
-
   const programForm = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
   await programForm.locator('input[name="code"]').fill('PRG-2027-001');
   await programForm.locator('input[name="name"]').fill('Workplace Modernisation 2027');
@@ -142,8 +131,43 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await expect(page.getByText(/Annual program PRG-2027-001 created\./)).toBeVisible();
   await expect(page.getByText('PRG-2027-001 · Workplace Modernisation 2027')).toBeVisible();
 
+  // The post-close settlement fixture needs its own FY2027 program. It is also
+  // created while the plan is a draft: activation freezes program budgets, so a
+  // program created later would have to start at zero and be funded by a
+  // revision. Keeping both programs in the draft keeps this foundation on the
+  // direct-edit path and lets the revision spec own the frozen path.
+  const postCloseProgramForm = page
+    .locator('form')
+    .filter({ has: page.getByRole('button', { name: 'Add program' }) });
+  await postCloseProgramForm.locator('input[name="code"]').fill('POST-CLOSE-PRG-27');
+  await postCloseProgramForm
+    .locator('input[name="name"]')
+    .fill('Post-close settlement programme');
+  await postCloseProgramForm
+    .locator('select[name="siId"]')
+    .selectOption({ label: 'SI-01 · Digital Workplace' });
+  await postCloseProgramForm.locator('input[name="capexBudget"]').fill('100000000');
+  await postCloseProgramForm.locator('input[name="opexBudget"]').fill('0');
+  await page.getByRole('button', { name: 'Add program' }).click();
+  await expect(page.getByText(/Annual program POST-CLOSE-PRG-27 created\./)).toBeVisible();
+
+  // W1a: the annual plan activation is in the page header too.
+  await activateFromHeader('Activate annual plan', 'FY2027 budget approved.');
+  await expect(page.getByText(/Annual plan FY2027 activated\./)).toBeVisible();
+
+  // W1a: the fiscal-year badge on the dashboard links to the annual plan page.
+  await page.goto('/dashboard');
+  const activeFiscalYear = page.getByRole('link', { name: 'FY2027 active annual plan' });
+  await expect(activeFiscalYear).toBeVisible();
+  await activeFiscalYear.click();
+  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
+
   // W1a: the program page's fiscal-year badge links to the annual plan it names.
-  await page.getByRole('link', { name: 'Thread' }).first().click();
+  const primaryProgramCard = page
+    .locator('section')
+    .filter({ hasText: 'PRG-2027-001 · Workplace Modernisation 2027' })
+    .last();
+  await primaryProgramCard.getByRole('link', { name: 'Thread' }).click();
   await expect(
     page.getByRole('heading', {
       level: 1,
@@ -278,26 +302,9 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await expect(programCard.getByText('Rp 700.000.000')).toBeVisible();
 
   // ------------------------- post-close settlement fixture (#98)
-  // A dedicated FY2027 program and a project spanning FY2027–FY2028, so the
-  // execution journey can record an FY2028 payment that settles a commitment
-  // from the closed FY2027. It has its own program so the PRG-2027-001 card
-  // and the close carry-over totals stay exactly as asserted above.
-  const postCloseProgramForm = page
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await postCloseProgramForm.locator('input[name="code"]').fill('POST-CLOSE-PRG-27');
-  await postCloseProgramForm
-    .locator('input[name="name"]')
-    .fill('Post-close settlement programme');
-  await postCloseProgramForm
-    .locator('select[name="siId"]')
-    .selectOption({ label: 'SI-01 · Digital Workplace' });
-  // a budget the FY2027 allocation fits under; the figures are not asserted elsewhere
-  await postCloseProgramForm.locator('input[name="capexBudget"]').fill('100000000');
-  await postCloseProgramForm.locator('input[name="opexBudget"]').fill('0');
-  await page.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText(/Annual program POST-CLOSE-PRG-27 created\./)).toBeVisible();
-
+  // The dedicated FY2027 program was created while the plan was a draft. This
+  // project spans FY2027–FY2028 so the execution journey can record an FY2028
+  // payment that settles a commitment from the closed FY2027.
   await page.goto('/plan/projects');
   const postCloseProjectForm = page
     .locator('form')
