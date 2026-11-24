@@ -44,7 +44,7 @@ The database must have **no users**: the journey starts at `/setup`, which the a
 | Tier | Project | What it is |
 | --- | --- | --- |
 | T1 | `foundation` | One journey that builds the portfolio end to end: first-run setup, strategic plan and SI, annual plans, programs, project with ijin prinsip, allocation, commitment, spend, recurring ops, opening-balance import, year close with carry-over, custom fields, reports, members, audit. Also the only place the empty states and the opening-balance form exist, because the journey starts from nothing and signs off FY2026. |
-| T2 | `t2` | The rules the journey only touches on the happy path: edits, voids and their refusals, settlement arithmetic, closed-year locks, close preconditions, all four reports with parsed CSV/XLSX and print media, every computed flag, members and audit search, sessions and sign-in boundaries, opening-import XLSX. |
+| T2 | `t2` | The rules the journey only touches on the happy path: budget revisions (active-only posting, awaiting and recording the decision, the activation freeze, the switch floor and its refusals), per-component envelope and effective-budget figures, edits, voids and their refusals, settlement arithmetic, closed-year locks, close preconditions, all four reports with parsed CSV/XLSX and print media, every computed flag, members and audit search, sessions and sign-in boundaries, opening-import XLSX. |
 | T3 | `t3` | Read-only sweep of every route with data, plus the unauthenticated boundaries (`/healthz`, redirect to sign-in, styled 404, ended session). |
 
 The tiers are Playwright projects: `t2` and `t3` depend on `foundation`, so they run it first and reuse its `storageState` (`e2e/.auth/admin.json`, gitignored). A broken foundation skips the later tiers — which is correct: if the plan cannot be built, nothing downstream is meaningful.
@@ -60,14 +60,15 @@ A full run is about two minutes of test execution (50 tests) and four to five mi
 | `plan-happy-path.spec.ts` | T1 | Setup and sign-in state; empty states of every page; strategic plan + SI; annual plan FY2027/FY2028; program and continuation; project, ijin prinsip and BR flags; allocation; commitment and partial settlement; recurring ops; opening-balance control totals (a non-zero difference is allowed and recorded) and the one-time sign-off; opening import (validate-nothing-written, XLSX upload then CSV loads); custom fields across entities, reports, exports and the import template; report exports; members and audit; FY2027 close with carry-over and thread; help. |
 | `auth.spec.ts` | T2 | Sign-in, wrong password, deactivated member, minted session for a deactivated member, sign-out, `/setup` after the first account. |
 | `voids.spec.ts` | T2 | Void/cancel for SI, program, project, allocation, commitment, spend and recurring ops — with reasons, refusals and audit rows. |
-| `edits.spec.ts` | T2 | Program, recurring-ops, allocation, commitment and spend edits, including the settled/frozen guards (component and settlement classification). |
+| `edits.spec.ts` | T2 | Program, recurring-ops, allocation, commitment and spend edits, including the settled/frozen guards (component and settlement classification) and the capex/opex no-shift refusal on allocation edits. The draft program no-shift rule and the decision-attach reason are action-tested. |
 | `execution.spec.ts` | T2 | Commitment → spend → settlement lifecycle, open/partially settled/settled, remaining arithmetic, over-settlement refusing inline on the settlement field, prior-year opening settlement, cross-year settlement (an FY2029 spend settling an FY2028 commitment), and post-close settlement under both treatments (charge to the current year, or a closed-year reserve). |
 | `closed-year.spec.ts` | T2 | Every closed-year refusal and hidden form, plus the write-surface split for a post-close payment (the closed allocation has no spend form; the open-year allocation offers the closed-year commitment). The allocation-update and recurring-ops-void guards are proven by action-level unit tests. |
-| `close.spec.ts` | T2 | Close preconditions: missing next-year plan, typed confirmation, carry-over preview. |
-| `opening-balances.spec.ts` | T2 | Signed-off read-only view, CSV/XLSX templates for all three data sets, and the import gate after the close (the import always targets the first in-app year, which the foundation closes — so the XLSX round-trip lives in the foundation, before the close). |
+| `close.spec.ts` | T2 | Close preconditions: missing next-year plan, typed confirmation, carry-over preview from effective budgets and allocations. |
+| `revisions.spec.ts` | T2 | An active-year revision posted with the decision awaited, the register showing it, then the decision recorded; the activation freeze and the zero-budget program funded by a revision; refusal of an unbalanced switch and of a switch above the donor's unallocated budget. The de-allocation floor, the draft no-shift rule and the cross-component shift are unit/action-tested. |
+| `opening-balances.spec.ts` | T2 | Signed-off read-only view, per-component SI envelope/prior fields and the ten split control totals, CSV/XLSX templates for all three data sets, and the import gate after the close (the import always targets the first in-app year, which the foundation closes — so the XLSX round-trip lives in the foundation, before the close). |
 | `admin.spec.ts` | T2 | Member lifecycle (create, activate/deactivate, reset password, revoke sessions), self/last-admin protections, audit search and CSV. |
-| `reports.spec.ts` | T2 | Four reports with real figures; CSV and XLSX parsed; `columns=` selection; filters; print media. |
-| `flags.spec.ts` | T2 | BR-7, BR-8, BR-9, BR-18, commitments over contract value, spend over fiscal-year commitment, envelope overrun, and the project page and register agreeing on the lifetime commitment figure and BR-8. |
+| `reports.spec.ts` | T2 | Four reports with real figures; CSV and XLSX parsed; `columns=` selection; filters; print media; effective budgets and the per-component SI five-year column groups. |
+| `flags.spec.ts` | T2 | BR-7, BR-8, BR-9, BR-18, commitments over contract value, spend over fiscal-year commitment, per-component capex/opex envelope overrun, and the project page and register agreeing on the lifetime commitment figure and BR-8. |
 | `sweep.spec.ts` | T3 | Every route renders with data; malformed dynamic record ids render the styled 404; unauthenticated `/healthz` and sign-in redirect. |
 | `resilience.spec.ts` | T3 | Ended session lands on sign-in with an explanation; unknown URL renders the styled 404. |
 
@@ -94,7 +95,7 @@ Two other findings worth knowing when reading the suite:
 
 - One spec per area, one flow per test, title ends with `@t2` or `@t3`.
 - Reuse `e2e/support/`: `money.ts` (`rp`), `db.ts` (`withSql`, `createRow` helpers), `auth.ts` (`ADMIN`, `createMember`, `signInWithSessionCookie`).
-- FY2027 is closed by the foundation and FY2028 is the open year: create test data in FY2028 with names unique to the spec. Never assert entity counts inherited from another spec.
+- FY2027 is closed by the foundation and FY2028 is the open year: create test data in FY2028 with names unique to the spec. A spec that needs an activation boundary may create and activate its own later year (the revisions spec uses FY2030); never assert entity counts inherited from another spec.
 - Do not add test-only endpoints or authentication bypasses to the app. A test that needs one is testing the wrong thing.
 - When a control has no stable accessible name, adding one is preferred over a positional CSS selector.
 - Financial assertions use the app's own formatting (`rp`) and exact status strings; "some page rendered" is not a regression test.
