@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createProgramFixture } from './support/programs';
 
 /**
  * Funding flags (src/domain/funding.ts, src/domain/plan.ts, ADR-0003 §6) on the
@@ -73,18 +74,16 @@ async function addProgram(
   input: { code: string; name: string; siLabel: string; capexBudget: string },
 ): Promise<void> {
   await openAnnualPlan(page);
-  const form = page
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await form.locator('input[name="code"]').fill(input.code);
-  await form.locator('input[name="name"]').fill(input.name);
-  await form.locator('select[name="siId"]').selectOption({ label: input.siLabel });
-  await form.locator('input[name="capexBudget"]').fill(input.capexBudget);
-  await form.locator('input[name="opexBudget"]').fill('0');
-  await page.getByRole('button', { name: 'Add program' }).click();
-  await expect(
-    page.getByText(`Annual program ${input.code} created.`),
-  ).toBeVisible();
+  await createProgramFixture({
+    fiscalYear: FY,
+    siCode: input.siLabel.split(' · ')[0] ?? 'SI-01',
+    code: input.code,
+    name: input.name,
+    capex: Number(input.capexBudget),
+    opex: 0,
+  });
+  await page.reload();
+  await expect(page.getByText(`${input.code} · ${input.name}`).first()).toBeVisible();
 }
 
 async function createProject(

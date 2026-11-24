@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { rp } from './support/money';
+import { createProgramFixture } from './support/programs';
 
 /**
  * Close (tier T2): the close preconditions the foundation journey does not
@@ -50,14 +51,16 @@ const activateAnnualPlan = async (page: Page, year: number): Promise<void> => {
 };
 
 const createProgram = async (page: Page, program: ProgramRef): Promise<void> => {
-  const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await form.locator('input[name="code"]').fill(program.code);
-  await form.locator('input[name="name"]').fill(program.name);
-  await form.locator('select[name="siId"]').selectOption({ label: 'SI-01 · Digital Workplace' });
-  await form.locator('input[name="capexBudget"]').fill('20000000');
-  await form.locator('input[name="opexBudget"]').fill('0');
-  await form.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText(`Annual program ${program.code} created.`)).toBeVisible();
+  await createProgramFixture({
+    fiscalYear: OPEN_YEAR,
+    siCode: 'SI-01',
+    code: program.code,
+    name: program.name,
+    capex: 20_000_000,
+    opex: 0,
+  });
+  await page.reload();
+  await expect(page.getByText(`${program.code} · ${program.name}`).first()).toBeVisible();
 };
 
 const createProject = async (page: Page, program: ProgramRef, project: ProjectRef): Promise<void> => {

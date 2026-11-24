@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { rp } from './support/money';
+import { createProgramFixture } from './support/programs';
 
 /**
  * Voids (tier T2): void and cancel with a reason for the strategic initiative,
@@ -35,14 +36,16 @@ const createProgram = async (
   page: Page,
   input: ProgramRef & { capex?: string; opex?: string },
 ): Promise<void> => {
-  const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await form.locator('input[name="code"]').fill(input.code);
-  await form.locator('input[name="name"]').fill(input.name);
-  await form.locator('select[name="siId"]').selectOption({ label: 'SI-01 · Digital Workplace' });
-  await form.locator('input[name="capexBudget"]').fill(input.capex ?? '20000000');
-  await form.locator('input[name="opexBudget"]').fill(input.opex ?? '0');
-  await form.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText(`Annual program ${input.code} created.`)).toBeVisible();
+  await createProgramFixture({
+    fiscalYear: FY,
+    siCode: 'SI-01',
+    code: input.code,
+    name: input.name,
+    capex: Number(input.capex ?? '20000000'),
+    opex: Number(input.opex ?? '0'),
+  });
+  await page.reload();
+  await expect(page.getByText(`${input.code} · ${input.name}`).first()).toBeVisible();
 };
 
 const createProject = async (page: Page, program: ProgramRef, project: ProjectRef): Promise<void> => {

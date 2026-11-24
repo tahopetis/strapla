@@ -94,7 +94,8 @@ Two other findings worth knowing when reading the suite:
 ## Adding to the suite
 
 - One spec per area, one flow per test, title ends with `@t2` or `@t3`.
-- Reuse `e2e/support/`: `money.ts` (`rp`), `db.ts` (`withSql`, `createRow` helpers), `auth.ts` (`ADMIN`, `createMember`, `signInWithSessionCookie`).
+- Reuse `e2e/support/`: `money.ts` (`rp`), `db.ts` (`withSql`, `createRow` helpers), `auth.ts` (`ADMIN`, `createMember`, `signInWithSessionCookie`), `programs.ts` (`createProgramFixture`).
+- A later-tier spec that needs an active-year program with a budget seeds it with `createProgramFixture`; the freeze is a UI rule, so the direct row keeps the spec focused on the behaviour it pins. The program-creation path (draft with budgets, active at zero plus a revision) is covered by the foundation and `revisions.spec.ts`.
 - FY2027 is closed by the foundation and FY2028 is the open year: create test data in FY2028 with names unique to the spec. A spec that needs an activation boundary may create and activate its own later year (the revisions spec uses FY2030); never assert entity counts inherited from another spec.
 - Do not add test-only endpoints or authentication bypasses to the app. A test that needs one is testing the wrong thing.
 - When a control has no stable accessible name, adding one is preferred over a positional CSS selector.

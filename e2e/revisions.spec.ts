@@ -135,7 +135,9 @@ test('posts a revision with the decision awaited, then records it, and freezes t
   // the edit form keeps the non-amount fields but has no budget inputs
   await donorCard.getByText('Edit program').click();
   await expect(donorCard.getByText(/Budgets are frozen while the plan is active/)).toBeVisible();
-  await expect(donorCard.locator('input[name="capexBudget"]')).toHaveCount(0);
+  await expect(
+    donorCard.locator('input[name="capexBudget"]:not([type="hidden"])'),
+  ).toHaveCount(0);
   await expect(donorCard.locator('input[name="name"]')).toHaveValue(PROGRAMS.donor.name);
 
   // ------------------------------------------ record the formal decision

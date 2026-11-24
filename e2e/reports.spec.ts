@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type APIResponse, type Page } fro
 import ExcelJS from 'exceljs';
 import type { CellValue } from 'exceljs';
 import { rp } from './support/money';
+import { createProgramFixture } from './support/programs';
 
 /**
  * Reports and exports (M2 #15, #46, #74, #75).
@@ -404,18 +405,16 @@ test('adds the custom fields and values that the report filters match @t2', asyn
   // The FY2028 program under the new initiative, then its own registry values.
   await page.goto('/plan/annual');
   await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
-  const programForm = page
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await programForm.locator('input[name="code"]').fill('PRG-2028-8801');
-  await programForm.locator('input[name="name"]').fill('Report filter program 2028');
-  await programForm
-    .locator('select[name="siId"]')
-    .selectOption({ label: 'SI-8801 · Report filter initiative' });
-  await programForm.locator('input[name="capexBudget"]').fill('50000000');
-  await programForm.locator('input[name="opexBudget"]').fill('0');
-  await page.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText(/Annual program PRG-2028-8801 created\./)).toBeVisible();
+  await createProgramFixture({
+    fiscalYear: 2028,
+    siCode: 'SI-8801',
+    code: 'PRG-2028-8801',
+    name: 'Report filter program 2028',
+    capex: 50_000_000,
+    opex: 0,
+  });
+  await page.reload();
+  await expect(page.getByText('PRG-2028-8801 · Report filter program 2028').first()).toBeVisible();
 
   await addCustomField(page, 'Annual program', {
     name: 'Report filter port',
