@@ -68,7 +68,8 @@ export default async function BudgetVsActualPage({
       )}
     >
       <ReportNote>
-        Available = budget + carry-in; unallocated = available − allocations. Committed and spent are the
+        Available = effective budget (initial budget plus posted budget revisions) + carry-in;
+        unallocated = available − allocations. Committed and spent are the
         in-app execution figures; prior-year settlements are spend paying earlier-year commitments (excluded
         from the current year, ADR-0003 §4); prior-year opening payments settle pre-app commitments. A
         post-close adjustment is a closed-year settlement kept as a reserve in its closed year, shown

@@ -17,6 +17,7 @@ import {
 } from '@/db/schema';
 import { projectFundingFlags, type FundingFlag } from '@/domain/funding';
 import { pricingFlags, type PricingFlags } from '@/domain/plan';
+import { getRevisionDeltasForEntities } from './revision-queries';
 
 /** Read queries for projects, ijin prinsip and their pricing flags (M1 #8). */
 
@@ -110,6 +111,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
   const [allocationRows, commitmentRows] = await Promise.all([
     getDb()
       .select({
+        id: projectYearAllocations.id,
         allocationCapex: projectYearAllocations.allocationCapex,
         allocationOpex: projectYearAllocations.allocationOpex,
       })
@@ -135,10 +137,13 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
       ),
   ]);
 
-  const totalAllocated = allocationRows.reduce(
-    (sum, allocation) => sum + allocation.allocationCapex + allocation.allocationOpex,
-    0,
-  );
+  const allocationDeltas = await getRevisionDeltasForEntities({
+    allocationIds: allocationRows.map((allocation) => allocation.id),
+  });
+  const totalAllocated = allocationRows.reduce((sum, allocation) => {
+    const delta = allocationDeltas.byAllocation.get(allocation.id) ?? { capex: 0, opex: 0 };
+    return sum + allocation.allocationCapex + delta.capex + allocation.allocationOpex + delta.opex;
+  }, 0);
   const inAppCommitments = num(commitmentRows[0]?.total);
   const lifetimeCommitments = row.project.openingCommitted + inAppCommitments;
 

@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { StrategicInitiative } from '@/db/schema';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { ExportTable } from '@/lib/report-export';
 import type { ReportCustomFieldGroup } from './report-custom-fields';
-import { applyCustomFieldGroup, postCloseAdjustmentTable } from './report-tables';
-import type { BudgetVsActualRow } from './report-queries';
+import { applyCustomFieldGroup, postCloseAdjustmentTable, siFiveYearExportTables } from './report-tables';
+import type {
+  BudgetVsActualRow,
+  SiFiveYearComponent,
+  SiFiveYearReport,
+} from './report-queries';
 
 /**
  * Unit tests for the custom-field column attachment (issue #46).
@@ -202,5 +207,196 @@ describe('postCloseAdjustmentTable (#98)', () => {
 
   it('has no rows when nothing was reserved', () => {
     expect(postCloseAdjustmentTable([budgetRow({})]).rows).toEqual([]);
+  });
+});
+
+describe('siFiveYearExportTables (ADR-0006 §5)', () => {
+  function component(overrides: Partial<SiFiveYearComponent>): SiFiveYearComponent {
+    return {
+      envelope: 0,
+      priorConsumed: 0,
+      programBudget: 0,
+      allocation: 0,
+      commitment: 0,
+      spend: 0,
+      consumed: 0,
+      headroom: 0,
+      over: false,
+      ...overrides,
+    };
+  }
+
+  function initiative(
+    overrides: Pick<StrategicInitiative, 'id' | 'code' | 'name'> &
+      Partial<StrategicInitiative>,
+  ): StrategicInitiative {
+    return {
+      planId: 'plan-1',
+      owner: null,
+      objective: null,
+      envelopeCapex: 0,
+      envelopeOpex: 0,
+      priorProgramBudgetUsedCapex: 0,
+      priorProgramBudgetUsedOpex: 0,
+      notes: null,
+      voidedAt: null,
+      voidedReason: null,
+      createdBy: null,
+      updatedBy: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  const overrunCapex = component({
+    envelope: 100_000,
+    programBudget: 150_000,
+    consumed: 150_000,
+    headroom: -50_000,
+    over: true,
+  });
+
+  function report(): SiFiveYearReport {
+    return {
+      rows: [
+        {
+          initiative: initiative({
+            id: 'si-1',
+            code: 'SI-01',
+            name: 'Digital Workplace',
+            owner: 'Head of IT',
+          }),
+          capex: component({
+            envelope: 4_000_000_000,
+            priorConsumed: 600_000_000,
+            programBudget: 1_200_000_000,
+            allocation: 500_000_000,
+            commitment: 100_000_000,
+            spend: 60_000_000,
+            consumed: 1_800_000_000,
+            headroom: 2_200_000_000,
+          }),
+          opex: component({
+            envelope: 1_000_000_000,
+            priorConsumed: 150_000_000,
+            programBudget: 300_000_000,
+            consumed: 450_000_000,
+            headroom: 550_000_000,
+          }),
+        },
+        {
+          initiative: initiative({ id: 'si-2', code: 'SI-02', name: 'Resilient network' }),
+          capex: overrunCapex,
+          opex: component({}),
+        },
+      ],
+      totals: {
+        capex: component({
+          envelope: 4_000_100_000,
+          priorConsumed: 600_000_000,
+          programBudget: 1_200_150_000,
+          allocation: 500_000_000,
+          commitment: 100_000_000,
+          spend: 60_000_000,
+          consumed: 1_800_150_000,
+          headroom: 2_199_950_000,
+          over: true,
+        }),
+        opex: component({
+          envelope: 1_000_000_000,
+          priorConsumed: 150_000_000,
+          programBudget: 300_000_000,
+          consumed: 450_000_000,
+          headroom: 550_000_000,
+        }),
+      },
+    };
+  }
+
+  it('exports the capex and opex figures as separate, labelled columns', () => {
+    const tables = siFiveYearExportTables(report());
+    const main = tables[0]!;
+    const total = tables[1]!;
+
+    expect(main.name).toBe('SI five-year view');
+    expect(main.columns.map((column) => column.header)).toEqual([
+      'SI code',
+      'Strategic initiative',
+      'Owner',
+      'Capex envelope',
+      'Capex prior consumed',
+      'Capex program budgets',
+      'Capex allocated',
+      'Capex committed',
+      'Capex spent',
+      'Capex consumed',
+      'Capex headroom',
+      'Capex status',
+      'Opex envelope',
+      'Opex prior consumed',
+      'Opex program budgets',
+      'Opex allocated',
+      'Opex committed',
+      'Opex spent',
+      'Opex consumed',
+      'Opex headroom',
+      'Opex status',
+    ]);
+    expect(main.rows[0]).toMatchObject({
+      code: 'SI-01',
+      name: 'Digital Workplace',
+      owner: 'Head of IT',
+      capexEnvelope: 4_000_000_000,
+      capexPrior: 600_000_000,
+      capexProgramBudget: 1_200_000_000,
+      capexConsumed: 1_800_000_000,
+      capexHeadroom: 2_200_000_000,
+      capexStatus: 'within capex envelope',
+      opexEnvelope: 1_000_000_000,
+      opexPrior: 150_000_000,
+      opexHeadroom: 550_000_000,
+      opexStatus: 'within opex envelope',
+    });
+    // A capex overrun is its own status; it never consumes opex headroom.
+    expect(main.rows[1]).toMatchObject({
+      capexStatus: 'over capex envelope',
+      capexHeadroom: -50_000,
+      opexStatus: 'within opex envelope',
+      opexHeadroom: 0,
+    });
+
+    const totalRow = total.rows[0]!;
+    expect(total.name).toBe('Totals');
+    expect(totalRow).toMatchObject({
+      label: 'Portfolio',
+      capexEnvelope: 4_000_100_000,
+      capexHeadroom: 2_199_950_000,
+      capexStatus: 'over capex envelope',
+      opexStatus: 'within opex envelope',
+    });
+  });
+
+  it('keeps the custom-field columns after the per-component money columns (#46)', () => {
+    const main = siFiveYearExportTables(report())[0]!;
+    const result = applyCustomFieldGroup(main, {
+      entityType: 'strategic_initiative',
+      tableName: 'SI five-year view',
+      fields: [location],
+      selectedFields: [location],
+      values: new Map([['si-1', { 'cf-location': 'Jakarta' }]]),
+    });
+
+    expect(result.columns.slice(0, main.columns.length)).toEqual(main.columns);
+    expect(result.columns.at(-1)).toEqual({
+      key: 'custom:cf-location',
+      header: 'Location',
+      kind: 'text',
+    });
+    expect(result.rows[0]).toMatchObject({
+      capexEnvelope: 4_000_000_000,
+      opexEnvelope: 1_000_000_000,
+      'custom:cf-location': 'Jakarta',
+    });
   });
 });

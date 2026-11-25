@@ -212,3 +212,42 @@ describe('updateAllocationAction closed-year guard', () => {
     );
   });
 });
+
+describe('updateAllocationAction capex/opex shift guard', () => {
+  const SHIFT_REFUSAL = /capex and opex never shift/i;
+
+  it('refuses a save that raises capex while lowering opex', async () => {
+    const db = database([allocationContext('active')], [{ siId: SI_ID }]);
+    mocks.getDb.mockReturnValue(db);
+
+    const state = await updateAllocationAction(
+      INITIAL,
+      updateForm({ allocationCapex: '600000000', allocationOpex: '50000000' }),
+    );
+
+    expect(state.status).toBe('error');
+    expect(state.message).toMatch(SHIFT_REFUSAL);
+    expect(state.values?.allocationOpex).toBe('50000000');
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(mocks.recordAudit).not.toHaveBeenCalled();
+  });
+
+  it('lets both components move in the same direction', async () => {
+    const db = database([allocationContext('active')], [{ siId: SI_ID }]);
+    const write = updateChain([updatedAllocation()]);
+    const tx = { update: vi.fn().mockReturnValue(write) };
+    db.transaction.mockImplementation(
+      async (callback: (executor: typeof tx) => Promise<void>) => callback(tx),
+    );
+    mocks.getDb.mockReturnValue(db);
+
+    await expect(
+      updateAllocationAction(
+        INITIAL,
+        updateForm({ allocationCapex: '600000000', allocationOpex: '150000000' }),
+      ),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+});

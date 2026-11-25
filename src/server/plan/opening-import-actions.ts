@@ -60,8 +60,10 @@ function initiativeAfter(row: StrategicInitiative): Record<string, unknown> {
     name: row.name,
     owner: row.owner,
     objective: row.objective,
-    envelopeAmount: row.envelopeAmount,
-    priorProgramBudgetUsed: row.priorProgramBudgetUsed,
+    envelopeCapex: row.envelopeCapex,
+    envelopeOpex: row.envelopeOpex,
+    priorProgramBudgetUsedCapex: row.priorProgramBudgetUsedCapex,
+    priorProgramBudgetUsedOpex: row.priorProgramBudgetUsedOpex,
     notes: row.notes,
   };
 }

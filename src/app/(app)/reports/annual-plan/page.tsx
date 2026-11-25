@@ -85,7 +85,8 @@ export default async function AnnualPlanReportPage({
       )}
     >
       <ReportNote>
-        Available = budget + carry-in; unallocated = available − allocations, per component (BR-7).
+        Available = effective budget (initial budget plus posted budget revisions) + carry-in; unallocated =
+        available − allocations, per component (BR-7).
         Committed and spent are the in-app execution figures; recurring ops show their own committed, spent,
         prior-year opening and remaining amounts.
       </ReportNote>
@@ -175,7 +176,7 @@ export default async function AnnualPlanReportPage({
                   Total
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
-                  <Money value={report.totals.capexBudget + report.totals.carryInCapex} />
+                  <Money value={report.totals.effectiveCapexBudget + report.totals.carryInCapex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.allocatedCapex} />
@@ -184,7 +185,7 @@ export default async function AnnualPlanReportPage({
                   <Money value={report.totals.unallocatedCapex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
-                  <Money value={report.totals.opexBudget + report.totals.carryInOpex} />
+                  <Money value={report.totals.effectiveOpexBudget + report.totals.carryInOpex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.allocatedOpex} />

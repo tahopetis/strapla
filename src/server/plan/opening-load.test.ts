@@ -35,8 +35,10 @@ function initiativeRow(line: number, code: string, extra: Record<string, string 
     name: `Initiative ${code}`,
     owner: null,
     objective: null,
-    envelopeAmount: 1_000,
-    priorProgramBudgetUsed: 0,
+    envelopeCapex: 800,
+    envelopeOpex: 200,
+    priorCapex: 0,
+    priorOpex: 0,
     notes: null,
     ...extra,
   });
@@ -112,7 +114,8 @@ describe('planInitiativesLoad', () => {
           planId: 'plan-1',
           code: 'SI-90',
           name: 'Initiative SI-90',
-          envelopeAmount: 1_000,
+          envelopeCapex: 800,
+          envelopeOpex: 200,
         }),
       }),
     ]);

@@ -57,11 +57,17 @@ export default async function OpeningBalancesPage({
   const signedOffAt = reconciliation?.signedOffAt ?? null;
 
   const controlFields = [
-    { name: 'controlEnvelope', label: 'Total envelope', app: totals.envelope },
+    { name: 'controlEnvelopeCapex', label: 'Total envelope (capex)', app: totals.envelopeCapex },
+    { name: 'controlEnvelopeOpex', label: 'Total envelope (opex)', app: totals.envelopeOpex },
     {
-      name: 'controlPriorProgramBudgetUsed',
-      label: 'Prior program budget consumed',
-      app: totals.priorProgramBudgetUsed,
+      name: 'controlPriorProgramBudgetUsedCapex',
+      label: 'Prior program budget consumed (capex)',
+      app: totals.priorProgramBudgetUsedCapex,
+    },
+    {
+      name: 'controlPriorProgramBudgetUsedOpex',
+      label: 'Prior program budget consumed (opex)',
+      app: totals.priorProgramBudgetUsedOpex,
     },
     {
       name: 'controlProgramBudgets',
@@ -180,7 +186,8 @@ export default async function OpeningBalancesPage({
         <Card title="Where opening figures are entered" description="One-time data, audited like any other financial change.">
           <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
             <li>
-              <strong>Per strategic initiative</strong>: prior program budget consumed — edit the initiative on{' '}
+              <strong>Per strategic initiative</strong>: capex and opex envelopes plus prior program budget
+              consumed (capex and opex) — edit the initiative on{' '}
               <Link href="/plan/strategic" className={linkClass}>
                 the strategic plan page
               </Link>
@@ -211,7 +218,7 @@ export default async function OpeningBalancesPage({
 
         <Card
           title="Initiatives — envelope reconciliation"
-          description="Envelope versus prior program budget consumed plus in-app program budgets (BR-2)."
+          description="Envelope versus prior program budget consumed plus in-app program budgets, per component (BR-2). Capex and opex never share headroom."
         >
           {overview.initiatives.length === 0 ? (
             <EmptyState>No strategic initiatives yet.</EmptyState>
@@ -221,10 +228,14 @@ export default async function OpeningBalancesPage({
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="py-2 pr-4">Initiative</th>
-                    <th className="py-2 pr-4">Envelope</th>
-                    <th className="py-2 pr-4">Prior consumed</th>
-                    <th className="py-2 pr-4">In-app programs</th>
-                    <th className="py-2 pr-4">Headroom</th>
+                    <th className="py-2 pr-4">Capex envelope</th>
+                    <th className="py-2 pr-4">Capex prior</th>
+                    <th className="py-2 pr-4">Capex programs</th>
+                    <th className="py-2 pr-4">Capex headroom</th>
+                    <th className="py-2 pr-4">Opex envelope</th>
+                    <th className="py-2 pr-4">Opex prior</th>
+                    <th className="py-2 pr-4">Opex programs</th>
+                    <th className="py-2 pr-4">Opex headroom</th>
                     <th className="py-2">Status</th>
                   </tr>
                 </thead>
@@ -236,23 +247,36 @@ export default async function OpeningBalancesPage({
                         <p className="text-slate-600">{row.name}</p>
                       </td>
                       <td className="py-3 pr-4 whitespace-nowrap">
-                        <Money value={row.envelopeAmount} />
+                        <Money value={row.envelopeCapex} />
                       </td>
                       <td className="py-3 pr-4 whitespace-nowrap">
-                        <Money value={row.priorProgramBudgetUsed} />
+                        <Money value={row.priorProgramBudgetUsedCapex} />
                       </td>
                       <td className="py-3 pr-4 whitespace-nowrap">
-                        <Money value={row.programBudget} />
+                        <Money value={row.programCapex} />
                       </td>
                       <td className="py-3 pr-4 whitespace-nowrap">
-                        <Money value={row.check.remaining} />
+                        <Money value={row.check.capex.remaining} />
                       </td>
-                      <td className="py-3">
-                        {row.check.over ? (
-                          <Badge tone="danger">over envelope</Badge>
-                        ) : (
-                          <Badge tone="success">within</Badge>
-                        )}
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.envelopeOpex} />
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.priorProgramBudgetUsedOpex} />
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.programOpex} />
+                      </td>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <Money value={row.check.opex.remaining} />
+                      </td>
+                      <td className="space-x-1 py-3">
+                        <Badge tone={row.check.capex.over ? 'danger' : 'success'}>
+                          capex {row.check.capex.over ? 'over' : 'within'}
+                        </Badge>
+                        <Badge tone={row.check.opex.over ? 'danger' : 'success'}>
+                          opex {row.check.opex.over ? 'over' : 'within'}
+                        </Badge>
                       </td>
                     </tr>
                   ))}
@@ -370,7 +394,7 @@ export default async function OpeningBalancesPage({
 
         <Card
           title="Control totals and sign-off"
-          description="Enter the spreadsheets' control totals; the difference is against the in-app records shown below. All eight totals are compared before sign-off."
+          description="Enter the spreadsheets' control totals; the difference is against the in-app records shown below. All ten totals are compared before sign-off."
           actions={signedOffAt ? <Badge tone="success">signed off</Badge> : undefined}
         >
           {signedOffAt ? (

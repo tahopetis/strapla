@@ -35,8 +35,10 @@ describe('sample workbooks', () => {
     expect(result.rows).toHaveLength(3);
     expect(result.rows[0]?.values).toMatchObject({
       code: 'SI-01',
-      envelopeAmount: 12_500_000_000,
-      priorProgramBudgetUsed: 3_250_000_000,
+      envelopeCapex: 9_500_000_000,
+      envelopeOpex: 3_000_000_000,
+      priorCapex: 2_200_000_000,
+      priorOpex: 1_050_000_000,
     });
   });
 

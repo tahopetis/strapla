@@ -13,8 +13,10 @@ import {
   type RecurringOpsItem,
   type StrategicPlan,
 } from '@/db/schema';
-import { formatEntityCode, programAvailability, type ProgramAvailability } from '@/domain/plan';
-import { programBudgetPosition, type ProgramBudgetPosition } from '@/domain/funding';
+import { formatEntityCode, type ProgramAvailability } from '@/domain/plan';
+import { revisedProgramBudgetPosition, type ProgramBudgetPosition } from '@/domain/funding';
+import { NO_DELTAS } from '@/domain/revisions';
+import { getRevisionDeltasForPlan, listRevisions } from './revision-queries';
 
 /** Read queries for annual plans, annual programs and recurring ops (M1 #6/#7/#9). */
 
@@ -60,6 +62,12 @@ export interface ProgramRow {
   allocatedCapex: number;
   allocatedOpex: number;
   position: ProgramBudgetPosition;
+  /** Posted budget revision deltas, per component (ADR-0006 §4). */
+  revisionCapex: number;
+  revisionOpex: number;
+  /** Initial budget + posted deltas: what availability is computed from. */
+  effectiveCapexBudget: number;
+  effectiveOpexBudget: number;
 }
 
 export interface RecurringOpsRow {
@@ -78,6 +86,7 @@ export interface AnnualPlanDetail {
   continuationOptions: Array<{ value: string; label: string }>;
   categoryOptions: Array<{ value: string; label: string }>;
   suggestedProgramCode: string;
+  revisions: { count: number; awaitingDecision: number };
 }
 
 export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail | null> {
@@ -91,6 +100,11 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
 
   const header = headerRows[0];
   if (!header) return null;
+
+  const [deltaMaps, revisions] = await Promise.all([
+    getRevisionDeltasForPlan(id),
+    listRevisions(id),
+  ]);
 
   const programRows = await db
     .select({
@@ -113,21 +127,25 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
     .where(and(eq(recurringOpsItems.annualPlanId, id), isNull(recurringOpsItems.voidedAt)))
     .orderBy(asc(recurringOpsItems.name));
 
+  // Effective allocations: each allocation amount plus its posted de-allocation
+  // deltas, summed per program (#112, ADR-0006 §4).
   const allocationRows = await db
     .select({
+      id: projectYearAllocations.id,
       annualProgramId: projectYearAllocations.annualProgramId,
-      capex: sql<string>`coalesce(sum(${projectYearAllocations.allocationCapex}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${projectYearAllocations.allocationOpex}), 0)::text`,
+      capex: projectYearAllocations.allocationCapex,
+      opex: projectYearAllocations.allocationOpex,
     })
     .from(projectYearAllocations)
-    .where(and(eq(projectYearAllocations.annualPlanId, id), isNull(projectYearAllocations.voidedAt)))
-    .groupBy(projectYearAllocations.annualProgramId);
-  const allocationMap = new Map(
-    allocationRows.map((row) => [
-      row.annualProgramId,
-      { capex: Number(row.capex ?? '0'), opex: Number(row.opex ?? '0') },
-    ]),
-  );
+    .where(and(eq(projectYearAllocations.annualPlanId, id), isNull(projectYearAllocations.voidedAt)));
+  const allocationMap = new Map<string, { capex: number; opex: number }>();
+  for (const row of allocationRows) {
+    const delta = deltaMaps.byAllocation.get(row.id) ?? NO_DELTAS;
+    const current = allocationMap.get(row.annualProgramId) ?? { capex: 0, opex: 0 };
+    current.capex += row.capex + delta.capex;
+    current.opex += row.opex + delta.opex;
+    allocationMap.set(row.annualProgramId, current);
+  }
 
   const continuationIds = programRows
     .map((row) => row.program.prevProgramId)
@@ -197,6 +215,16 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
     strategicPlan: header.strategicPlan,
     programs: programRows.map((row) => {
       const allocated = allocationMap.get(row.program.id) ?? { capex: 0, opex: 0 };
+      const revision = deltaMaps.byProgram.get(row.program.id) ?? NO_DELTAS;
+      const position = revisedProgramBudgetPosition({
+        capexBudget: row.program.capexBudget,
+        opexBudget: row.program.opexBudget,
+        revision,
+        carryInCapex: row.program.carryInCapex,
+        carryInOpex: row.program.carryInOpex,
+        allocatedCapex: allocated.capex,
+        allocatedOpex: allocated.opex,
+      });
       return {
         program: row.program,
         siCode: row.siCode,
@@ -204,17 +232,17 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
         continuationLabel: row.program.prevProgramId
           ? (continuationLabels.get(row.program.prevProgramId) ?? null)
           : null,
-        availability: programAvailability(row.program),
+        availability: {
+          capexAvailable: position.capex.available,
+          opexAvailable: position.opex.available,
+        },
         allocatedCapex: allocated.capex,
         allocatedOpex: allocated.opex,
-        position: programBudgetPosition({
-          capexBudget: row.program.capexBudget,
-          opexBudget: row.program.opexBudget,
-          carryInCapex: row.program.carryInCapex,
-          carryInOpex: row.program.carryInOpex,
-          allocatedCapex: allocated.capex,
-          allocatedOpex: allocated.opex,
-        }),
+        position,
+        revisionCapex: revision.capex,
+        revisionOpex: revision.opex,
+        effectiveCapexBudget: row.program.capexBudget + revision.capex,
+        effectiveOpexBudget: row.program.opexBudget + revision.opex,
       };
     }),
     recurringOps: recurringRows.map((row) => ({
@@ -232,5 +260,9 @@ export async function getAnnualPlanDetail(id: string): Promise<AnnualPlanDetail 
     })),
     categoryOptions: categoryRows.map((row) => ({ value: row.id, label: row.name })),
     suggestedProgramCode: formatEntityCode('program', header.annualPlan.fiscalYear, programRows.length + 1),
+    revisions: {
+      count: revisions.length,
+      awaitingDecision: revisions.filter((row) => row.awaitingDecision).length,
+    },
   };
 }

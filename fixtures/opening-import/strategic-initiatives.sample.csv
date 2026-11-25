@@ -1,4 +1,4 @@
-Code,Name,Owner,Objective,Envelope amount (Rp),Prior program budget consumed (Rp),Notes
-SI-01,Digital service platform,Chief Information Officer,Consolidate citizen-facing services on one platform.,12500000000,3250000000,Signed off with the FY2026 close.
-SI-02,Resilient network,Head of Infrastructure,Modernise the core and distribution network.,8000000000,1800000000,
-SI-03,Data and analytics,Head of Data,Build the portfolio reporting layer.,6000000000,500000000,
+Code,Name,Owner,Objective,Capex envelope (Rp),Opex envelope (Rp),Prior program budget consumed — capex (Rp),Prior program budget consumed — opex (Rp),Notes
+SI-01,Digital service platform,Chief Information Officer,Consolidate citizen-facing services on one platform.,9500000000,3000000000,2200000000,1050000000,Signed off with the FY2026 close.
+SI-02,Resilient network,Head of Infrastructure,Modernise the core and distribution network.,6000000000,2000000000,1800000000,0,
+SI-03,Data and analytics,Head of Data,Build the portfolio reporting layer.,4500000000,1500000000,500000000,0,

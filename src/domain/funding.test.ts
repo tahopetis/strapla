@@ -3,6 +3,7 @@ import {
   allocationRemaining,
   programBudgetPosition,
   projectFundingFlags,
+  revisedProgramBudgetPosition,
 } from './funding';
 
 describe('programBudgetPosition (BR-7)', () => {
@@ -134,5 +135,37 @@ describe('projectFundingFlags', () => {
         totalAllocated: 0,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('revisedProgramBudgetPosition (ADR-0006 §4)', () => {
+  it('uses the effective budget: initial plus the posted revision deltas', () => {
+    const position = revisedProgramBudgetPosition({
+      capexBudget: 1_000,
+      opexBudget: 500,
+      revision: { capex: -200, opex: 100 },
+      carryInCapex: 50,
+      carryInOpex: 0,
+      allocatedCapex: 600,
+      allocatedOpex: 500,
+    });
+    // capex: 1.000 − 200 + 50 carry-in = 850 available, 600 allocated.
+    expect(position.capex).toEqual({ available: 850, unallocated: 250, over: false });
+    // opex: 500 + 100 = 600 available, 500 allocated.
+    expect(position.opex).toEqual({ available: 600, unallocated: 100, over: false });
+  });
+
+  it('flags an over-allocated program after a cut, and never throws', () => {
+    const position = revisedProgramBudgetPosition({
+      capexBudget: 1_000,
+      opexBudget: 0,
+      revision: { capex: -400, opex: 0 },
+      carryInCapex: 0,
+      carryInOpex: 0,
+      allocatedCapex: 1_000,
+      allocatedOpex: 0,
+    });
+    expect(position.capex.unallocated).toBe(-400);
+    expect(position.capex.over).toBe(true);
   });
 });

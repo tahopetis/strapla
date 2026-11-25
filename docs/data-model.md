@@ -12,6 +12,8 @@ erDiagram
   strategic_plans ||--o{ annual_plans : "has"
   strategic_initiatives ||--o{ annual_programs : "funded by (exactly one SI)"
   annual_plans ||--o{ annual_programs : "contains"
+  annual_plans ||--o{ budget_revisions : "revised by"
+  budget_revisions ||--o{ budget_revision_lines : "contains"
   annual_programs ||--o{ annual_programs : "continues (prev_program_id)"
   annual_programs ||--o{ project_year_allocations : "allocates to"
   annual_plans ||--o{ project_year_allocations : "fiscal year of"
@@ -30,7 +32,7 @@ erDiagram
   users ||--o{ audit_entries : "acts as"
 ```
 
-New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_entries` (E12), `spend_categories` (E13). Opening balances (E14) are columns on `strategic_initiatives`, `annual_programs`, `project_year_allocations` and `projects` (see “Opening balances”).
+New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_entries` (E12), `spend_categories` (E13), and `budget_revisions` / `budget_revision_lines` (ADR-0006 §4). Opening balances (E14) are columns on `strategic_initiatives`, `annual_programs`, `project_year_allocations` and `projects`, plus the control-total row in `opening_balance_reconciliations` (see “Opening balances”).
 
 ## Enumerations
 
@@ -41,9 +43,10 @@ New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_en
 | `project_status` | `active`, `cancelled` |
 | `component` | `capex`, `opex` |
 | `settlement_kind` | `current`, `prior_year_opening` (cross-year in-app settlements are derived, not stored) |
+| `budget_revision_entity_type` | `program`, `allocation` (a revision line names the entity it changes) |
 | `carry_over_level` (M4) | `program`, `project_allocation` |
 
-Derived, never stored: commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags.
+Derived, never stored: effective program budget (initial + Σ posted revision deltas), effective allocation (initial + Σ posted de-allocation deltas), commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags.
 
 ## Tables
 
@@ -61,9 +64,11 @@ Derived, never stored: commitment lifecycle (`open` when settled = 0, `partially
 | Table | Key columns | Notes |
 | --- | --- | --- |
 | `strategic_plans` | `id`, `name`, `start_fiscal_year`, `end_fiscal_year`, `status`, timestamps | At most one `active` plan and one `draft` plan at a time (enforced in domain + partial unique index). |
-| `strategic_initiatives` | `id`, `plan_id`, `code`, `name`, `owner`, `objective`, `envelope_amount`, `prior_program_budget_used`, `notes`, void/timestamps | Unique `(plan_id, code)`. `prior_program_budget_used` is the opening-balance layer for the envelope check. |
+| `strategic_initiatives` | `id`, `plan_id`, `code`, `name`, `owner`, `objective`, `envelope_capex`, `envelope_opex`, `prior_program_budget_used_capex`, `prior_program_budget_used_opex`, `notes`, void/timestamps | Unique `(plan_id, code)`. The five-year envelope and the opening-balance prior consumption are held **per component** (ADR-0006 §5); capex and opex never share headroom. `prior_program_budget_used_*` is the opening-balance layer for the BR-2 check, one figure per component. |
 | `annual_plans` | `id`, `plan_id`, `fiscal_year` (unique), `status`, `closed_at`, `closed_by`, `notes`, timestamps | One per fiscal year (BR-3). Status changes and close are audited. |
-| `annual_programs` | `id`, `annual_plan_id`, `si_id`, `prev_program_id` (self FK), `code`, `name`, `capex_budget`, `opex_budget`, `carry_in_capex`, `carry_in_opex`, `notes`, void/timestamps | Unique `(annual_plan_id, code)`. `prev_program_id` is the program continuation link (program thread). Carry-in comes from the prior year's close (or manual FY2026 close). |
+| `annual_programs` | `id`, `annual_plan_id`, `si_id`, `prev_program_id` (self FK), `code`, `name`, `capex_budget`, `opex_budget`, `carry_in_capex`, `carry_in_opex`, `notes`, void/timestamps | Unique `(annual_plan_id, code)`. `prev_program_id` is the program continuation link (program thread). `capex_budget`/`opex_budget` are the **initial** budget: once the annual plan is active they are frozen, and the effective budget is initial + every posted revision delta (derived on read, never stored). Carry-in comes from the prior year's close (or manual FY2026 close). |
+| `budget_revisions` | `id`, `annual_plan_id`, `number`, `revision_date`, `decision_reference`, `reason`, `created_by`, `decided_at`, `decided_by`, timestamps | In-year budget revision header (ADR-0006 §4): numbered per annual plan (rendered `REV-<FY>-<nnn>`), immutable after posting, corrected by a new revision. `decision_reference` is nullable — a revision may be posted before the steering committee decides; a later "record decision" attaches it as metadata only. Only `active` annual plans take revisions. |
+| `budget_revision_lines` | `id`, `revision_id`, `entity_type`, `entity_id`, `component`, `delta` | Signed whole-Rupiah delta, one component per line, never zero. `entity_type = program` changes a program budget; `entity_type = allocation` is a de-allocation (negative). Unique per `(revision_id, entity_type, entity_id, component)`, so a document names each entity once per component. No capex/opex shifts. |
 
 ### Projects and annual slices
 
@@ -89,12 +94,40 @@ The app's first in-app fiscal year is FY2027; FY2026 is closed manually outside 
 
 | Where | Column(s) | Meaning |
 | --- | --- | --- |
-| `strategic_initiatives` | `prior_program_budget_used` | Program budgets already consumed before FY2027 (SI envelope check) |
+| `strategic_initiatives` | `prior_program_budget_used_capex`, `prior_program_budget_used_opex` | Program budgets already consumed before FY2027, **per component** (SI envelope check, ADR-0006 §5) |
 | `annual_programs` (FY2027) | `carry_in_capex`, `carry_in_opex` | Program budget carried forward from the manual FY2026 close |
 | `project_year_allocations` (FY2027) | `carry_in_capex`, `carry_in_opex` | Project allocation carried forward |
 | `projects` | `opening_allocated`, `opening_committed`, `opening_spent` | Lifetime figures before the app: allocated, still-open commitments, actual spend |
+| `opening_balance_reconciliations` | `control_envelope_capex`, `control_envelope_opex`, `control_prior_program_budget_used_capex`, `control_prior_program_budget_used_opex`, `control_program_budgets`, `control_program_carry_in`, `control_project_opening_allocated`, `control_project_opening_committed`, `control_project_opening_spent`, `control_project_full_life_allocated` | The owner's ten spreadsheet control totals for the one-time load, compared with the in-app totals before sign-off. The envelope and prior-consumed controls are per component; the plan-level sign-off itself is `signed_off_at` / `signed_off_by` / `sign_off_reason`. |
 
 Only projects with an allocation in an in-app fiscal year can receive in-app spend and commitments; legacy projects that ended before FY2027 are not modelled inside the app.
+
+## Migration notes
+
+Most migrations are additive; the financial-shape changes for ADR-0006 need a coordinated deploy:
+
+- **`0010` (ADR-0006 §4–5) — budget revisions and the envelope/prior split.** It creates
+  `budget_revisions` and `budget_revision_lines`, adds the per-component figures
+  `strategic_initiatives.envelope_capex` / `envelope_opex` and
+  `prior_program_budget_used_capex` / `prior_program_budget_used_opex`, and splits the opening
+  reconciliation controls into `control_envelope_capex` / `control_envelope_opex` and
+  `control_prior_program_budget_used_capex` / `control_prior_program_budget_used_opex`. The old
+  single columns — `strategic_initiatives.envelope_amount`,
+  `strategic_initiatives.prior_program_budget_used`,
+  `opening_balance_reconciliations.control_envelope` and
+  `opening_balance_reconciliations.control_prior_program_budget_used` — are **dropped**.
+- **The new split columns default to `0` and no automatic split is performed.** The envelope is a
+  policy number, not a derivation from current budgets. Operators must capture the old single
+  figures **before** deploying and re-enter them per component. The strategic-initiative edit form
+  (`/plan/strategic`) and the strategic-initiative opening-import data set are the manual migration
+  path; there is no proportional split.
+- **`0011` — revision-delta read index.** Adds `budget_revision_lines (entity_type, entity_id)`,
+  the lookup used when a plan, program thread or report loads posted deltas; the unique index still
+  leads with `revision_id`, so this is the index for the dominant read.
+- Revisions apply only to `active` annual plans (drafts are edited directly, closed plans are
+  read-only). The first revision-enabled year is FY2027 and the baseline is the budget at rollout,
+  so a closed year's effective budget equals its initial budget and a draft plan's revisions list is
+  empty.
 
 ## Custom fields (issue #46)
 
@@ -167,8 +200,8 @@ Domain functions in `src/domain` implement these; database constraints block the
 | INV-4 | Sum of commitment amounts (not voided) per project year allocation, plus other commitments of the same project across years, may exceed contract value only with a flag (BR-8, never blocks). |
 | INV-5 | Settlement per commitment ≤ commitment amount; settlement per spend entry ≤ spend amount. |
 | INV-6 | `remaining = allocation + carry_in − open commitments − current-year spend`, per component, where cross-year settlements and `prior_year_opening` spends are excluded from current-year spend. |
-| INV-7 | Program unallocated = `budget + carry_in − allocated`, per component; allocations exceeding available are flagged (BR-7). |
-| INV-8 | SI envelope check = `prior_program_budget_used + Σ program budgets (in-app) ≤ envelope`; exceeding is flagged (BR-2). |
+| INV-7 | Program unallocated = effective budget (initial budget + Σ posted revision deltas) + carry_in − effective allocations (initial allocation + Σ posted de-allocation deltas), per component; allocations exceeding available are flagged (BR-7). |
+| INV-8 | SI envelope check = prior program budget consumed + Σ **effective** program budgets ≤ the component's envelope, **per component** (capex and opex never share headroom); exceeding is flagged, never blocked (BR-2, ADR-0006 §5). |
 | INV-9 | One annual plan per fiscal year; plans exist only within the strategic plan horizon (BR-1, BR-3). |
 | INV-10 | One project year allocation per project per active fiscal year; its program's SI must match the project's originating SI (BR-6). |
 | INV-11 | A fiscal year that is `closed` blocks mutations except audited administrator corrections and settlement lifecycle events. |
@@ -180,11 +213,11 @@ Domain functions in `src/domain` implement these; database constraints block the
 
 | Report | Level | Figures |
 | --- | --- | --- |
-| SI five-year view | SI | Envelope, prior consumed, cumulative program budget, allocations, commitments, spend, remaining headroom, per component + combined |
-| Annual plan | SI → program | Budget, carry-in, allocated, unallocated, commitments, spend, flags |
-| Project register | project → allocation | Full-life figures (allocated, approved, submitted, final), per-year allocation/commitments/spend, lifetime committed/spent, flags |
-| Budget versus actual | portfolio/SI/program/project/year | Budget, commitments, spend, cross-year settlements line, remaining, per component + combined |
-| Over-budget flags | all levels | The seven flags in ADR-0003 §6 |
+| SI five-year view | SI | Envelope, prior consumed, effective program budget, allocations, commitments, spend, consumed and headroom — capex and opex as separate column groups, never a shared headroom |
+| Annual plan | SI → program | Initial budget, posted revisions, effective budget, carry-in, effective allocations, unallocated, commitments, spend, flags — per component |
+| Project register | project → allocation | Full-life figures (allocated, approved, submitted, final), effective per-year allocation/commitments/spend, lifetime committed/spent, flags |
+| Budget versus actual | portfolio/SI/program/project/year | Effective budget versus commitments, spend, cross-year settlements line, remaining, per component |
+| Over-budget flags | all levels | The seven flags in ADR-0003 §6. The BR-2 envelope flag is per component |
 
 All reports export as CSV/XLSX and have a print-friendly route. Custom fields appear as extra
 columns on screen and in the export when selected. Multiple custom-field filters narrow the rows on

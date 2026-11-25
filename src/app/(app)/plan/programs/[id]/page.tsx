@@ -59,7 +59,8 @@ export default async function ProgramThreadPage({ params }: { params: Promise<{ 
                   <th className={th}>Fiscal year</th>
                   <th className={th}>Program</th>
                   <th className={th}>Plan status</th>
-                  <th className={th}>Budget (capex / opex)</th>
+                  <th className={th}>Effective budget (capex / opex)</th>
+                  <th className={th}>Revisions (capex / opex)</th>
                   <th className={th}>Carry-in (capex / opex)</th>
                   <th className={th}>Allocated (capex / opex)</th>
                   <th className={th}>Unallocated (capex / opex)</th>
@@ -91,7 +92,11 @@ export default async function ProgramThreadPage({ params }: { params: Promise<{ 
                         <StatusBadge status={entry.annualPlan.status} />
                       </td>
                       <td className="py-3 pr-3 whitespace-nowrap">
-                        <Money value={entry.program.capexBudget} /> / <Money value={entry.program.opexBudget} />
+                        <Money value={entry.program.capexBudget + entry.revisionCapex} /> /{' '}
+                        <Money value={entry.program.opexBudget + entry.revisionOpex} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={entry.revisionCapex} /> / <Money value={entry.revisionOpex} />
                       </td>
                       <td className="py-3 pr-3 whitespace-nowrap">
                         <Money value={entry.program.carryInCapex} /> / <Money value={entry.program.carryInOpex} />
@@ -183,7 +188,7 @@ export default async function ProgramThreadPage({ params }: { params: Promise<{ 
         >
           <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <dt className="text-slate-500">Capex available</dt>
+              <dt className="text-slate-500">Capex available (effective budget + carry-in)</dt>
               <dd className="mt-1 font-medium">
                 <Money value={current.position.capex.available} />
               </dd>
@@ -195,7 +200,7 @@ export default async function ProgramThreadPage({ params }: { params: Promise<{ 
               </dd>
             </div>
             <div>
-              <dt className="text-slate-500">Opex available</dt>
+              <dt className="text-slate-500">Opex available (effective budget + carry-in)</dt>
               <dd className="mt-1 font-medium">
                 <Money value={current.position.opex.available} />
               </dd>
@@ -207,6 +212,24 @@ export default async function ProgramThreadPage({ params }: { params: Promise<{ 
               </dd>
             </div>
           </dl>
+          <p className="mt-3 text-sm text-slate-600">
+            Effective budget: capex{' '}
+            <Money value={current.program.capexBudget + current.revisionCapex} /> (initial{' '}
+            <Money value={current.program.capexBudget} />, revisions{' '}
+            <Money value={current.revisionCapex} />) · opex{' '}
+            <Money value={current.program.opexBudget + current.revisionOpex} /> (initial{' '}
+            <Money value={current.program.opexBudget} />, revisions{' '}
+            <Money value={current.revisionOpex} />).
+          </p>
+          {current.annualPlan.status === 'active' ? (
+            <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              This annual plan is active, so the program budget is frozen. A budget change is a{' '}
+              <Link href={`/plan/annual/${current.annualPlan.id}/revisions`} className="underline">
+                posted budget revision
+              </Link>
+              ; name, notes and the strategic initiative stay editable on the annual plan page.
+            </p>
+          ) : null}
           <p className="mt-4 text-sm text-slate-600">
             {previous ? (
               <>

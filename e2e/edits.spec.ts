@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { rp } from './support/money';
+import { createProgramFixture } from './support/programs';
 
 /**
  * Edits (tier T2): the audited update paths for an annual program, a recurring
@@ -36,14 +37,16 @@ const createProgram = async (
   page: Page,
   input: ProgramRef & { capex: string; opex: string },
 ): Promise<void> => {
-  const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await form.locator('input[name="code"]').fill(input.code);
-  await form.locator('input[name="name"]').fill(input.name);
-  await form.locator('select[name="siId"]').selectOption({ label: 'SI-01 · Digital Workplace' });
-  await form.locator('input[name="capexBudget"]').fill(input.capex);
-  await form.locator('input[name="opexBudget"]').fill(input.opex);
-  await form.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText(`Annual program ${input.code} created.`)).toBeVisible();
+  await createProgramFixture({
+    fiscalYear: FY,
+    siCode: 'SI-01',
+    code: input.code,
+    name: input.name,
+    capex: Number(input.capex),
+    opex: Number(input.opex),
+  });
+  await page.reload();
+  await expect(page.getByText(`${input.code} · ${input.name}`).first()).toBeVisible();
 };
 
 const createProject = async (page: Page, program: ProgramRef, project: ProjectRef): Promise<void> => {
@@ -143,13 +146,17 @@ test('edits a program in the open fiscal year @t2', async ({ page }) => {
   const form = card
     .locator('form')
     .filter({ has: page.getByRole('button', { name: 'Save changes' }) });
+  // Activation freezes the budget inputs; a budget change is a revision now.
+  await expect(
+    form.locator('input[name="capexBudget"]:not([type="hidden"])'),
+  ).toHaveCount(0);
+  await expect(card.getByText(/Budgets are frozen while the plan is active/)).toBeVisible();
   await form.locator('input[name="name"]').fill('Edits program (revised)');
-  await form.locator('input[name="capexBudget"]').fill('25000000');
-  await form.locator('textarea[name="reason"]').fill('Revised by the edit test.');
+  await form.locator('textarea[name="reason"]').fill('Name corrected by the edit test.');
   await form.getByRole('button', { name: 'Save changes' }).click();
 
   await expect(page.getByText('Annual program EDITS-PRG-1 updated.')).toBeVisible();
-  // the new name is the card title and the new budget is what the card reports
+  // the new name is the card title; the budget is unchanged because it is frozen
   await expect(
     page.getByRole('heading', { name: 'EDITS-PRG-1 · Edits program (revised)' }),
   ).toBeVisible();
@@ -157,9 +164,9 @@ test('edits a program in the open fiscal year @t2', async ({ page }) => {
     cardValue(
       page,
       'EDITS-PRG-1 · Edits program (revised)',
-      'Capex available (budget + carry-in)',
+      'Capex available (effective budget + carry-in)',
     ),
-  ).toHaveText(rp(25000000));
+  ).toHaveText(rp(20000000));
 });
 
 test('edits a recurring ops item in the open fiscal year @t2', async ({ page }) => {

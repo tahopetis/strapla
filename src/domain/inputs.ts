@@ -4,7 +4,7 @@ import {
   CUSTOM_FIELD_TYPES,
   parseCustomFieldValue,
 } from './custom-fields';
-import { parseRupiah } from './money';
+import { parseRupiah, type Rupiah } from './money';
 
 /**
  * Zod schemas for form input (ADR-0001: Zod is shared by forms and the domain
@@ -75,6 +75,45 @@ const optionalRupiah = (label: string) =>
       }
     });
 
+/**
+ * Parse a signed whole-Rupiah amount as typed into a budget revision line: an
+ * optional leading minus marks a cut, and the magnitude follows the same
+ * grouping rules as every other money input ("1.234.567").
+ */
+export function parseSignedRupiah(input: string): Rupiah {
+  const trimmed = input.trim();
+  const negative = trimmed.startsWith('-');
+  const magnitude = negative ? trimmed.slice(1) : trimmed;
+  const value = parseRupiah(magnitude);
+  return negative ? -value : value;
+}
+
+/**
+ * A revision delta is signed (negative = cut, positive = addition) and must
+ * never be zero: a zero line has no meaning and usually hides a mistake.
+ */
+const requiredSignedRupiah = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required.`)
+    .transform((value, ctx) => {
+      try {
+        const amount = parseSignedRupiah(value);
+        if (amount === 0) {
+          ctx.addIssue({ code: 'custom', message: `${label} must not be zero.` });
+          return z.NEVER;
+        }
+        return amount;
+      } catch {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${label} must be a whole Rupiah amount; prefix a cut with a minus sign (for example -1.234.567).`,
+        });
+        return z.NEVER;
+      }
+    });
+
 export const idSchema = z.uuid('The record id is invalid.');
 export const reasonSchema = requiredText('Reason for change', 1000);
 
@@ -108,10 +147,16 @@ const initiativeFields = z.object({
   name: requiredText('Initiative name', 160),
   owner: optionalText(160),
   objective: optionalText(),
-  envelopeAmount: requiredRupiah('Envelope'),
-  priorProgramBudgetUsed: optionalRupiah('Prior program budget consumed').transform(
-    (value) => value ?? 0,
-  ),
+  /**
+   * The SI envelope and the prior-consumed opening figure are held per
+   * component (ADR-0006 §5). Both figures of each pair are required: the
+   * migration from the old single numbers is explicit, never a proportional
+   * split.
+   */
+  envelopeCapex: requiredRupiah('Capex envelope'),
+  envelopeOpex: requiredRupiah('Opex envelope'),
+  priorCapex: requiredRupiah('Prior program budget consumed (capex)'),
+  priorOpex: requiredRupiah('Prior program budget consumed (opex)'),
   notes: optionalText(),
 });
 
@@ -402,8 +447,14 @@ export type CloseFiscalYearInput = z.infer<typeof closeFiscalYearSchema>;
 // ---------------------------------------------------------------- opening balances (W3b)
 
 const openingControlFields = {
-  controlEnvelope: requiredRupiah('Total envelope'),
-  controlPriorProgramBudgetUsed: requiredRupiah('Prior program budget consumed'),
+  controlEnvelopeCapex: requiredRupiah('Total envelope (capex)'),
+  controlEnvelopeOpex: requiredRupiah('Total envelope (opex)'),
+  controlPriorProgramBudgetUsedCapex: requiredRupiah(
+    'Prior program budget consumed (capex)',
+  ),
+  controlPriorProgramBudgetUsedOpex: requiredRupiah(
+    'Prior program budget consumed (opex)',
+  ),
   controlProgramBudgets: requiredRupiah('In-app program budgets'),
   controlProgramCarryIn: requiredRupiah('Program carry-in'),
   controlProjectOpeningAllocated: requiredRupiah('Project opening allocated'),
@@ -427,6 +478,47 @@ export type OpeningReconciliationSaveInput = z.infer<typeof openingReconciliatio
 export type OpeningReconciliationSignOffInput = z.infer<
   typeof openingReconciliationSignOffSchema
 >;
+
+// ---------------------------------------------------------------- budget revisions (ADR-0006 §4 / #112)
+
+/**
+ * A revision line names its entity kind rather than a foreign key, because it
+ * points at either an annual program or a project year allocation. The action
+ * resolves the entity and validates the switch floor.
+ */
+const revisionEntityTypeSchema = z.enum(['program', 'allocation']);
+
+export const budgetRevisionLineSchema = z.object({
+  entityType: revisionEntityTypeSchema,
+  entityId: idSchema,
+  component: componentSchema,
+  delta: requiredSignedRupiah('Line delta'),
+});
+
+/**
+ * Posting a revision: the header (the per-plan number is assigned by the
+ * action) plus at least one line. `decisionReference` may be omitted when the
+ * formal decision does not exist yet — such a revision shows as awaiting the
+ * decision — and is attached later as metadata.
+ */
+export const budgetRevisionCreateSchema = z.object({
+  annualPlanId: idSchema,
+  revisionDate: isoDateSchema,
+  decisionReference: optionalText(160),
+  reason: reasonSchema,
+  lines: z.array(budgetRevisionLineSchema).min(1, 'Add at least one revision line.'),
+});
+
+/** Attach the formal decision to a posted revision: metadata only, lines stay frozen. */
+export const budgetRevisionDecisionSchema = z.object({
+  id: idSchema,
+  decisionReference: requiredText('Decision reference', 160),
+  reason: reasonSchema,
+});
+
+export type BudgetRevisionLineInput = z.infer<typeof budgetRevisionLineSchema>;
+export type BudgetRevisionCreateInput = z.infer<typeof budgetRevisionCreateSchema>;
+export type BudgetRevisionDecisionInput = z.infer<typeof budgetRevisionDecisionSchema>;
 
 // ---------------------------------------------------------------- custom fields (#46)
 

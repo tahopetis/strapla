@@ -11,7 +11,9 @@ import {
   type AnnualProgram,
   type StrategicInitiative,
 } from '@/db/schema';
-import { programBudgetPosition, type ProgramBudgetPosition } from '@/domain/funding';
+import { revisedProgramBudgetPosition, type ProgramBudgetPosition } from '@/domain/funding';
+import { NO_DELTAS } from '@/domain/revisions';
+import { getRevisionDeltasForEntities, type RevisionDeltaMaps } from './revision-queries';
 
 /** Program thread queries (M4 #22): continuation chains across fiscal years. */
 
@@ -29,6 +31,9 @@ export interface ProgramThreadEntry {
   allocatedCapex: number;
   allocatedOpex: number;
   position: ProgramBudgetPosition;
+  /** Posted budget revision deltas per component (ADR-0006 §4). */
+  revisionCapex: number;
+  revisionOpex: number;
   projectCount: number;
   carryOver: ThreadCarryOver;
 }
@@ -62,14 +67,21 @@ async function loadThreadData(programIds: string[]): Promise<{
   allocations: Map<string, { capex: number; opex: number }>;
   projectCounts: Map<string, number>;
   carryOvers: Map<string, ThreadCarryOver>;
+  revisions: RevisionDeltaMaps;
 }> {
   if (programIds.length === 0) {
-    return { allocations: new Map(), projectCounts: new Map(), carryOvers: new Map() };
+    return {
+      allocations: new Map(),
+      projectCounts: new Map(),
+      carryOvers: new Map(),
+      revisions: { byProgram: new Map(), byAllocation: new Map() },
+    };
   }
   const db = getDb();
 
   const allocationRows = await db
     .select({
+      id: projectYearAllocations.id,
       programId: projectYearAllocations.annualProgramId,
       capex: projectYearAllocations.allocationCapex,
       opex: projectYearAllocations.allocationOpex,
@@ -81,11 +93,18 @@ async function loadThreadData(programIds: string[]): Promise<{
         isNull(projectYearAllocations.voidedAt),
       ),
     );
+  // Effective allocations and budgets: the thread shows the money after every
+  // posted revision (#112, ADR-0006 §4), not the initial figures.
+  const revisions = await getRevisionDeltasForEntities({
+    programIds,
+    allocationIds: allocationRows.map((row) => row.id),
+  });
   const allocations = new Map<string, { capex: number; opex: number }>();
   for (const row of allocationRows) {
+    const delta = revisions.byAllocation.get(row.id) ?? NO_DELTAS;
     const current = allocations.get(row.programId) ?? { capex: 0, opex: 0 };
-    current.capex += row.capex;
-    current.opex += row.opex;
+    current.capex += row.capex + delta.capex;
+    current.opex += row.opex + delta.opex;
     allocations.set(row.programId, current);
   }
 
@@ -128,7 +147,7 @@ async function loadThreadData(programIds: string[]): Promise<{
     carryOvers.set(row.targetEntityId, current);
   }
 
-  return { allocations, projectCounts, carryOvers };
+  return { allocations, projectCounts, carryOvers, revisions };
 }
 
 function buildEntry(
@@ -136,9 +155,11 @@ function buildEntry(
   data: Awaited<ReturnType<typeof loadThreadData>>,
 ): ProgramThreadEntry {
   const allocated = data.allocations.get(loaded.program.id) ?? { capex: 0, opex: 0 };
-  const position = programBudgetPosition({
+  const revision = data.revisions.byProgram.get(loaded.program.id) ?? NO_DELTAS;
+  const position = revisedProgramBudgetPosition({
     capexBudget: loaded.program.capexBudget,
     opexBudget: loaded.program.opexBudget,
+    revision,
     carryInCapex: loaded.program.carryInCapex,
     carryInOpex: loaded.program.carryInOpex,
     allocatedCapex: allocated.capex,
@@ -151,6 +172,8 @@ function buildEntry(
     allocatedCapex: allocated.capex,
     allocatedOpex: allocated.opex,
     position,
+    revisionCapex: revision.capex,
+    revisionOpex: revision.opex,
     projectCount: data.projectCounts.get(loaded.program.id) ?? 0,
     carryOver: data.carryOvers.get(loaded.program.id) ?? {
       capex: 0,

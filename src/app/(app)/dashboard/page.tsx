@@ -7,14 +7,16 @@ import {
   annualPlans,
   annualPrograms,
   projectYearAllocations,
-  strategicInitiatives,
+  type StrategicPlan,
 } from '@/db/schema';
+import { NO_DELTAS } from '@/domain/revisions';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { listAnnualPlans } from '@/server/plan/annual-queries';
 import { loadExecutionAggregates } from '@/server/plan/execution-aggregates';
 import { listProgramThreads } from '@/server/plan/program-queries';
 import { getAnnualPlanReport, getProjectRegisterReport } from '@/server/plan/report-queries';
-import { getCurrentStrategicPlan } from '@/server/plan/queries';
+import { getCurrentStrategicPlan, getPlanOverview } from '@/server/plan/queries';
+import { getRevisionDeltasForEntities } from '@/server/plan/revision-queries';
 import { listAuditEntries } from '@/server/admin/queries';
 
 export const dynamic = 'force-dynamic';
@@ -26,55 +28,63 @@ function num(value: string | null | undefined): number {
   return Number(value ?? 0);
 }
 
-async function loadPortfolio(planId: string) {
+async function loadPortfolio(plan: StrategicPlan) {
   const db = getDb();
-  const notVoidedInf = and(
-    eq(strategicInitiatives.planId, planId),
-    isNull(strategicInitiatives.voidedAt),
-  );
-  const [envelopeRow] = await db
-    .select({ value: sql<string>`coalesce(sum(${strategicInitiatives.envelopeAmount}), 0)::text` })
-    .from(strategicInitiatives)
-    .where(notVoidedInf);
   const [programRow] = await db
     .select({
-      capex: sql<string>`coalesce(sum(${annualPrograms.capexBudget}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${annualPrograms.opexBudget}), 0)::text`,
       carryCapex: sql<string>`coalesce(sum(${annualPrograms.carryInCapex}), 0)::text`,
       carryOpex: sql<string>`coalesce(sum(${annualPrograms.carryInOpex}), 0)::text`,
     })
     .from(annualPrograms)
     .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
-    .where(and(eq(annualPlans.planId, planId), isNull(annualPrograms.voidedAt)));
-  const [allocationRow] = await db
+    .where(and(eq(annualPlans.planId, plan.id), isNull(annualPrograms.voidedAt)));
+  const allocationRows = await db
     .select({
-      capex: sql<string>`coalesce(sum(${projectYearAllocations.allocationCapex}), 0)::text`,
-      opex: sql<string>`coalesce(sum(${projectYearAllocations.allocationOpex}), 0)::text`,
-      carryCapex: sql<string>`coalesce(sum(${projectYearAllocations.carryInCapex}), 0)::text`,
-      carryOpex: sql<string>`coalesce(sum(${projectYearAllocations.carryInOpex}), 0)::text`,
+      id: projectYearAllocations.id,
+      capex: projectYearAllocations.allocationCapex,
+      opex: projectYearAllocations.allocationOpex,
+      carryCapex: projectYearAllocations.carryInCapex,
+      carryOpex: projectYearAllocations.carryInOpex,
     })
     .from(projectYearAllocations)
     .innerJoin(annualPlans, eq(projectYearAllocations.annualPlanId, annualPlans.id))
-    .where(and(eq(annualPlans.planId, planId), isNull(projectYearAllocations.voidedAt)));
+    .where(and(eq(annualPlans.planId, plan.id), isNull(projectYearAllocations.voidedAt)));
 
-  const [execution, plans, threads, recentAudit, annualReport, projectReport] = await Promise.all([
-    loadExecutionAggregates(planId),
-    listAnnualPlans(planId),
-    listProgramThreads(planId),
-    listAuditEntries({ limit: 5 }),
-    getAnnualPlanReport(planId),
-    getProjectRegisterReport(planId),
-  ]);
+  const [execution, plans, threads, recentAudit, annualReport, projectReport, overview, deltas] =
+    await Promise.all([
+      loadExecutionAggregates(plan.id),
+      listAnnualPlans(plan.id),
+      listProgramThreads(plan.id),
+      listAuditEntries({ limit: 5 }),
+      getAnnualPlanReport(plan.id),
+      getProjectRegisterReport(plan.id),
+      getPlanOverview(plan),
+      getRevisionDeltasForEntities({
+        allocationIds: allocationRows.map((row) => row.id),
+      }),
+    ]);
 
-  const envelope = num(envelopeRow?.value);
-  const programCapex = num(programRow?.capex);
-  const programOpex = num(programRow?.opex);
+  // Effective budgets and allocations: initial amount plus posted revision
+  // deltas. Carry-in stays a separate input — program money available is
+  // effective budget + carry-in, never one folded figure (ADR-0006 §6).
+  const capexEnvelope = overview.envelopeTotals.capex;
+  const opexEnvelope = overview.envelopeTotals.opex;
+  const programCapex = capexEnvelope.programs;
+  const programOpex = opexEnvelope.programs;
   const programCarryCapex = num(programRow?.carryCapex);
   const programCarryOpex = num(programRow?.carryOpex);
-  const allocationCapex = num(allocationRow?.capex);
-  const allocationOpex = num(allocationRow?.opex);
-  const allocationCarryCapex = num(allocationRow?.carryCapex);
-  const allocationCarryOpex = num(allocationRow?.carryOpex);
+
+  let allocationCapex = 0;
+  let allocationOpex = 0;
+  let allocationCarryCapex = 0;
+  let allocationCarryOpex = 0;
+  for (const allocation of allocationRows) {
+    const delta = deltas.byAllocation.get(allocation.id) ?? NO_DELTAS;
+    allocationCapex += allocation.capex + delta.capex;
+    allocationOpex += allocation.opex + delta.opex;
+    allocationCarryCapex += allocation.carryCapex;
+    allocationCarryOpex += allocation.carryOpex;
+  }
 
   const availableCapex = programCapex + programCarryCapex;
   const availableOpex = programOpex + programCarryOpex;
@@ -97,8 +107,14 @@ async function loadPortfolio(planId: string) {
   const remainingTotal = remainingCapex + remainingOpex;
 
   return {
-    envelope,
-    programBudget: availableCapex + availableOpex,
+    envelopeCapex: capexEnvelope.envelope,
+    envelopeOpex: opexEnvelope.envelope,
+    envelopeCapexConsumed: capexEnvelope.consumed,
+    envelopeOpexConsumed: opexEnvelope.consumed,
+    envelopeCapexRemaining: capexEnvelope.remaining,
+    envelopeOpexRemaining: opexEnvelope.remaining,
+    effectiveBudget: programCapex + programOpex,
+    carryIn: programCarryCapex + programCarryOpex,
     allocated: allocatedCapex + allocatedOpex,
     openCommitments: openCommitmentTotal,
     spend: spendTotal,
@@ -160,7 +176,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const portfolio = await loadPortfolio(plan.id);
+  const portfolio = await loadPortfolio(plan);
   const currentYear = portfolio.plans.find((row) => row.annualPlan.status === 'active');
   const closedYear = portfolio.plans.find((row) => row.annualPlan.status === 'closed');
 
@@ -188,9 +204,41 @@ export default async function DashboardPage() {
       />
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Envelope" value={<Money value={portfolio.envelope} />} />
-        <Stat label="Program budget + carry-in" value={<Money value={portfolio.programBudget} />} />
-        <Stat label="Allocated + carry-in" value={<Money value={portfolio.allocated} />} />
+        <Stat
+          label="Capex envelope"
+          value={<Money value={portfolio.envelopeCapex} />}
+          hint={
+            <>
+              <Money value={portfolio.envelopeCapexConsumed} /> consumed ·{' '}
+              <Money value={portfolio.envelopeCapexRemaining} /> remaining
+            </>
+          }
+        />
+        <Stat
+          label="Opex envelope"
+          value={<Money value={portfolio.envelopeOpex} />}
+          hint={
+            <>
+              <Money value={portfolio.envelopeOpexConsumed} /> consumed ·{' '}
+              <Money value={portfolio.envelopeOpexRemaining} /> remaining
+            </>
+          }
+        />
+        <Stat
+          label="Effective budget"
+          value={<Money value={portfolio.effectiveBudget} />}
+          hint="Initial budget plus posted budget revisions"
+        />
+        <Stat
+          label="Carry-in received"
+          value={<Money value={portfolio.carryIn} />}
+          hint="Separate input: available = effective budget + carry-in"
+        />
+        <Stat
+          label="Allocated"
+          value={<Money value={portfolio.allocated} />}
+          hint="Effective allocations plus allocation carry-in"
+        />
         <Stat
           label="Open commitments"
           value={<Money value={portfolio.openCommitments} />}
@@ -213,7 +261,7 @@ export default async function DashboardPage() {
       <section className="grid gap-6 lg:grid-cols-2">
         <Card
           title="Plan versus execution"
-          description="Capex and opex across the plan; remaining follows ADR-0003 (open commitments are not carry-over)."
+          description="Effective budget plus carry-in, per component; remaining follows ADR-0003 (open commitments are not carry-over)."
         >
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -252,7 +300,9 @@ export default async function DashboardPage() {
             </table>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Cross-year settlement portions <Money value={portfolio.crossYear} /> and prior-year opening payments{' '}
+            Effective budget is the initial budget plus posted revisions; available adds carry-in and
+            allocated includes allocation carry-in. Cross-year settlement portions{' '}
+            <Money value={portfolio.crossYear} /> and prior-year opening payments{' '}
             <Money value={portfolio.priorOpening} /> are excluded from the current-year remaining.
           </p>
         </Card>

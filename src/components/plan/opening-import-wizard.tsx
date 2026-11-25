@@ -10,7 +10,8 @@ const DATA_SETS: Array<{ value: OpeningDataSetId; label: string; description: st
   {
     value: 'strategic-initiatives',
     label: 'Strategic initiatives',
-    description: 'Code, name, owner, objective, envelope and prior program budget consumed.',
+    description:
+      'Code, name, owner, objective, capex/opex envelope and prior program budget consumed.',
   },
   {
     value: 'annual-programs',

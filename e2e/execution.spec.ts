@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { rp } from './support/money';
+import { createProgramFixture } from './support/programs';
 
 /**
  * Execution (tier T2): the commitment and spend lifecycle on a fresh FY2028
@@ -45,15 +46,18 @@ const createProgram = async (
   page: Page,
   program: ProgramRef,
   siLabel = 'SI-01 · Digital Workplace',
+  year = FY,
 ): Promise<void> => {
-  const form = page.locator('form').filter({ has: page.getByRole('button', { name: 'Add program' }) });
-  await form.locator('input[name="code"]').fill(program.code);
-  await form.locator('input[name="name"]').fill(program.name);
-  await form.locator('select[name="siId"]').selectOption({ label: siLabel });
-  await form.locator('input[name="capexBudget"]').fill('30000000');
-  await form.locator('input[name="opexBudget"]').fill('0');
-  await form.getByRole('button', { name: 'Add program' }).click();
-  await expect(page.getByText(`Annual program ${program.code} created.`)).toBeVisible();
+  await createProgramFixture({
+    fiscalYear: year,
+    siCode: siLabel.split(' · ')[0] ?? 'SI-01',
+    code: program.code,
+    name: program.name,
+    capex: 30_000_000,
+    opex: 0,
+  });
+  await page.reload();
+  await expect(page.getByText(`${program.code} · ${program.name}`).first()).toBeVisible();
 };
 
 const createProject = async (
@@ -395,7 +399,10 @@ test('settles an FY2028 commitment from FY2029 without moving either year @t2', 
     .filter({ has: page.getByRole('button', { name: 'Add initiative' }) });
   await initiativeForm.locator('input[name="code"]').fill(initiative.code);
   await initiativeForm.locator('input[name="name"]').fill(initiative.name);
-  await initiativeForm.locator('input[name="envelopeAmount"]').fill('500000000');
+  await initiativeForm.locator('input[name="envelopeCapex"]').fill('500000000');
+  await initiativeForm.locator('input[name="envelopeOpex"]').fill('0');
+  await initiativeForm.locator('input[name="priorCapex"]').fill('0');
+  await initiativeForm.locator('input[name="priorOpex"]').fill('0');
   await page.getByRole('button', { name: 'Add initiative' }).click();
   await expect(page.getByText(`Strategic initiative ${initiative.code} created.`)).toBeVisible();
   const siLabel = `${initiative.code} · ${initiative.name}`;
@@ -403,9 +410,9 @@ test('settles an FY2028 commitment from FY2029 without moving either year @t2', 
   // both fiscal years must be open: the project owns one allocation per year
   await ensureOpenYear(page, NEXT_FY);
   await openAnnualPlan(page, FY);
-  await createProgram(page, program2028, siLabel);
+  await createProgram(page, program2028, siLabel, FY);
   await openAnnualPlan(page, NEXT_FY);
-  await createProgram(page, program2029, siLabel);
+  await createProgram(page, program2029, siLabel, NEXT_FY);
   await createProject(page, program2028, project, { siCode: initiative.code, start: FY, end: NEXT_FY });
   await openProject(page, project);
   await addAllocation(page, program2028, { capex: '20000000', opex: '0' });

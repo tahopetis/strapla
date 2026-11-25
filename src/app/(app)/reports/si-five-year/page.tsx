@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Fragment } from 'react';
 import {
   CustomFieldCells,
   CustomFieldFilterForm,
@@ -18,6 +19,26 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'SI five-year view' };
 
 const th = 'py-2 pr-3 text-left text-xs uppercase tracking-wide text-slate-500';
+
+/**
+ * The component group of the view (ADR-0006 §5). Every figure is repeated for
+ * capex and opex so the two envelopes never share headroom.
+ */
+const COMPONENT_COLUMNS = [
+  'Envelope',
+  'Prior consumed',
+  'Program budgets',
+  'Allocated',
+  'Committed',
+  'Spent',
+  'Consumed',
+  'Headroom',
+  'Status',
+] as const;
+
+function componentHeader(component: 'Capex' | 'Opex'): string[] {
+  return COMPONENT_COLUMNS.map((column) => `${component} ${column.toLowerCase()}`);
+}
 
 export default async function SiFiveYearPage({
   searchParams,
@@ -51,6 +72,10 @@ export default async function SiFiveYearPage({
           matchesAllCustomFieldFilters(group?.values.get(row.initiative.id), filters),
         )
       : report.rows;
+  const components = [
+    ['capex', report.totals.capex],
+    ['opex', report.totals.opex],
+  ] as const;
 
   return (
     <ReportShell
@@ -64,8 +89,10 @@ export default async function SiFiveYearPage({
     >
       <ReportNote>
         Committed and spent are the in-app execution figures: fiscal-year commitments and actual spend
-        entries (including cross-year settlements of earlier-year commitments). Consumed = prior program
-        budget consumed + in-app program budgets; headroom is the envelope remaining (BR-2).
+        entries (including cross-year settlements of earlier-year commitments). Program budgets are
+        effective: the initial budget plus every posted budget revision. Consumed = prior program budget
+        consumed + effective program budgets; headroom is the envelope remaining for that component
+        (BR-2). Capex and opex never share headroom.
       </ReportNote>
 
       {fields.length > 0 ? (
@@ -79,21 +106,25 @@ export default async function SiFiveYearPage({
         </div>
       ) : null}
 
-      <Card title="Strategic initiatives" description="Envelope, consumption and headroom across the five-year horizon.">
+      <Card
+        title="Strategic initiatives"
+        description="Envelope, consumption and headroom per component across the five-year horizon."
+      >
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-xs">
             <thead>
               <tr>
                 <th className={th}>Initiative</th>
-                <th className={th}>Envelope</th>
-                <th className={th}>Prior consumed</th>
-                <th className={th}>Program budgets</th>
-                <th className={th}>Allocations</th>
-                <th className={th}>Committed</th>
-                <th className={th}>Spent</th>
-                <th className={th}>Consumed</th>
-                <th className={th}>Headroom</th>
-                <th className={th}>Status</th>
+                {componentHeader('Capex').map((header) => (
+                  <th key={header} className={th}>
+                    {header}
+                  </th>
+                ))}
+                {componentHeader('Opex').map((header) => (
+                  <th key={header} className={th}>
+                    {header}
+                  </th>
+                ))}
                 <CustomFieldHeaderCells fields={visibleFields} className={th} />
               </tr>
             </thead>
@@ -104,37 +135,48 @@ export default async function SiFiveYearPage({
                     <p className="font-medium">{row.initiative.code}</p>
                     <p className="text-slate-600">{row.initiative.name}</p>
                   </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.initiative.envelopeAmount} />
-                  </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.initiative.priorProgramBudgetUsed} />
-                  </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.programCapex + row.programOpex} />
-                  </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.allocationCapex + row.allocationOpex} />
-                  </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.commitmentCapex + row.commitmentOpex} />
-                  </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.spendCapex + row.spendOpex} />
-                  </td>
-                  <td className="py-3 pr-3 whitespace-nowrap">
-                    <Money value={row.consumed} />
-                  </td>
-                  <td className={`py-3 pr-3 whitespace-nowrap ${row.over ? 'text-red-700' : ''}`}>
-                    <Money value={row.headroom} />
-                  </td>
-                  <td className="py-3">
-                    {row.over ? (
-                      <Badge tone="danger">over envelope</Badge>
-                    ) : (
-                      <Badge tone="success">within</Badge>
-                    )}
-                  </td>
+                  {(
+                    [
+                      ['capex', row.capex],
+                      ['opex', row.opex],
+                    ] as const
+                  ).map(([key, value]) => (
+                    <Fragment key={key}>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.envelope} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.priorConsumed} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.programBudget} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.allocation} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.commitment} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.spend} />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={value.consumed} />
+                      </td>
+                      <td
+                        className={`py-3 pr-3 whitespace-nowrap ${value.over ? 'text-red-700' : ''}`}
+                      >
+                        <Money value={value.headroom} />
+                      </td>
+                      <td className="py-3 pr-3">
+                        {value.over ? (
+                          <Badge tone="danger">over {key} envelope</Badge>
+                        ) : (
+                          <Badge tone="success">within {key} envelope</Badge>
+                        )}
+                      </td>
+                    </Fragment>
+                  ))}
                   <CustomFieldCells
                     fields={visibleFields}
                     values={group?.values.get(row.initiative.id)}
@@ -146,37 +188,43 @@ export default async function SiFiveYearPage({
             <tfoot className="border-t-2 border-slate-300 font-medium">
               <tr>
                 <td className="py-3 pr-4">Portfolio total</td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.envelope} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.priorConsumed} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.programCapex + report.totals.programOpex} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.allocationCapex + report.totals.allocationOpex} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.commitmentCapex + report.totals.commitmentOpex} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.spendCapex + report.totals.spendOpex} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.consumed} />
-                </td>
-                <td className="py-3 pr-3 whitespace-nowrap">
-                  <Money value={report.totals.headroom} />
-                </td>
-                <td className="py-3">
-                  {report.totals.over ? (
-                    <Badge tone="danger">over envelope</Badge>
-                  ) : (
-                    <Badge tone="success">within</Badge>
-                  )}
-                </td>
+                {components.map(([key, value]) => (
+                  <Fragment key={key}>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.envelope} />
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.priorConsumed} />
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.programBudget} />
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.allocation} />
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.commitment} />
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.spend} />
+                    </td>
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <Money value={value.consumed} />
+                    </td>
+                    <td
+                      className={`py-3 pr-3 whitespace-nowrap ${value.over ? 'text-red-700' : ''}`}
+                    >
+                      <Money value={value.headroom} />
+                    </td>
+                    <td className="py-3 pr-3">
+                      {value.over ? (
+                        <Badge tone="danger">over {key} envelope</Badge>
+                      ) : (
+                        <Badge tone="success">within {key} envelope</Badge>
+                      )}
+                    </td>
+                  </Fragment>
+                ))}
                 {visibleFields.map((field) => (
                   <td key={field.id} className="py-3 pr-3" />
                 ))}
@@ -189,10 +237,6 @@ export default async function SiFiveYearPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
-        <p className="mt-3 text-xs text-slate-500">
-          Capex and opex are combined here; the annual plan and budget-versus-actual reports show the
-          component split.
-        </p>
       </Card>
     </ReportShell>
   );

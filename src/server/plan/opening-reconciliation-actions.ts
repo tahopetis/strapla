@@ -25,8 +25,10 @@ import { getStrategicPlan } from './queries';
 const LANDING = '/plan/opening-balances';
 
 const CONTROL_FIELDS = [
-  'controlEnvelope',
-  'controlPriorProgramBudgetUsed',
+  'controlEnvelopeCapex',
+  'controlEnvelopeOpex',
+  'controlPriorProgramBudgetUsedCapex',
+  'controlPriorProgramBudgetUsedOpex',
   'controlProgramBudgets',
   'controlProgramCarryIn',
   'controlProjectOpeningAllocated',
@@ -72,8 +74,10 @@ export async function saveOpeningReconciliationAction(
     }
 
     const values = {
-      controlEnvelope: input.controlEnvelope,
-      controlPriorProgramBudgetUsed: input.controlPriorProgramBudgetUsed,
+      controlEnvelopeCapex: input.controlEnvelopeCapex,
+      controlEnvelopeOpex: input.controlEnvelopeOpex,
+      controlPriorProgramBudgetUsedCapex: input.controlPriorProgramBudgetUsedCapex,
+      controlPriorProgramBudgetUsedOpex: input.controlPriorProgramBudgetUsedOpex,
       controlProgramBudgets: input.controlProgramBudgets,
       controlProgramCarryIn: input.controlProgramCarryIn,
       controlProjectOpeningAllocated: input.controlProjectOpeningAllocated,

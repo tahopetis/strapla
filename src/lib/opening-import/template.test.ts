@@ -42,7 +42,7 @@ describe('buildCsvTemplate', () => {
 
   it('includes a commented example row built from the declared examples', () => {
     expect(csv).toContain(
-      '# SI-01,Digital service platform,Chief Information Officer,Consolidate citizen-facing services on one platform.,12500000000,3250000000,Signed off with the FY2026 close.',
+      '# SI-01,Digital service platform,Chief Information Officer,Consolidate citizen-facing services on one platform.,9500000000,3000000000,2200000000,1050000000,Signed off with the FY2026 close.',
     );
   });
 

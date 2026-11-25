@@ -27,7 +27,8 @@ import { withSql } from './support/db';
 const DATA_SETS = [
   {
     id: 'strategic-initiatives',
-    header: 'Code,Name,Owner,Objective,Envelope amount (Rp)',
+    header:
+      'Code,Name,Owner,Objective,Capex envelope (Rp),Opex envelope (Rp),Prior program budget consumed — capex (Rp)',
   },
   {
     id: 'annual-programs',
@@ -92,23 +93,23 @@ test('shows the signed-off reconciliation with read-only control totals @t2', as
   ).toBeVisible();
   await expect(card.getByText('The control totals are read-only.')).toBeVisible();
 
-  // The comparison table has all eight control totals and a status per row.
+  // The comparison table has all ten control totals and a status per row.
   await expect(card.getByRole('columnheader', { name: 'Control total', exact: true })).toBeVisible();
   await expect(card.getByRole('columnheader', { name: 'Spreadsheet', exact: true })).toBeVisible();
   await expect(card.getByRole('columnheader', { name: 'Strapla', exact: true })).toBeVisible();
   await expect(card.getByRole('columnheader', { name: 'Difference', exact: true })).toBeVisible();
   await expect(card.getByRole('columnheader', { name: 'Status', exact: true })).toBeVisible();
   const controlRows = card.locator('tbody tr');
-  await expect(controlRows).toHaveCount(8);
-  for (let index = 0; index < 8; index += 1) {
+  await expect(controlRows).toHaveCount(10);
+  for (let index = 0; index < 10; index += 1) {
     await expect(controlRows.nth(index).getByText(/^(match|difference)$/)).toBeVisible();
   }
   // The saved spreadsheet totals are the foundation's zeros; every in-app figure
-  // is non-zero, so all eight rows are differences. A "match" badge is therefore
+  // is non-zero, so all ten rows are differences. A "match" badge is therefore
   // unreachable in this signed-off state (the form that could write a matching
   // total is gone).
-  await expect(card.getByText('Rp 0', { exact: true })).toHaveCount(8);
-  await expect(card.getByText('difference', { exact: true })).toHaveCount(8);
+  await expect(card.getByText('Rp 0', { exact: true })).toHaveCount(10);
+  await expect(card.getByText('difference', { exact: true })).toHaveCount(10);
 
   // Sign-off is final: the reconciliation forms are not rendered at all.
   await expect(card.locator('form')).toHaveCount(0);
@@ -122,9 +123,10 @@ test('shows the signed-off reconciliation with read-only control totals @t2', as
   const initiativesCard = page
     .locator('section')
     .filter({ hasText: 'Initiatives — envelope reconciliation' });
-  await expect(
-    initiativesCard.locator('tbody tr').filter({ hasText: 'SI-01' }),
-  ).toContainText(rp(5_000_000_000));
+  const si01 = initiativesCard.locator('tbody tr').filter({ hasText: 'SI-01' });
+  await expect(si01).toContainText(rp(4_000_000_000));
+  await expect(si01).toContainText(rp(1_000_000_000));
+  await expect(si01).toContainText('within');
 });
 
 test('serves the opening-import templates in CSV and XLSX with the live custom columns @t2', async ({

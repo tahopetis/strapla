@@ -27,7 +27,9 @@ export type AuditAction =
   | 'custom_field_remove'
   | 'custom_field_restore'
   | 'custom_field_reorder'
-  | 'report_preference_save';
+  | 'report_preference_save'
+  | 'revision_post'
+  | 'revision_decision';
 
 export interface AuditInput {
   actorUserId: string | null;

@@ -124,9 +124,11 @@ export const strategicInitiatives = pgTable(
     name: text('name').notNull(),
     owner: text('owner'),
     objective: text('objective'),
-    envelopeAmount: money('envelope_amount').notNull().default(0),
+    envelopeCapex: money('envelope_capex').notNull().default(0),
+    envelopeOpex: money('envelope_opex').notNull().default(0),
     /** Opening balance: program budget already consumed before the first in-app fiscal year. */
-    priorProgramBudgetUsed: money('prior_program_budget_used').notNull().default(0),
+    priorProgramBudgetUsedCapex: money('prior_program_budget_used_capex').notNull().default(0),
+    priorProgramBudgetUsedOpex: money('prior_program_budget_used_opex').notNull().default(0),
     notes: text('notes'),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedReason: text('voided_reason'),
@@ -137,8 +139,14 @@ export const strategicInitiatives = pgTable(
   (table) => [
     uniqueIndex('strategic_initiatives_plan_code_idx').on(table.planId, table.code),
     index('strategic_initiatives_plan_idx').on(table.planId),
-    check('strategic_initiatives_envelope_non_negative', sql`${table.envelopeAmount} >= 0`),
-    check('strategic_initiatives_prior_non_negative', sql`${table.priorProgramBudgetUsed} >= 0`),
+    check(
+      'strategic_initiatives_envelope_components_non_negative',
+      sql`${table.envelopeCapex} >= 0 AND ${table.envelopeOpex} >= 0`,
+    ),
+    check(
+      'strategic_initiatives_prior_components_non_negative',
+      sql`${table.priorProgramBudgetUsedCapex} >= 0 AND ${table.priorProgramBudgetUsedOpex} >= 0`,
+    ),
   ],
 );
 
@@ -498,6 +506,85 @@ export const carryOverEntries = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------- budget revisions (ADR-0006 §4)
+
+/**
+ * An immutable, numbered in-year budget revision (#112, ADR-0006 §4). Once an
+ * annual plan is active its program budgets are frozen; changes are posted as a
+ * revision header plus signed lines, applied atomically, and corrected only by
+ * a new revision. The number is per annual plan (one plan per fiscal year), so
+ * it renders as `REV-2027-001`.
+ *
+ * `decision_reference` is nullable because a revision may be posted before the
+ * steering committee decides ("awaiting decision reference"); attaching it
+ * later is metadata only and never touches the lines.
+ */
+export const budgetRevisionEntityType = pgEnum('budget_revision_entity_type', [
+  'program',
+  'allocation',
+]);
+
+export const budgetRevisions = pgTable(
+  'budget_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    annualPlanId: uuid('annual_plan_id')
+      .notNull()
+      .references(() => annualPlans.id),
+    /** Per annual plan (fiscal year) sequence. */
+    number: integer('number').notNull(),
+    revisionDate: date('revision_date', { mode: 'string' }).notNull(),
+    decisionReference: text('decision_reference'),
+    reason: text('reason').notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('budget_revisions_plan_number_idx').on(table.annualPlanId, table.number),
+    index('budget_revisions_plan_idx').on(table.annualPlanId),
+  ],
+);
+
+/**
+ * One signed delta on an annual program's budget or a project year
+ * allocation's amount, per component (#112, ADR-0006 §4). Negative cuts,
+ * positive additions; never zero. A capex/opex switch is two lines in the same
+ * component — capex and opex never offset each other. Lines are immutable; a
+ * correction is a new revision.
+ */
+export const budgetRevisionLines = pgTable(
+  'budget_revision_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    revisionId: uuid('revision_id')
+      .notNull()
+      .references(() => budgetRevisions.id, { onDelete: 'restrict' }),
+    entityType: budgetRevisionEntityType('entity_type').notNull(),
+    /** Annual program id or project year allocation id, matching entity_type. */
+    entityId: uuid('entity_id').notNull(),
+    component: component('component').notNull(),
+    delta: money('delta').notNull(),
+  },
+  (table) => [
+    uniqueIndex('budget_revision_lines_unique_idx').on(
+      table.revisionId,
+      table.entityType,
+      table.entityId,
+      table.component,
+    ),
+    index('budget_revision_lines_entity_idx').on(table.entityType, table.entityId),
+    check('budget_revision_lines_delta_non_zero', sql`${table.delta} <> 0`),
+  ],
+);
+
+export type BudgetRevision = typeof budgetRevisions.$inferSelect;
+export type NewBudgetRevision = typeof budgetRevisions.$inferInsert;
+export type BudgetRevisionLine = typeof budgetRevisionLines.$inferSelect;
+export type NewBudgetRevisionLine = typeof budgetRevisionLines.$inferInsert;
+export type BudgetRevisionEntityType = (typeof budgetRevisionEntityType.enumValues)[number];
+
 // ---------------------------------------------------------------- opening balances (W3b)
 
 /**
@@ -513,8 +600,12 @@ export const openingBalanceReconciliations = pgTable(
       .notNull()
       .references(() => strategicPlans.id)
       .unique(),
-    controlEnvelope: money('control_envelope').notNull().default(0),
-    controlPriorProgramBudgetUsed: money('control_prior_program_budget_used')
+    controlEnvelopeCapex: money('control_envelope_capex').notNull().default(0),
+    controlEnvelopeOpex: money('control_envelope_opex').notNull().default(0),
+    controlPriorProgramBudgetUsedCapex: money('control_prior_program_budget_used_capex')
+      .notNull()
+      .default(0),
+    controlPriorProgramBudgetUsedOpex: money('control_prior_program_budget_used_opex')
       .notNull()
       .default(0),
     controlProgramBudgets: money('control_program_budgets').notNull().default(0),
@@ -538,9 +629,11 @@ export const openingBalanceReconciliations = pgTable(
   },
   (table) => [
     check(
-      'opening_balance_reconciliations_non_negative',
-      sql`${table.controlEnvelope} >= 0
-        AND ${table.controlPriorProgramBudgetUsed} >= 0
+      'opening_balance_reconciliations_controls_non_negative',
+      sql`${table.controlEnvelopeCapex} >= 0
+        AND ${table.controlEnvelopeOpex} >= 0
+        AND ${table.controlPriorProgramBudgetUsedCapex} >= 0
+        AND ${table.controlPriorProgramBudgetUsedOpex} >= 0
         AND ${table.controlProgramBudgets} >= 0
         AND ${table.controlProgramCarryIn} >= 0
         AND ${table.controlProjectOpeningAllocated} >= 0
