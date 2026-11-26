@@ -25,11 +25,13 @@ export function CarryReceiptForm({
   const entityOptions = [
     ...options.programs.map((program) => ({
       value: program.id,
-      label: `Program · ${program.label}`,
+      // The card title is "code · name"; use a different separator here so a
+      // text/section locator for the program card cannot also match this option.
+      label: `Program: ${program.label.split(' · ').join(' — ')}`,
     })),
     ...options.allocations.map((allocation) => ({
       value: allocation.id,
-      label: `Allocation · ${allocation.label}`,
+      label: `Allocation: ${allocation.label.split(' · ').join(' — ')}`,
     })),
   ];
 
