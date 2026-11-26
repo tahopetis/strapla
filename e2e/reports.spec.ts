@@ -159,6 +159,8 @@ test('renders all four reports with the live portfolio figures @t2', async ({ pa
     page.getByRole('columnheader', { name: 'Full-life allocated', exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Approved', exact: true })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Carry-in capex', exact: true })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Carry-in opex', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Flags', exact: true })).toBeVisible();
   // The saved column preference shows the project's extra column (#75).
   await expect(
@@ -174,6 +176,8 @@ test('renders all four reports with the live portfolio figures @t2', async ({ pa
   await expect(projectRow).toContainText(rp(60_000_000));
   await expect(projectRow).toContainText('Open tender');
   await expect(projectRow.getByText('over_approved_budget', { exact: true })).toBeVisible();
+  // Every carry-in body cell has a matching header (the #115 column fix).
+  await expect(page.locator('table thead th')).toHaveCount(await projectRow.locator('td').count());
 
   // ------------------------------------------------ Budget versus actual
   await page.goto('/reports/budget-vs-actual');

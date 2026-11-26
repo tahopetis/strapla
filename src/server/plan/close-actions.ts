@@ -69,8 +69,11 @@ function receiptAncestors(
 ): Map<string, string> {
   const grouped = new Map<string, string[]>();
   for (const entry of entries) {
-    if (!entry.sourceEntityId) continue;
-    const key = carryInvariantKey(entry.entityType, entry.sourceEntityId, entry.component);
+    // The receipt's target is the entity that received the carry-in; that is the
+    // entity this close is now carrying out. Grouping by the receipt's own
+    // source would look one year too far back (and skip opening/manual receipts,
+    // whose source is null).
+    const key = carryInvariantKey(entry.entityType, entry.targetEntityId, entry.component);
     const list = grouped.get(key) ?? [];
     list.push(entry.id);
     grouped.set(key, list);

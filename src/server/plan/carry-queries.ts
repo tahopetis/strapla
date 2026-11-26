@@ -242,22 +242,6 @@ export async function listCloseSnapshots(annualPlanId: string): Promise<CloseSna
   });
 }
 
-/** Totals carried out of a plan, from the ledger. */
-export async function getCarriedTotals(annualPlanId: string): Promise<ComponentAmounts> {
-  const rows = await getDb()
-    .select({
-      component: carryOverEntries.component,
-      total: sql<string>`coalesce(sum(${carryOverEntries.amount}), 0)::text`,
-    })
-    .from(carryOverEntries)
-    .where(eq(carryOverEntries.sourceAnnualPlanId, annualPlanId))
-    .groupBy(carryOverEntries.component);
-
-  const totals: ComponentAmounts = { capex: 0, opex: 0 };
-  for (const row of rows) totals[row.component] = Number(row.total ?? '0');
-  return totals;
-}
-
 /** Key of one source entity and component in the close invariant map. */
 export function carryInvariantKey(
   entityType: 'program' | 'allocation',

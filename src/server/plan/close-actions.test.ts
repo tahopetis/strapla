@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getCloseState: vi.fn(),
   getDb: vi.fn(),
   recordAudit: vi.fn(),
+  listReceiptEntriesForEntities: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
@@ -22,6 +23,13 @@ vi.mock('@/server/auth/session', () => ({ requireUser: mocks.requireUser }));
 vi.mock('@/db/client', () => ({ getDb: mocks.getDb }));
 vi.mock('./close-queries', () => ({ getCloseState: mocks.getCloseState }));
 vi.mock('@/server/audit', () => ({ recordAudit: mocks.recordAudit }));
+vi.mock('./carry-queries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./carry-queries')>();
+  return {
+    ...actual,
+    listReceiptEntriesForEntities: mocks.listReceiptEntriesForEntities,
+  };
+});
 
 import {
   annualPlans,
@@ -125,6 +133,8 @@ interface TxOptions {
     component: string;
     total: string;
   }>;
+  /** Rows returned by the no-column read `appendCarryEntry` uses for lineage. */
+  lineageRows?: Array<Record<string, unknown>>;
 }
 
 /**
@@ -162,6 +172,8 @@ function transactionHarness(options: TxOptions = {}) {
       rows = summarizeFromInserts();
     } else if (columns && 'total' in columns) {
       rows = options.ledgerSums ?? [];
+    } else if (!columns && options.lineageRows) {
+      rows = options.lineageRows;
     }
     const chain = {
       from: vi.fn(() => chain),
@@ -242,6 +254,7 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   mocks.requireUser.mockResolvedValue({ id: 'user-1', email: 'owner@example.test', name: 'Owner' });
   mocks.recordAudit.mockResolvedValue(undefined);
+  mocks.listReceiptEntriesForEntities.mockResolvedValue([]);
   mocks.redirect.mockImplementation(() => {
     throw new Error('NEXT_REDIRECT');
   });
@@ -451,6 +464,42 @@ describe('closeFiscalYearAction close writes', () => {
     const entries = inserts.filter((row) => row.table === carryOverEntries);
     expect(entries).toHaveLength(2);
     expect(entries[0]?.values).toEqual(expect.objectContaining({ targetEntityId: OTHER_ID }));
+  });
+
+  it('records one-hop lineage when a single receipt funded the source entity', async () => {
+    mocks.getCloseState.mockResolvedValue(closeState());
+    const priorReceipt = {
+      id: 'prior-receipt',
+      origin: 'opening',
+      sourceAnnualPlanId: null,
+      sourceEntityId: null,
+      targetAnnualPlanId: PLAN_ID,
+      entityType: 'program',
+      targetEntityId: PROGRAM_ID,
+      component: 'capex',
+      amount: 700,
+      reason: 'Opening balance migration',
+      approvalReference: null,
+      sourceEntryId: null,
+      createdBy: null,
+      createdAt: new Date(),
+    };
+    mocks.listReceiptEntriesForEntities.mockResolvedValue([priorReceipt]);
+    const { inserts } = postableDatabase({
+      ledgerSums: [
+        { component: 'capex', total: '700' },
+        { component: 'opex', total: '300' },
+      ],
+      lineageRows: [priorReceipt],
+    });
+
+    await expect(runAction(carryForm())).rejects.toThrow('NEXT_REDIRECT');
+
+    const entries = inserts.filter((row) => row.table === carryOverEntries);
+    const capexEntry = entries.find((row) => row.values?.component === 'capex');
+    expect(capexEntry?.values?.sourceEntryId).toBe('prior-receipt');
+    const opexEntry = entries.find((row) => row.values?.component === 'opex');
+    expect(opexEntry?.values?.sourceEntryId).toBeNull();
   });
 
   it('rolls the close back when the snapshot and the ledger disagree', async () => {

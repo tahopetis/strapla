@@ -571,6 +571,10 @@ export const closeSnapshots = pgTable(
       'close_snapshots_balanced',
       sql`${table.available} = ${table.carried} + ${table.notCarried}`,
     ),
+    check(
+      'close_snapshots_reason_required',
+      sql`${table.notCarried} = 0 OR length(btrim(${table.notCarriedReason})) > 0`,
+    ),
   ],
 );
 

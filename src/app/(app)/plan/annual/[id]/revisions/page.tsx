@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { Form, HiddenField, SubmitButton, TextAreaField, TextField } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
 import { RevisionForm } from '@/components/plan/revision-form';
-import { listRevisionLines } from '@/components/plan/revision-lines';
+import { listRevisionLines } from '@/server/plan/revision-lines';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import { isRecordId } from '@/lib/record-id';
 import { formatDate, toDateInputValue } from '@/lib/format';

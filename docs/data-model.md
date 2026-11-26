@@ -138,14 +138,20 @@ Most migrations are additive; the financial-shape changes for ADR-0006 need a co
   `carry_in_capex` / `carry_in_opex` value with the sum the ledger already carries for that entity
   and component; only a positive difference becomes a receipt with `origin = 'opening'` and the reason
   `Opening balance migration`. It is idempotent (a re-run finds no positive difference), needs no
-  operator input, and recurring-ops carry-in is out of scope (no entries, no snapshot). After the
-  backfill the columns equal the ledger sum, and from then on the ledger service is their only writer.
+  operator input, and recurring-ops carry-in is out of scope (no entries, no snapshot). The
+  positive-only backfill repairs the usual opening/manual shortfall; `0014` then recomputes every
+  cached column from the ledger sum, so a column edited below the ledger is repaired too. From then
+  on the ledger service is the only writer.
 - **`0013` — ledger target index.** Adds `carry_over_entries (entity_type, target_entity_id,
   component)`, the lookup for a program/allocation's carry-in and for the cache recomputation.
+- **`0014` — close-snapshot reason check and cache repair.** Enforces `not_carried = 0` or a
+  non-empty `not_carried_reason`, then rewrites every program and allocation `carry_in_*` from the
+  ledger sum so the guarded cache equals the ledger after deploy (both directions of drift).
 - **Carry-in is ledger-only.** No form writes `carry_in_*`; a year close, the migration backfill or a
   reasoned manual receipt is the only path. A cache that disagrees with the ledger is a bug, not a
-  state to reconcile by hand: the close runs `assertCarryCacheMatches` and a test proves the invariant
-  on a fresh database.
+  state to reconcile by hand: the ledger service recomputes it, the close runs
+  `assertCarryCacheMatches`, and the foundation e2e checks the columns against the ledger after the
+  FY2027 close.
 - Revisions apply only to `active` annual plans (drafts are edited directly, closed plans are
   read-only). The first revision-enabled year is FY2027 and the baseline is the budget at rollout,
   so a closed year's effective budget equals its initial budget and a draft plan's revisions list is

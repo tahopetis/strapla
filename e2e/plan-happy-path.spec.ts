@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import ExcelJS from 'exceljs';
 import { assertEmptyStates } from './support/empty-states';
+import { withSql } from './support/db';
 
 /**
  * M1 happy path (charter §7 W-0..W-3 and the plan module): first-run setup,
@@ -1189,6 +1190,39 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await expect(page.getByText(/Fiscal year FY2027 closed and carry-over recorded\./)).toBeVisible();
   await page.goto('/plan/annual');
   await expect(page.locator('tbody tr', { hasText: 'FY2027' }).getByText('closed')).toBeVisible();
+
+  // The guarded cache equals the ledger after the close (ADR-0006 §2). This is
+  // a direct database assertion because the receipt screen cannot prove the
+  // columns for rows the close did not touch.
+  const drift = await withSql(async (sql) => {
+    const rows = await sql<{ programs: number; allocations: number }[]>`
+      select
+        (
+          select count(*)::int from annual_programs p
+          where p.carry_in_capex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'program' and e.target_entity_id = p.id and e.component = 'capex'
+            ), 0)
+             or p.carry_in_opex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'program' and e.target_entity_id = p.id and e.component = 'opex'
+            ), 0)
+        ) as programs,
+        (
+          select count(*)::int from project_year_allocations a
+          where a.carry_in_capex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'allocation' and e.target_entity_id = a.id and e.component = 'capex'
+            ), 0)
+             or a.carry_in_opex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'allocation' and e.target_entity_id = a.id and e.component = 'opex'
+            ), 0)
+        ) as allocations
+    `;
+    return rows[0];
+  });
+  expect(drift).toEqual({ programs: 0, allocations: 0 });
 
   // The close receipt (#113/#115): the immutable snapshot (available, carried,
   // not carried and the reason) plus the ledger receipts that delivered it.

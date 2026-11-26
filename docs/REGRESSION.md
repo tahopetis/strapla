@@ -79,8 +79,9 @@ No known gaps are currently tracked.
 The carry/revision surfaces added for ADR-0006 §6 are pinned at the journey level rather than per
 control: the foundation closes FY2027 and asserts the receipt (snapshot rows with not-carried reasons,
 target links and ledger receipts) plus the continuation program's money line; `revisions.spec.ts`
-pins the register and awaiting badge. The `carry_in_*` cache invariant is covered by unit tests
-against a fresh database, not by a browser assertion.
+pins the register and awaiting badge. The `carry_in_*` cache invariant is covered by the service's
+unit tests and a direct database assertion in the foundation close (the cache equals the ledger after
+FY2027), not by a browser assertion.
 
 The gaps that used to live here are all fixed and pinned by tests: the allocation-update and recurring-ops-void closed-year guards (#96, #97), the uncaught over-settlement (#99), the ignored Component field (#100), the project page's commitment figure (#101) and the malformed-id 500 (#103). Post-close settlement (#98) is now a feature: the spend form chooses per transaction whether a closed-year portion is charged to the current year or kept as a closed-year reserve, with the reserve reported separately and never mixed into the locked close snapshot.
 

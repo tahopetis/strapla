@@ -91,6 +91,8 @@ export default async function ProjectRegisterReportPage({
                 <th className={th}>Approved</th>
                 <th className={th}>Final deal</th>
                 <th className={th}>Allocated</th>
+                <th className={th}>Carry-in capex</th>
+                <th className={th}>Carry-in opex</th>
                 <th className={th}>Lifetime commitments</th>
                 <th className={th}>Spent to date</th>
                 <th className={th}>Flags</th>
