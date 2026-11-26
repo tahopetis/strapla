@@ -309,7 +309,7 @@ test('exports every report as CSV and XLSX with the live rows @t2', async ({ pag
     'budget-versus-actual program',
   );
   expect(actualXlsxRow[3]).toBe(1_200_000_000);
-  expect(actualXlsxRow[4]).toBe(300_000_000);
+  expect(actualXlsxRow[5]).toBe(300_000_000);
 });
 
 test('selects the custom columns for the CSV and XLSX exports @t2', async ({ page }) => {

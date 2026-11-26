@@ -185,7 +185,14 @@ test('posts a revision with the decision awaited, then records it, and freezes t
   await expect(planHeader.getByText('1 revision', { exact: true })).toBeVisible();
   await expect(planHeader.getByText('1 awaiting decision', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open the revision register' })).toBeVisible();
-  const donorCard = page.locator('section').filter({ hasText: PROGRAMS.donor.code }).first();
+  const donorCard = page
+    .locator('section')
+    .filter({
+      has: page.getByRole('heading', {
+        name: `${PROGRAMS.donor.code} · ${PROGRAMS.donor.name}`,
+      }),
+    })
+    .first();
   await expect(donorCard.getByText(/Effective budget: capex/)).toBeVisible();
   await expect(donorCard.getByText(rp(100_000_000)).first()).toBeVisible();
   // the edit form keeps the non-amount fields but has no budget inputs

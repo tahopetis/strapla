@@ -547,8 +547,8 @@ test('settles a closed-year commitment from the open year under both post-close 
   const currentYearRow = page
     .locator('tbody tr')
     .filter({ hasText: 'SI-01 · PRG-2028-001' });
-  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(10000000));
-  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(0));
+  await expect(currentYearRow.locator('td').nth(11)).toHaveText(rp(10000000));
+  await expect(currentYearRow.locator('td').nth(12)).toHaveText(rp(0));
   const reserveSection = page
     .locator('section')
     .filter({ hasText: 'Post-close adjustments (reserve)' });
@@ -583,8 +583,8 @@ test('settles a closed-year commitment from the open year under both post-close 
   ).toBeVisible();
 
   await page.goto('/reports/budget-vs-actual');
-  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(25000000));
-  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(0));
+  await expect(currentYearRow.locator('td').nth(11)).toHaveText(rp(25000000));
+  await expect(currentYearRow.locator('td').nth(12)).toHaveText(rp(0));
 
   // ---- option B: charge the last 10,000,000 to the closed year (reserve)
   await page.goto(allocationUrl);
@@ -610,8 +610,8 @@ test('settles a closed-year commitment from the open year under both post-close 
 
   // the closed year reports a labelled post-close adjustment beside its frozen columns
   await page.goto('/reports/budget-vs-actual');
-  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(35000000));
-  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(10000000));
+  await expect(currentYearRow.locator('td').nth(11)).toHaveText(rp(35000000));
+  await expect(currentYearRow.locator('td').nth(12)).toHaveText(rp(10000000));
   const reserveRow = reserveSection
     .locator('tbody tr')
     .filter({ hasText: closedProgram.code });
@@ -625,8 +625,8 @@ test('settles a closed-year commitment from the open year under both post-close 
     .locator('tbody tr')
     .filter({ hasText: `SI-01 · ${closedProgram.code}` })
     .first();
-  await expect(closedYearProgramRow.locator('td').nth(9)).toHaveText(rp(0));
-  await expect(closedYearProgramRow.locator('td').nth(10)).toHaveText(rp(0));
+  await expect(closedYearProgramRow.locator('td').nth(11)).toHaveText(rp(0));
+  await expect(closedYearProgramRow.locator('td').nth(12)).toHaveText(rp(0));
 
   // ---- the treatment is frozen once the spend has settlements, and audited
   await page.goto(allocationUrl);
@@ -689,7 +689,7 @@ test('settles a closed-year commitment from the open year under both post-close 
   ).toBeVisible();
 
   await page.goto('/reports/budget-vs-actual');
-  await expect(currentYearRow.locator('td').nth(9)).toHaveText(rp(25000000));
-  await expect(currentYearRow.locator('td').nth(10)).toHaveText(rp(0));
+  await expect(currentYearRow.locator('td').nth(11)).toHaveText(rp(25000000));
+  await expect(currentYearRow.locator('td').nth(12)).toHaveText(rp(0));
   await expect(reserveSection.getByText('No post-close reserves recorded.')).toBeVisible();
 });

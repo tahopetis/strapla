@@ -67,9 +67,10 @@ test('the closed FY2027 annual plan is read-only @t2', async ({ page }) => {
   const closedCard = page.locator('section').filter({ hasText: 'Fiscal year closed' });
   await expect(closedCard.getByText('closed', { exact: true })).toBeVisible();
   await expect(valueIn(closedCard, 'Approval reference')).toHaveText(CLOSE_REFERENCE);
+  const receiptsCard = page.locator('section').filter({ hasText: 'Carry-over receipts' });
   await expect(
-    closedCard.locator('tbody tr', { hasText: CLOSE_REFERENCE }).getByText(rp(100000000)),
-  ).toBeVisible();
+    receiptsCard.locator('tbody tr', { hasText: 'PRG-2027-001' }).first(),
+  ).toContainText(rp(100000000));
   await expect(page.locator('input[name="confirmation"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: `Close FY${CLOSED_YEAR} and carry over` })).toHaveCount(0);
   await expect(page.locator('main form')).toHaveCount(0);
