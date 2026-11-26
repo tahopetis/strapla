@@ -50,7 +50,7 @@ test('sweeps the planning routes with real portfolio data @t3', async ({ page })
   // Annual detail → the program thread it links to.
   await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2028 annual plan', exact: true })).toBeVisible();
-  await expect(page.getByText('PRG-2028-001').first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^PRG-2028-001 · / })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Annual programs' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Recurring operations' })).toBeVisible();
 
