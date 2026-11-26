@@ -1189,7 +1189,7 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
 
   await page.locator('input[name="confirmation"]').fill('CLOSE FY2027');
   await page.getByRole('button', { name: /Close FY2027 and carry over/ }).click();
-  await expect(page.getByText(/Fiscal year FY2027 closed and carry-over recorded\./)).toBeVisible();
+  await expect(page.getByText(/Fiscal year FY2027 closed and carry-over recorded/)).toBeVisible();
   await page.goto('/plan/annual');
   await expect(page.locator('tbody tr', { hasText: 'FY2027' }).getByText('closed')).toBeVisible();
 
