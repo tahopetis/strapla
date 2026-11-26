@@ -130,7 +130,9 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await programForm.locator('input[name="opexBudget"]').fill('300000000');
   await page.getByRole('button', { name: 'Add program' }).click();
   await expect(page.getByText(/Annual program PRG-2027-001 created\./)).toBeVisible();
-  await expect(page.getByText('PRG-2027-001 · Workplace Modernisation 2027')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'PRG-2027-001 · Workplace Modernisation 2027' }),
+  ).toBeVisible();
 
   // The post-close settlement fixture needs its own FY2027 program. It is also
   // created while the plan is a draft: activation freezes program budgets, so a
