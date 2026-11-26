@@ -13,6 +13,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -475,27 +476,51 @@ export const commitmentSettlements = pgTable(
 
 export const carryOverEntityType = pgEnum('carry_over_entity_type', ['program', 'allocation']);
 
+/** Where a carry-in receipt came from (ADR-0006 §2). */
+export const carryOverOrigin = pgEnum('carry_over_origin', ['close', 'opening', 'manual']);
+
+/**
+ * The carry-over ledger: the single source of carry-in (ADR-0006 §2). Append-only
+ * — entries are never updated or deleted, and there are no negative/reversal
+ * entries.
+ *
+ * `source_*` and `approval_reference` are nullable because an opening-balance or
+ * manual receipt has no source year/entity and no close approval reference.
+ * `source_entry_id` records carry-of-carry lineage: the receipt entry this one
+ * was carried from (one hop per entry).
+ *
+ * The program/allocation `carry_in_*` columns remain as a guarded cache; the
+ * ledger service is their only writer and keeps them equal to the ledger sum.
+ */
 export const carryOverEntries = pgTable(
   'carry_over_entries',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    sourceAnnualPlanId: uuid('source_annual_plan_id')
-      .notNull()
-      .references(() => annualPlans.id),
+    sourceAnnualPlanId: uuid('source_annual_plan_id').references(() => annualPlans.id),
     targetAnnualPlanId: uuid('target_annual_plan_id')
       .notNull()
       .references(() => annualPlans.id),
     entityType: carryOverEntityType('entity_type').notNull(),
-    sourceEntityId: uuid('source_entity_id').notNull(),
+    sourceEntityId: uuid('source_entity_id'),
     targetEntityId: uuid('target_entity_id').notNull(),
     component: component('component').notNull(),
     amount: money('amount').notNull(),
-    approvalReference: text('approval_reference').notNull(),
+    origin: carryOverOrigin('origin').notNull().default('close'),
+    reason: text('reason'),
+    approvalReference: text('approval_reference'),
+    /** Carry-of-carry lineage: the receipt entry this amount was carried from. */
+    sourceEntryId: uuid('source_entry_id').references((): AnyPgColumn => carryOverEntries.id),
     createdBy: uuid('created_by').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('carry_over_entries_source_idx').on(table.sourceAnnualPlanId),
+    // The ledger's dominant read sums receipts by target entity and component.
+    index('carry_over_entries_target_idx').on(
+      table.entityType,
+      table.targetEntityId,
+      table.component,
+    ),
     uniqueIndex('carry_over_entries_unique_idx').on(
       table.sourceAnnualPlanId,
       table.entityType,
@@ -505,6 +530,53 @@ export const carryOverEntries = pgTable(
     check('carry_over_entries_amount_non_negative', sql`${table.amount} >= 0`),
   ],
 );
+
+/**
+ * The immutable per-entity, per-component close decision (ADR-0006 §3): what was
+ * available, what was carried into the next year, and what was deliberately not
+ * carried, with the reason. Written in the close transaction; carried must equal
+ * the sum of the carry-over entries written for the entity and component, and
+ * available must equal carried plus not-carried.
+ */
+export const closeSnapshots = pgTable(
+  'close_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    annualPlanId: uuid('annual_plan_id')
+      .notNull()
+      .references(() => annualPlans.id),
+    entityType: carryOverEntityType('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    component: component('component').notNull(),
+    available: money('available').notNull(),
+    carried: money('carried').notNull(),
+    notCarried: money('not_carried').notNull(),
+    /** Empty when the whole candidate was carried; otherwise the owner's reason. */
+    notCarriedReason: text('not_carried_reason').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('close_snapshots_plan_entity_component_idx').on(
+      table.annualPlanId,
+      table.entityType,
+      table.entityId,
+      table.component,
+    ),
+    index('close_snapshots_plan_idx').on(table.annualPlanId),
+    check(
+      'close_snapshots_amounts_non_negative',
+      sql`${table.available} >= 0 AND ${table.carried} >= 0 AND ${table.notCarried} >= 0`,
+    ),
+    check(
+      'close_snapshots_balanced',
+      sql`${table.available} = ${table.carried} + ${table.notCarried}`,
+    ),
+  ],
+);
+
+export type CarryOverOrigin = (typeof carryOverOrigin.enumValues)[number];
+export type CloseSnapshot = typeof closeSnapshots.$inferSelect;
+export type NewCloseSnapshot = typeof closeSnapshots.$inferInsert;
 
 // ---------------------------------------------------------------- budget revisions (ADR-0006 §4)
 

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   readCustomFieldValues: vi.fn(),
   saveCustomFieldValues: vi.fn(),
   recordAudit: vi.fn(),
+  receiveCarry: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
@@ -29,9 +30,10 @@ vi.mock('@/server/custom-fields/data', () => ({
   saveCustomFieldValues: mocks.saveCustomFieldValues,
 }));
 vi.mock('@/server/audit', () => ({ recordAudit: mocks.recordAudit }));
+vi.mock('@/server/plan/carry-ledger', () => ({ receiveCarry: mocks.receiveCarry }));
 
 import type { FormState } from '@/lib/form-state';
-import { createProgramAction, updateProgramAction } from './annual-actions';
+import { createProgramAction, receiveManualCarryAction, updateProgramAction } from './annual-actions';
 
 const INITIAL: FormState = { status: 'idle', attempt: 0 };
 const PLAN_ID = '11111111-1111-4111-8111-111111111111';
@@ -291,5 +293,168 @@ describe('createProgramAction activation freeze', () => {
     expect(insert.values).toHaveBeenCalledWith(
       expect.objectContaining({ capexBudget: 0, opexBudget: 0 }),
     );
+  });
+});
+
+describe('receiveManualCarryAction (#113, ADR-0006 §2)', () => {
+  const ALLOCATION_ID = '66666666-6666-4666-8666-666666666666';
+
+  function manualForm(overrides: Record<string, string> = {}): FormData {
+    const values: Record<string, string> = {
+      annualPlanId: PLAN_ID,
+      entityType: 'program',
+      entityId: PROGRAM_ID,
+      component: 'capex',
+      amount: '500',
+      reason: 'Owner grant for the security programme',
+      ...overrides,
+    };
+    const form = new FormData();
+    for (const [name, value] of Object.entries(values)) form.set(name, value);
+    return form;
+  }
+
+  function manualDatabase(options: {
+    status?: 'draft' | 'active' | 'closed';
+    entity?: Record<string, unknown>;
+  } = {}) {
+    const status = options.status ?? 'active';
+    const db = database(
+      [
+        {
+          annualPlan: { id: PLAN_ID, fiscalYear: FISCAL_YEAR, status },
+          strategicPlan: { id: 'sp-1', status: 'active' },
+        },
+      ],
+      [
+        options.entity ?? {
+          id: PROGRAM_ID,
+          annualPlanId: PLAN_ID,
+          code: 'PRG-2027-01',
+          voidedAt: null,
+        },
+      ],
+    );
+    const tx = {};
+    db.transaction.mockImplementation(
+      async (callback: (executor: typeof tx) => Promise<void>) => callback(tx),
+    );
+    return { db, tx };
+  }
+
+  it('records a reasoned manual receipt and recomputes the cache from the ledger', async () => {
+    const { db, tx } = manualDatabase();
+    mocks.getDb.mockReturnValue(db);
+    mocks.receiveCarry.mockResolvedValue({
+      entry: { id: 'entry-1' },
+      cache: { capex: 500, opex: 0 },
+    });
+
+    await expect(receiveManualCarryAction(INITIAL, manualForm())).rejects.toThrow(
+      'NEXT_REDIRECT',
+    );
+
+    expect(mocks.receiveCarry).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        origin: 'manual',
+        targetAnnualPlanId: PLAN_ID,
+        entityType: 'program',
+        targetEntityId: PROGRAM_ID,
+        component: 'capex',
+        amount: 500,
+        reason: 'Owner grant for the security programme',
+        actorUserId: 'user-1',
+      }),
+    );
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        action: 'carry_over',
+        entityType: 'annual_program',
+        entityId: PROGRAM_ID,
+        reason: 'Owner grant for the security programme',
+        after: expect.objectContaining({ origin: 'manual', component: 'capex', amount: 500 }),
+      }),
+    );
+    expect(mocks.redirect).toHaveBeenCalledWith(
+      expect.stringContaining(`/plan/annual/${PLAN_ID}`),
+    );
+  });
+
+  it('records an allocation receipt against its target allocation', async () => {
+    const { db, tx } = manualDatabase({
+      entity: {
+        id: ALLOCATION_ID,
+        annualPlanId: PLAN_ID,
+        projectCode: 'PRJ-2027-001',
+        voidedAt: null,
+      },
+    });
+    mocks.getDb.mockReturnValue(db);
+    mocks.receiveCarry.mockResolvedValue({
+      entry: { id: 'entry-2' },
+      cache: { capex: 0, opex: 250 },
+    });
+
+    await expect(
+      receiveManualCarryAction(
+        INITIAL,
+        manualForm({ entityType: 'allocation', entityId: ALLOCATION_ID, component: 'opex' }),
+      ),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(mocks.receiveCarry).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        origin: 'manual',
+        entityType: 'allocation',
+        targetEntityId: ALLOCATION_ID,
+        component: 'opex',
+      }),
+    );
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ entityType: 'project_year_allocation', entityId: ALLOCATION_ID }),
+    );
+  });
+
+  it('refuses an entity that is not part of the annual plan', async () => {
+    const { db } = manualDatabase({
+      entity: {
+        id: PROGRAM_ID,
+        annualPlanId: '77777777-7777-4777-8777-777777777777',
+        code: 'PRG-OTHER',
+        voidedAt: null,
+      },
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const state = await receiveManualCarryAction(INITIAL, manualForm());
+
+    expect(state.status).toBe('error');
+    expect(state.message).toMatch(/not part of this annual plan/i);
+    expect(mocks.receiveCarry).not.toHaveBeenCalled();
+  });
+
+  it('refuses a receipt on a closed year', async () => {
+    const { db } = manualDatabase({ status: 'closed' });
+    mocks.getDb.mockReturnValue(db);
+
+    const state = await receiveManualCarryAction(INITIAL, manualForm());
+
+    expect(state.status).toBe('error');
+    expect(state.message).toMatch(/closed/i);
+    expect(mocks.receiveCarry).not.toHaveBeenCalled();
+  });
+
+  it('requires a reason', async () => {
+    mocks.getDb.mockReturnValue(database());
+
+    const state = await receiveManualCarryAction(INITIAL, manualForm({ reason: '' }));
+
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors?.reason).toMatch(/required/i);
+    expect(mocks.getDb).not.toHaveBeenCalled();
   });
 });

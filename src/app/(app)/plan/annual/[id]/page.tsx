@@ -14,6 +14,7 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/form';
+import { CarryReceiptForm } from '@/components/plan/carry-receipt-form';
 import { RecurringOpsSection } from '@/components/plan/recurring-ops-section';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
@@ -21,6 +22,7 @@ import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-f
 import { isRecordId } from '@/lib/record-id';
 import type { AnnualPlanDetail, ProgramRow } from '@/server/plan/annual-queries';
 import { getAnnualPlanDetail } from '@/server/plan/annual-queries';
+import { listCarryTargetOptions } from '@/server/plan/carry-queries';
 import { listCustomFieldDefinitions, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
   activateAnnualPlanAction,
@@ -55,7 +57,8 @@ export default async function AnnualPlanPage({
   const canActivate =
     editable && detail.annualPlan.status === 'draft' && detail.strategicPlan.status === 'active';
 
-  const [programFields, programValues, recurringFields, recurringValues] = await Promise.all([
+  const [programFields, programValues, recurringFields, recurringValues, carryTargets] =
+    await Promise.all([
     listCustomFieldDefinitions('annual_program'),
     readCustomFieldValuesMap(
       'annual_program',
@@ -66,6 +69,7 @@ export default async function AnnualPlanPage({
       'recurring_ops_item',
       detail.recurringOps.map((row) => row.item.id),
     ),
+    listCarryTargetOptions(detail.annualPlan.id),
   ]);
 
   return (
@@ -82,17 +86,32 @@ export default async function AnnualPlanPage({
                     action: activateAnnualPlanAction,
                     id: detail.annualPlan.id,
                     label: 'Activate annual plan',
-                    hint: 'Activation is audited; programs stay editable until the Year Close.',
+                    hint: 'Activation is audited and freezes the program budgets; later budget changes are revisions.',
                   }
                 : undefined
             }
           >
+            <Badge>
+              {detail.revisions.count} revision{detail.revisions.count === 1 ? '' : 's'}
+            </Badge>
+            {detail.revisions.awaitingDecision > 0 ? (
+              <Badge tone="warning">
+                {detail.revisions.awaitingDecision} awaiting decision
+              </Badge>
+            ) : null}
             {detail.annualPlan.status === 'active' ? (
               <Link
                 href={`/plan/annual/${detail.annualPlan.id}/close`}
                 className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
               >
                 Close fiscal year
+              </Link>
+            ) : detail.annualPlan.status === 'closed' ? (
+              <Link
+                href={`/plan/annual/${detail.annualPlan.id}/close`}
+                className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+              >
+                Close receipt
               </Link>
             ) : null}
             <Link href="/plan/annual" className="text-sm text-slate-600 hover:text-slate-900">
@@ -128,11 +147,12 @@ export default async function AnnualPlanPage({
           title="Budget revisions"
           description="Once the plan is active its program budgets change only through numbered, immutable revisions."
           actions={
-            detail.revisions.awaitingDecision > 0 ? (
-              <Badge tone="warning">{detail.revisions.awaitingDecision} awaiting decision</Badge>
-            ) : (
+            <div className="flex flex-wrap gap-2">
               <Badge>{detail.revisions.count}</Badge>
-            )
+              {detail.revisions.awaitingDecision > 0 ? (
+                <Badge tone="warning">{detail.revisions.awaitingDecision} awaiting decision</Badge>
+              ) : null}
+            </div>
           }
         >
           <p className="text-sm text-slate-600">
@@ -146,6 +166,22 @@ export default async function AnnualPlanPage({
             </Link>
           </p>
         </Card>
+
+        <div id="carry-in-receipts" className="scroll-mt-24">
+          <Card
+            title="Carry-in receipts"
+            description="Carry-in enters through the ledger: a year close, the opening balances, or a reasoned manual grant. It is not typed on a program or allocation."
+            actions={<Badge>ledger</Badge>}
+          >
+            {editable ? (
+              <CarryReceiptForm annualPlanId={detail.annualPlan.id} options={carryTargets} />
+            ) : (
+              <p className="text-sm text-slate-600">
+                This fiscal year is closed or archived; carry-in receipts are read-only.
+              </p>
+            )}
+          </Card>
+        </div>
 
         <ProgramsSection
           detail={detail}
@@ -235,18 +271,10 @@ function ProgramsSection({
                 </p>
               </>
             )}
-            <MoneyField
-              label="Capex carry-in"
-              name="carryInCapex"
-              defaultValue={0}
-              hint="Opening balance / prior-year carry-over."
-            />
-            <MoneyField
-              label="Opex carry-in"
-              name="carryInOpex"
-              defaultValue={0}
-              hint="Opening balance / prior-year carry-over."
-            />
+            <p className="sm:col-span-2 lg:col-span-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Carry-in is not typed on a program: it is received through the carry-over ledger
+              (a year close, the opening balances, or a reasoned manual receipt).
+            </p>
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Notes" name="notes" rows={2} />
             </div>
@@ -353,6 +381,11 @@ function ProgramCard({
       </dl>
 
       <p className="mt-3 text-sm text-slate-600">
+        Carry-in received from the ledger: capex <Money value={program.carryInCapex} /> · opex{' '}
+        <Money value={program.carryInOpex} />.
+      </p>
+
+      <p className="mt-3 text-sm text-slate-600">
         Effective budget: capex <Money value={row.effectiveCapexBudget} /> (initial{' '}
         <Money value={program.capexBudget} />, revisions <Money value={row.revisionCapex} />) · opex{' '}
         <Money value={row.effectiveOpexBudget} /> (initial <Money value={program.opexBudget} />,
@@ -428,8 +461,11 @@ function ProgramCard({
                   </p>
                 </>
               )}
-              <MoneyField label="Capex carry-in" name="carryInCapex" defaultValue={program.carryInCapex} />
-              <MoneyField label="Opex carry-in" name="carryInOpex" defaultValue={program.carryInOpex} />
+              <p className="sm:col-span-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Carry-in received: capex <Money value={program.carryInCapex} /> · opex{' '}
+                <Money value={program.carryInOpex} /> — recorded in the carry-over ledger, not
+                edited here.
+              </p>
               <div className="sm:col-span-2">
                 <TextAreaField label="Notes" name="notes" defaultValue={program.notes} rows={2} />
               </div>

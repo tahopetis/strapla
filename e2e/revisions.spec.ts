@@ -170,8 +170,20 @@ test('posts a revision with the decision awaited, then records it, and freezes t
   await expect(page.getByText('awaiting decision reference')).toBeVisible();
   await expect(page.getByText(rp(100_000_000)).first()).toBeVisible();
 
+  // Each line links to its program (#115): the register is navigable.
+  const revisionCard = page.locator('li').filter({ hasText: 'REV-2030-001' });
+  await expect(revisionCard.getByRole('columnheader', { name: 'Line', exact: true })).toBeVisible();
+  await expect(revisionCard.getByRole('cell', { name: 'capex', exact: true })).toBeVisible();
+  const lineLink = revisionCard.getByRole('link', { name: /PRG-2030-01 · Network renewal/ });
+  await expect(lineLink).toBeVisible();
+  await expect(lineLink).toHaveAttribute('href', /^\/plan\/programs\/[0-9a-f-]+$/);
+
   // ------------------------------------- the freeze and the effective budget
   await openAnnualPlan(page, REVISION_YEAR);
+  // The plan header carries the revision count and the awaiting-decision state.
+  const planHeader = page.getByRole('group', { name: 'Page header actions' });
+  await expect(planHeader.getByText('1 revision', { exact: true })).toBeVisible();
+  await expect(planHeader.getByText('1 awaiting decision', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open the revision register' })).toBeVisible();
   const donorCard = page.locator('section').filter({ hasText: PROGRAMS.donor.code }).first();
   await expect(donorCard.getByText(/Effective budget: capex/)).toBeVisible();
@@ -234,6 +246,10 @@ test('posts a balanced switch and refuses an unbalanced one and one above the fl
   // The register keeps both revisions; the second carries its decision.
   await expect(page.locator('li').filter({ hasText: 'REV-2030-' })).toHaveCount(2);
   await expect(page.getByText('SC-2030-02')).toBeVisible();
+  // A switch is two lines in one document: donor down, receiver up, both linked.
+  const switchCard = page.locator('li').filter({ hasText: 'REV-2030-002' });
+  await expect(switchCard.getByRole('link', { name: /PRG-2030-01 · Network renewal/ })).toBeVisible();
+  await expect(switchCard.getByRole('link', { name: /PRG-2030-02 · Device refresh/ })).toBeVisible();
 
   // ------------------------------------------ more than is unallocated
   // A 20M allocation sits under the donor program. After the 40M switch the

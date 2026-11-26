@@ -27,12 +27,14 @@ erDiagram
   spend_categories ||--o{ spend_entries : "classifies"
   spend_entries ||--o{ commitment_settlements : "pays"
   commitment_entries ||--o{ commitment_settlements : "settled by"
-  annual_plans ||--o{ carry_over_records : "closed into (M4)"
+  annual_plans ||--o{ carry_over_entries : "receives carry-in"
+  annual_plans ||--o{ carry_over_entries : "closes into"
+  annual_plans ||--o{ close_snapshots : "records the close decision"
   users ||--o{ sessions : "authenticates"
   users ||--o{ audit_entries : "acts as"
 ```
 
-New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_entries` (E12), `spend_categories` (E13), and `budget_revisions` / `budget_revision_lines` (ADR-0006 §4). Opening balances (E14) are columns on `strategic_initiatives`, `annual_programs`, `project_year_allocations` and `projects`, plus the control-total row in `opening_balance_reconciliations` (see “Opening balances”).
+New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_entries` (E12), `spend_categories` (E13), `budget_revisions` / `budget_revision_lines` (ADR-0006 §4), and `carry_over_entries` / `close_snapshots` (ADR-0006 §2–3). Opening balances (E14) are columns on `strategic_initiatives`, `annual_programs`, `project_year_allocations` and `projects`, plus the control-total row in `opening_balance_reconciliations` (see “Opening balances”).
 
 ## Enumerations
 
@@ -44,9 +46,10 @@ New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_en
 | `component` | `capex`, `opex` |
 | `settlement_kind` | `current`, `prior_year_opening` (cross-year in-app settlements are derived, not stored) |
 | `budget_revision_entity_type` | `program`, `allocation` (a revision line names the entity it changes) |
-| `carry_over_level` (M4) | `program`, `project_allocation` |
+| `carry_over_entity_type` | `program`, `allocation` (the receiving entity of a ledger receipt, or the source entity of a close snapshot) |
+| `carry_over_origin` | `close` (written by a year close), `opening` (the one-time opening-balance backfill) or `manual` (a reasoned grant) |
 
-Derived, never stored: effective program budget (initial + Σ posted revision deltas), effective allocation (initial + Σ posted de-allocation deltas), commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags.
+Derived, never stored: effective program budget (initial + Σ posted revision deltas), effective allocation (initial + Σ posted de-allocation deltas), **carry-in (Σ ledger receipts per entity and component)**, commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags. The `carry_in_capex` / `carry_in_opex` columns on programs and allocations are a **guarded cache**, not an independent input: the ledger service is their only writer and keeps them equal to the receipt sum.
 
 ## Tables
 
@@ -85,8 +88,9 @@ Derived, never stored: effective program budget (initial + Σ posted revision de
 | --- | --- | --- |
 | `commitment_entries` | `id`, `project_year_allocation_id` xor `recurring_ops_item_id`, `component`, `amount`, `commitment_date`, `reference`, `description`, void/timestamps | CHECK exactly one parent; recurring ops parent requires `component = 'opex'`. No stored status: derived from settlements. |
 | `spend_entries` | `id`, `project_year_allocation_id` xor `recurring_ops_item_id`, `component`, `amount`, `spent_on`, `category_id`, `vendor`, `reference`, `description`, `settlement_kind`, void/timestamps | CHECK exactly one parent; recurring ops parent requires opex. `prior_year_opening` marks money paying pre-FY2027 commitments ([ADR-0003](adr/0003-funding-and-settlement.md) §4). |
+| `close_snapshots` | `id`, `annual_plan_id`, `entity_type`, `entity_id`, `component`, `available`, `carried`, `not_carried`, `not_carried_reason`, `created_at` | The immutable per-entity, per-component close decision (ADR-0006 §3): what was available, how much was carried and how much was deliberately not carried, with the owner's reason. `available = carried + not_carried` is a database check, and `carried` must equal the sum of the ledger entries written for the entity/component (enforced in the close transaction). Unique per `(plan, entity_type, entity_id, component)`. |
 | `commitment_settlements` | `id`, `spend_entry_id`, `commitment_entry_id`, `amount`, `created_by`, `created_at` | Unique `(spend_entry_id, commitment_entry_id)`; partial settlement via repeated updates (audited) or multiple rows. Sum per commitment ≤ commitment amount; sum per spend ≤ spend amount. Settlement is a lifecycle event and may happen after year close. |
-| `carry_over_entries` (M4) | `id`, `source_annual_plan_id`, `target_annual_plan_id`, `entity_type` (`program` or `allocation`), `source_entity_id`, `target_entity_id`, `component`, `amount`, `approval_reference`, `created_by`, `created_at` | Explicit carry-over at year close (BR-13); unique per source entity/component. The target's `carry_in_*` is added when the close completes. The snapshot is append-only; `annual_plans` gains `close_reference` plus `closed_at`/`closed_by`. |
+| `carry_over_entries` | `id`, `source_annual_plan_id` (nullable), `target_annual_plan_id`, `entity_type`, `source_entity_id` (nullable), `target_entity_id`, `component`, `amount`, `origin`, `reason`, `approval_reference` (nullable), `source_entry_id` (self FK, nullable), `created_by`, `created_at` | The carry-over ledger (ADR-0006 §2): **append-only** and the single source of carry-in. Entries are never updated or deleted and there are no reversal entries — a later cut is a budget revision. `origin = close` names the source year/entity and inherits the close approval reference; `opening`/`manual` have no source and need a reason. `source_entry_id` records carry-of-carry lineage (one hop per entry); the service rejects a cyclic or mismatched chain. Indexed by target entity/component; the old `(source plan, entity, source entity, component)` unique index still guards the close's source rows. |
 
 ## Opening balances
 
@@ -95,8 +99,9 @@ The app's first in-app fiscal year is FY2027; FY2026 is closed manually outside 
 | Where | Column(s) | Meaning |
 | --- | --- | --- |
 | `strategic_initiatives` | `prior_program_budget_used_capex`, `prior_program_budget_used_opex` | Program budgets already consumed before FY2027, **per component** (SI envelope check, ADR-0006 §5) |
-| `annual_programs` (FY2027) | `carry_in_capex`, `carry_in_opex` | Program budget carried forward from the manual FY2026 close |
-| `project_year_allocations` (FY2027) | `carry_in_capex`, `carry_in_opex` | Project allocation carried forward |
+| `annual_programs` (FY2027) | `carry_in_capex`, `carry_in_opex` (guarded cache) | Program carry-in for the first in-app year; it is backed by ledger receipts with origin `opening` (migration 0012 backfills them from the columns) |
+| `carry_over_entries` (origin `opening` / `manual`) | `reason`, `amount`, `component` | A reasoned receipt: the only way to change carry-in outside a year close |
+| `project_year_allocations` (FY2027) | `carry_in_capex`, `carry_in_opex` (guarded cache) | Project allocation carry-in for the first in-app year, backed by origin-`opening` ledger receipts |
 | `projects` | `opening_allocated`, `opening_committed`, `opening_spent` | Lifetime figures before the app: allocated, still-open commitments, actual spend |
 | `opening_balance_reconciliations` | `control_envelope_capex`, `control_envelope_opex`, `control_prior_program_budget_used_capex`, `control_prior_program_budget_used_opex`, `control_program_budgets`, `control_program_carry_in`, `control_project_opening_allocated`, `control_project_opening_committed`, `control_project_opening_spent`, `control_project_full_life_allocated` | The owner's ten spreadsheet control totals for the one-time load, compared with the in-app totals before sign-off. The envelope and prior-consumed controls are per component; the plan-level sign-off itself is `signed_off_at` / `signed_off_by` / `sign_off_reason`. |
 
@@ -124,6 +129,23 @@ Most migrations are additive; the financial-shape changes for ADR-0006 need a co
 - **`0011` — revision-delta read index.** Adds `budget_revision_lines (entity_type, entity_id)`,
   the lookup used when a plan, program thread or report loads posted deltas; the unique index still
   leads with `revision_id`, so this is the index for the dominant read.
+- **`0012` (ADR-0006 §2–3) — carry ledger and close snapshot.** Creates `close_snapshots` and the
+  `carry_over_origin` enum, relaxes `carry_over_entries.source_annual_plan_id`,
+  `source_entity_id` and `approval_reference` to nullable (opening/manual receipts have no source and
+  no close reference), and adds `origin`, `reason` and the self-referencing `source_entry_id`
+  lineage. Existing ledger rows keep the column default `origin = 'close'`.
+  **Backfill:** for every program and allocation the migration compares the existing
+  `carry_in_capex` / `carry_in_opex` value with the sum the ledger already carries for that entity
+  and component; only a positive difference becomes a receipt with `origin = 'opening'` and the reason
+  `Opening balance migration`. It is idempotent (a re-run finds no positive difference), needs no
+  operator input, and recurring-ops carry-in is out of scope (no entries, no snapshot). After the
+  backfill the columns equal the ledger sum, and from then on the ledger service is their only writer.
+- **`0013` — ledger target index.** Adds `carry_over_entries (entity_type, target_entity_id,
+  component)`, the lookup for a program/allocation's carry-in and for the cache recomputation.
+- **Carry-in is ledger-only.** No form writes `carry_in_*`; a year close, the migration backfill or a
+  reasoned manual receipt is the only path. A cache that disagrees with the ledger is a bug, not a
+  state to reconcile by hand: the close runs `assertCarryCacheMatches` and a test proves the invariant
+  on a fresh database.
 - Revisions apply only to `active` annual plans (drafts are edited directly, closed plans are
   read-only). The first revision-enabled year is FY2027 and the baseline is the budget at rollout,
   so a closed year's effective budget equals its initial budget and a draft plan's revisions list is
@@ -207,7 +229,9 @@ Domain functions in `src/domain` implement these; database constraints block the
 | INV-11 | A fiscal year that is `closed` blocks mutations except audited administrator corrections and settlement lifecycle events. |
 | INV-12 | Financial records are never hard-deleted; void requires a reason and an audit entry. |
 | INV-13 | Every mutation writes exactly one audit entry in the same transaction. |
-| INV-14 | Carry-over amounts require an approval reference and are per component (BR-13). |
+| INV-14 | Carry-over amounts are per component (BR-13). A close receipt inherits the close's approval reference; an opening/manual receipt requires a reason instead (its origin is the audit reference). One approval reference is recorded on the annual plan for the close as a whole. |
+| INV-15 | `carry_over_entries` is append-only and the single source of carry-in: no update, no delete, no negative/reversal entry. The target's `carry_in_*` cache equals the receipt sum, and a cache that drifts is refused by the close. |
+| INV-16 | Each closed year has one snapshot row per source entity and component with `available = carried + not_carried`; `carried` equals the sum of the receipts written for that entity/component in the close transaction. A close cannot be repeated (one snapshot per row/plan) and there is no reopen. |
 
 ## Report catalogue (figures come from `src/domain`)
 
@@ -216,7 +240,7 @@ Domain functions in `src/domain` implement these; database constraints block the
 | SI five-year view | SI | Envelope, prior consumed, effective program budget, allocations, commitments, spend, consumed and headroom — capex and opex as separate column groups, never a shared headroom |
 | Annual plan | SI → program | Initial budget, posted revisions, effective budget, carry-in, effective allocations, unallocated, commitments, spend, flags — per component |
 | Project register | project → allocation | Full-life figures (allocated, approved, submitted, final), effective per-year allocation/commitments/spend, lifetime committed/spent, flags |
-| Budget versus actual | portfolio/SI/program/project/year | Effective budget versus commitments, spend, cross-year settlements line, remaining, per component |
+| Budget versus actual | portfolio/SI/program/project/year | Available money (effective budget + carry-in, with the carry-in as its own column), allocated, unallocated, commitments, spend, cross-year settlements line, remaining, per component |
 | Over-budget flags | all levels | The seven flags in ADR-0003 §6. The BR-2 envelope flag is per component |
 
 All reports export as CSV/XLSX and have a print-friendly route. Custom fields appear as extra

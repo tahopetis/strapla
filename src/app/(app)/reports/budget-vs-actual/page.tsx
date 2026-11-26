@@ -96,9 +96,11 @@ export default async function BudgetVsActualPage({
                 <th className={th}>FY</th>
                 <th className={th}>SI / program</th>
                 <th className={th}>Capex available</th>
+                <th className={th}>Capex carry-in (included)</th>
                 <th className={th}>Capex allocated</th>
                 <th className={th}>Capex unallocated</th>
                 <th className={th}>Opex available</th>
+                <th className={th}>Opex carry-in (included)</th>
                 <th className={th}>Opex allocated</th>
                 <th className={th}>Opex unallocated</th>
                 <th className={th}>Committed</th>
@@ -123,6 +125,9 @@ export default async function BudgetVsActualPage({
                     <Money value={row.capexAvailable} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.carryInCapex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.allocatedCapex} />
                   </td>
                   <td className={`py-3 pr-4 whitespace-nowrap ${row.overCapex ? 'text-red-700' : ''}`}>
@@ -130,6 +135,9 @@ export default async function BudgetVsActualPage({
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.opexAvailable} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.carryInOpex} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.allocatedOpex} />
@@ -173,6 +181,9 @@ export default async function BudgetVsActualPage({
                   <Money value={report.totals.capexAvailable} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.carryInCapex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.allocatedCapex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
@@ -180,6 +191,9 @@ export default async function BudgetVsActualPage({
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.opexAvailable} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.carryInOpex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.allocatedOpex} />

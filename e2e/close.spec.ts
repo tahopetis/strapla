@@ -11,7 +11,8 @@ import { createProgramFixture } from './support/programs';
  * 2. A wrong typed confirmation is blocked by the form itself (the `pattern`
  *    attribute) and does not reset the approval reference.
  * 3. The live carry-over preview is derived from the per-program and
- *    per-allocation amounts as they are typed.
+ *    per-allocation amounts as they are typed, and a partial carry asks for the
+ *    not-carried reason the close snapshot records (#113, ADR-0006 §3).
  *
  * The first test creates FY2029 and leaves it active on purpose: it becomes the
  * close target that makes FY2028's close page render the review form used by
@@ -213,6 +214,18 @@ test('derives the carry-over preview from the per-program and per-allocation amo
     .locator('tbody tr', { hasText: 'CLOSE-PRG-1' })
     .locator('input[name$="_capex"]')
     .fill('5000000');
+  // A partial carry leaves part of the available amount behind, so the row asks
+  // for the not-carried reason the close snapshot records (#113, ADR-0006 §3).
+  const closeRow = page.locator('tbody tr', { hasText: 'CLOSE-PRG-1' });
+  await expect(
+    closeRow.getByText('Part of the available amount is not carried: a reason is required.'),
+  ).toBeVisible();
+  await expect(page.locator('input[name^="not_carried_reason_"]').first()).toBeVisible();
+  // The fixture program was created without a continuation link, so its carry
+  // target is an explicit same-initiative choice, not a default.
+  await expect(
+    closeRow.getByText('Source discontinued or merged: the target is a reallocation decision.'),
+  ).toBeVisible();
   await expect(previewValue('Program capex')).toHaveText(rp(5000000));
   await expect(previewValue('Program opex')).toHaveText(rp(0));
 

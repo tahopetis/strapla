@@ -75,6 +75,25 @@ const optionalRupiah = (label: string) =>
       }
     });
 
+/** A whole Rupiah amount that must be greater than zero (a ledger receipt). */
+const positiveRupiah = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required.`)
+    .transform((value, ctx) => {
+      try {
+        return parseRupiah(value);
+      } catch {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${label} must be a whole Rupiah amount (digits only).`,
+        });
+        return z.NEVER;
+      }
+    })
+    .refine((value) => value > 0, `${label} must be greater than zero.`);
+
 /**
  * Parse a signed whole-Rupiah amount as typed into a budget revision line: an
  * optional leading minus marks a cut, and the magnitude follows the same
@@ -213,8 +232,6 @@ const programFields = z.object({
   prevProgramId: optionalUuid,
   capexBudget: requiredRupiah('Capex budget'),
   opexBudget: requiredRupiah('Opex budget'),
-  carryInCapex: optionalRupiah('Capex carry-in').transform((value) => value ?? 0),
-  carryInOpex: optionalRupiah('Opex carry-in').transform((value) => value ?? 0),
   notes: optionalText(),
 });
 
@@ -322,8 +339,6 @@ export type RecurringOpsUpdateInput = z.infer<typeof recurringOpsUpdateSchema>;
 const allocationFields = z.object({
   allocationCapex: requiredRupiah('Capex allocation'),
   allocationOpex: requiredRupiah('Opex allocation'),
-  carryInCapex: optionalRupiah('Capex carry-in').transform((value) => value ?? 0),
-  carryInOpex: optionalRupiah('Opex carry-in').transform((value) => value ?? 0),
   notes: optionalText(),
 });
 
@@ -443,6 +458,26 @@ export const closeFiscalYearSchema = z.object({
 });
 
 export type CloseFiscalYearInput = z.infer<typeof closeFiscalYearSchema>;
+
+// ---------------------------------------------------------------- carry-over ledger (ADR-0006 §2–3)
+
+const carryOverEntityTypeSchema = z.enum(['program', 'allocation']);
+
+/**
+ * A manual management grant of carry-in (origin `manual`). It is a reasoned
+ * receipt written to the ledger: no form writes the carry-in cache columns
+ * anymore. The target annual plan is the plan the entity belongs to.
+ */
+export const manualCarryReceiptSchema = z.object({
+  annualPlanId: idSchema,
+  entityType: carryOverEntityTypeSchema,
+  entityId: idSchema,
+  component: componentSchema,
+  amount: positiveRupiah('Carry-in amount'),
+  reason: reasonSchema,
+});
+
+export type ManualCarryReceiptInput = z.infer<typeof manualCarryReceiptSchema>;
 
 // ---------------------------------------------------------------- opening balances (W3b)
 

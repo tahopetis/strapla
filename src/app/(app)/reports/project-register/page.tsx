@@ -126,6 +126,12 @@ export default async function ProjectRegisterReportPage({
                     <Money value={row.totalAllocated} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.carryInCapex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.carryInOpex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.lifetimeCommitments} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
@@ -179,6 +185,12 @@ export default async function ProjectRegisterReportPage({
                   <Money value={report.totals.allocated} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.carryInCapex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.carryInOpex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.lifetimeCommitments} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
@@ -198,11 +210,12 @@ export default async function ProjectRegisterReportPage({
           </p>
         ) : null}
         <p className="mt-3 text-xs text-slate-500">
-            Open commitments: <Money value={report.totals.openCommitments} /> · prior-year opening settlements:{' '}
-            <Money value={report.totals.priorOpeningSettlements} /> · in-app spend:{' '}
-            <Money value={report.totals.inAppSpend} />. The CSV/XLSX export also carries the capex/opex component
-            split, carry-in and submitted price per project.
-          </p>
+          Allocated is the effective allocation (initial slice plus posted de-allocations); carry-in is
+          shown separately because it adds to the project year&apos;s available money. Open commitments:{' '}
+          <Money value={report.totals.openCommitments} /> · prior-year opening settlements:{' '}
+          <Money value={report.totals.priorOpeningSettlements} /> · in-app spend:{' '}
+          <Money value={report.totals.inAppSpend} />. The CSV/XLSX export carries the same columns.
+        </p>
       </Card>
     </ReportShell>
   );

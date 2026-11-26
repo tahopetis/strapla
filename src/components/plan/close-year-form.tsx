@@ -11,7 +11,12 @@ import {
 } from '@/domain/close';
 import { formatRupiah, parseRupiah } from '@/domain/money';
 import { initialFormState } from '@/lib/form-state';
-import { carryOverFieldName, type CarryOverComponent } from '@/lib/close-form';
+import {
+  carryOverFieldName,
+  notCarriedReasonFieldName,
+  targetProgramFieldName,
+  type CarryOverComponent,
+} from '@/lib/close-form';
 import { closeFiscalYearAction } from '@/server/plan/close-actions';
 
 const th = 'py-2 pr-3 text-left text-xs uppercase tracking-wide text-slate-500';
@@ -25,9 +30,11 @@ export interface CloseYearProgram {
   id: string;
   code: string;
   name: string;
-  unallocatedCapex: number;
-  unallocatedOpex: number;
-  defaultTargetProgramId: string | null;
+  availableCapex: number;
+  availableOpex: number;
+  /** The only valid target when set (the continuation program). */
+  continuationProgramId: string | null;
+  /** Same-initiative targets offered when the source is discontinued or merged. */
   targetPrograms: Array<{ value: string; label: string }>;
 }
 
@@ -35,8 +42,8 @@ export interface CloseYearAllocation {
   id: string;
   projectCode: string;
   projectName: string;
-  remainingCapex: number;
-  remainingOpex: number;
+  availableCapex: number;
+  availableOpex: number;
   hasTargetAllocation: boolean;
   note: string | null;
 }
@@ -67,13 +74,12 @@ function previewAmount(raw: string): number | null {
 }
 
 /**
- * The year-close form (W4a/W5b). It owns the carry amounts, the approval
- * reference, the typed confirmation and the target programs as local state, so
- * the preview above the button is derived from real values — not by reading
- * other components' DOM — and a refused close keeps every one of them. The
- * state-returning server action is driven directly (this form is not wrapped in
- * the shared `<Form>`) and the returned message renders in place above the
- * submit button.
+ * The year-close form (W4a/W5b, #113). It owns the carry amounts, the
+ * not-carried reasons, the approval reference, the typed confirmation and the
+ * discontinuous target programs as local state, so the preview above the button
+ * is derived from real values and a refused close keeps every one of them. Zero
+ * carry must be typed; a reason is needed whenever part of the available amount
+ * stays behind (the close snapshot records it).
  */
 export function CloseYearForm({
   annualPlanId,
@@ -86,15 +92,14 @@ export function CloseYearForm({
   const [state, formAction] = useActionState(closeFiscalYearAction, initialFormState);
   const [programAmounts, setProgramAmounts] = useState<Amounts>(() => initialAmounts(programs));
   const [allocationAmounts, setAllocationAmounts] = useState<Amounts>(() => initialAmounts(allocations));
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   // The approval reference, typed confirmation and target selects are kept as
   // local state: React resets an uncontrolled form after its action runs, and a
   // refused close must not discard what the user entered.
   const [reference, setReference] = useState('');
   const [confirmation, setConfirmation] = useState('');
-  const [programTargets, setProgramTargets] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      programs.map((row) => [row.id, row.defaultTargetProgramId ?? '']),
-    ),
+  const [targets, setTargets] = useState<Record<string, string>>(() =>
+    Object.fromEntries(programs.map((row) => [row.id, row.continuationProgramId ?? ''])),
   );
   const referenceError = state.fieldErrors?.reference;
   const confirmationError = state.fieldErrors?.confirmation;
@@ -132,9 +137,32 @@ export function CloseYearForm({
   ) => {
     setter((current) => ({
       ...current,
-      [entityId]: { ...(current[entityId] ?? { capex: '0', opex: '0' }), [component]: value },
+      [entityId]: { ...(current[entityId] ?? { capex: '', opex: '' }), [component]: value },
     }));
   };
+
+  /** True when the typed carry leaves part of the available amount behind. */
+  const needsReason = (available: { capex: number; opex: number }, amounts: Amounts, id: string) => {
+    return COMPONENTS.some((component) => {
+      const carried = previewAmount(amounts[id]?.[component] ?? '');
+      return carried !== null && carried < available[component];
+    });
+  };
+
+  const reasonField = (entityType: 'program' | 'allocation', entityId: string, required: boolean) => (
+    <input
+      name={notCarriedReasonFieldName(entityType, entityId)}
+      maxLength={1000}
+      placeholder={required ? 'Why is the rest not carried? (required)' : 'Only when part is not carried'}
+      value={reasons[`${entityType}:${entityId}`] ?? ''}
+      onChange={(event) =>
+        setReasons((current) => ({ ...current, [`${entityType}:${entityId}`]: event.target.value }))
+      }
+      className={moneyInput}
+      aria-label={`${entityType} not-carried reason`}
+      aria-invalid={required ? true : undefined}
+    />
+  );
 
   return (
     <form action={formAction} className="space-y-6">
@@ -142,7 +170,7 @@ export function CloseYearForm({
 
       <Card
         title="Program carry-over"
-        description="Unallocated program budget moves to the continuation program in the target year."
+        description="Unallocated program budget moves to the continuation program in the target year. A program without a continuation was discontinued or merged: its target must be chosen explicitly within the same strategic initiative."
       >
         {programs.length === 0 ? (
           <p className="text-sm text-slate-600">No programs in this fiscal year.</p>
@@ -152,74 +180,113 @@ export function CloseYearForm({
               <thead>
                 <tr>
                   <th className={th}>Program</th>
-                  <th className={th}>Capex unallocated</th>
+                  <th className={th}>Capex available</th>
                   <th className={th}>Carry capex</th>
-                  <th className={th}>Opex unallocated</th>
+                  <th className={th}>Opex available</th>
                   <th className={th}>Carry opex</th>
                   <th className={th}>Target program (FY{targetFiscalYear})</th>
+                  <th className={th}>Not-carried reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {programs.map((row) => (
-                  <tr key={row.id}>
-                    <td className="py-3 pr-3">
-                      <p className="font-medium">{row.code}</p>
-                      <p className="text-slate-600">{row.name}</p>
-                    </td>
-                    <td className="py-3 pr-3 whitespace-nowrap">
-                      <Money value={row.unallocatedCapex} />
-                    </td>
-                    <td className="py-3 pr-3">
-                      <input
-                        name={carryOverFieldName('program', row.id, 'capex')}
-                        inputMode="numeric"
-                        required
-                        placeholder="0"
-                        value={programAmounts[row.id]?.capex ?? ''}
-                        onChange={(event) =>
-                          setAmount(setProgramAmounts, row.id, 'capex', event.target.value)
-                        }
-                        className={moneyInput}
-                      />
-                    </td>
-                    <td className="py-3 pr-3 whitespace-nowrap">
-                      <Money value={row.unallocatedOpex} />
-                    </td>
-                    <td className="py-3 pr-3">
-                      <input
-                        name={carryOverFieldName('program', row.id, 'opex')}
-                        inputMode="numeric"
-                        required
-                        placeholder="0"
-                        value={programAmounts[row.id]?.opex ?? ''}
-                        onChange={(event) =>
-                          setAmount(setProgramAmounts, row.id, 'opex', event.target.value)
-                        }
-                        className={moneyInput}
-                      />
-                    </td>
-                    <td className="py-3 pr-3">
-                      <select
-                        name={`target_program_${row.id}`}
-                        value={programTargets[row.id] ?? ''}
-                        onChange={(event) =>
-                          setProgramTargets((current) => ({
-                            ...current,
-                            [row.id]: event.target.value,
-                          }))
-                        }
-                        className={selectClass}
-                      >
-                        <option value="">Select a target program</option>
-                        {row.targetPrograms.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
+                {programs.map((row) => {
+                  const reasonRequired = needsReason(
+                    { capex: row.availableCapex, opex: row.availableOpex },
+                    programAmounts,
+                    row.id,
+                  );
+                  const continuationLabel = row.continuationProgramId
+                    ? (row.targetPrograms.find((option) => option.value === row.continuationProgramId)
+                        ?.label ?? row.continuationProgramId)
+                    : null;
+                  return (
+                    <tr key={row.id}>
+                      <td className="py-3 pr-3">
+                        <p className="font-medium">{row.code}</p>
+                        <p className="text-slate-600">{row.name}</p>
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={row.availableCapex} />
+                      </td>
+                      <td className="py-3 pr-3">
+                        <input
+                          name={carryOverFieldName('program', row.id, 'capex')}
+                          inputMode="numeric"
+                          required
+                          placeholder="0"
+                          value={programAmounts[row.id]?.capex ?? ''}
+                          onChange={(event) =>
+                            setAmount(setProgramAmounts, row.id, 'capex', event.target.value)
+                          }
+                          className={moneyInput}
+                        />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={row.availableOpex} />
+                      </td>
+                      <td className="py-3 pr-3">
+                        <input
+                          name={carryOverFieldName('program', row.id, 'opex')}
+                          inputMode="numeric"
+                          required
+                          placeholder="0"
+                          value={programAmounts[row.id]?.opex ?? ''}
+                          onChange={(event) =>
+                            setAmount(setProgramAmounts, row.id, 'opex', event.target.value)
+                          }
+                          className={moneyInput}
+                        />
+                      </td>
+                      <td className="py-3 pr-3 min-w-48">
+                        {row.continuationProgramId ? (
+                          <>
+                            <p className="text-slate-700">{continuationLabel}</p>
+                            <input
+                              type="hidden"
+                              name={targetProgramFieldName(row.id)}
+                              value={row.continuationProgramId}
+                            />
+                            <p className="mt-1 text-xs text-slate-500">Continuation program</p>
+                          </>
+                        ) : (
+                          <>
+                            <select
+                              name={targetProgramFieldName(row.id)}
+                              value={targets[row.id] ?? ''}
+                              onChange={(event) =>
+                                setTargets((current) => ({ ...current, [row.id]: event.target.value }))
+                              }
+                              className={selectClass}
+                            >
+                              <option value="">Choose a target program</option>
+                              {row.targetPrograms.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-1 text-xs text-amber-700">
+                              Source discontinued or merged: the target is a reallocation decision.
+                            </p>
+                          </>
+                        )}
+                      </td>
+                      <td className="py-3 pr-3 min-w-56">
+                        {reasonField(
+                          'program',
+                          row.id,
+                          reasonRequired &&
+                            (reasons[`program:${row.id}`] ?? '').trim() === '',
+                        )}
+                        {reasonRequired && (reasons[`program:${row.id}`] ?? '').trim() === '' ? (
+                          <p className="mt-1 text-xs font-medium text-amber-700">
+                            Part of the available amount is not carried: a reason is required.
+                          </p>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -243,54 +310,75 @@ export function CloseYearForm({
                   <th className={th}>Remaining opex</th>
                   <th className={th}>Carry opex</th>
                   <th className={th}>Target</th>
+                  <th className={th}>Not-carried reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {allocations.map((row) => (
-                  <tr key={row.id}>
-                    <td className="py-3 pr-3">
-                      <p className="font-medium">{row.projectCode}</p>
-                      <p className="text-slate-600">{row.projectName}</p>
-                    </td>
-                    <td className="py-3 pr-3 whitespace-nowrap">
-                      <Money value={row.remainingCapex} />
-                    </td>
-                    <td className="py-3 pr-3">
-                      <input
-                        name={carryOverFieldName('allocation', row.id, 'capex')}
-                        inputMode="numeric"
-                        required
-                        placeholder="0"
-                        value={allocationAmounts[row.id]?.capex ?? ''}
-                        onChange={(event) =>
-                          setAmount(setAllocationAmounts, row.id, 'capex', event.target.value)
-                        }
-                        className={moneyInput}
-                      />
-                    </td>
-                    <td className="py-3 pr-3 whitespace-nowrap">
-                      <Money value={row.remainingOpex} />
-                    </td>
-                    <td className="py-3 pr-3">
-                      <input
-                        name={carryOverFieldName('allocation', row.id, 'opex')}
-                        inputMode="numeric"
-                        required
-                        placeholder="0"
-                        value={allocationAmounts[row.id]?.opex ?? ''}
-                        onChange={(event) =>
-                          setAmount(setAllocationAmounts, row.id, 'opex', event.target.value)
-                        }
-                        className={moneyInput}
-                      />
-                    </td>
-                    <td className="py-3 pr-3 text-xs text-slate-600">
-                      {row.hasTargetAllocation
-                        ? 'Existing target allocation (carry-in is added)'
-                        : (row.note ?? '—')}
-                    </td>
-                  </tr>
-                ))}
+                {allocations.map((row) => {
+                  const reasonRequired = needsReason(
+                    { capex: row.availableCapex, opex: row.availableOpex },
+                    allocationAmounts,
+                    row.id,
+                  );
+                  return (
+                    <tr key={row.id}>
+                      <td className="py-3 pr-3">
+                        <p className="font-medium">{row.projectCode}</p>
+                        <p className="text-slate-600">{row.projectName}</p>
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={row.availableCapex} />
+                      </td>
+                      <td className="py-3 pr-3">
+                        <input
+                          name={carryOverFieldName('allocation', row.id, 'capex')}
+                          inputMode="numeric"
+                          required
+                          placeholder="0"
+                          value={allocationAmounts[row.id]?.capex ?? ''}
+                          onChange={(event) =>
+                            setAmount(setAllocationAmounts, row.id, 'capex', event.target.value)
+                          }
+                          className={moneyInput}
+                        />
+                      </td>
+                      <td className="py-3 pr-3 whitespace-nowrap">
+                        <Money value={row.availableOpex} />
+                      </td>
+                      <td className="py-3 pr-3">
+                        <input
+                          name={carryOverFieldName('allocation', row.id, 'opex')}
+                          inputMode="numeric"
+                          required
+                          placeholder="0"
+                          value={allocationAmounts[row.id]?.opex ?? ''}
+                          onChange={(event) =>
+                            setAmount(setAllocationAmounts, row.id, 'opex', event.target.value)
+                          }
+                          className={moneyInput}
+                        />
+                      </td>
+                      <td className="py-3 pr-3 text-xs text-slate-600">
+                        {row.hasTargetAllocation
+                          ? 'Existing target allocation (carry-in is added)'
+                          : (row.note ?? '—')}
+                      </td>
+                      <td className="py-3 pr-3 min-w-56">
+                        {reasonField(
+                          'allocation',
+                          row.id,
+                          reasonRequired &&
+                            (reasons[`allocation:${row.id}`] ?? '').trim() === '',
+                        )}
+                        {reasonRequired && (reasons[`allocation:${row.id}`] ?? '').trim() === '' ? (
+                          <p className="mt-1 text-xs font-medium text-amber-700">
+                            Part of the remaining amount is not carried: a reason is required.
+                          </p>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -323,7 +411,7 @@ export function CloseYearForm({
           </dl>
           <p className="mt-2 text-xs text-slate-500">
             These are the amounts entered; the close rejects any amount above what is available or
-            remaining.
+            remaining, and records the part left behind with its reason.
           </p>
           {hasInvalid ? (
             <p role="alert" className="mt-2 text-xs text-red-700">
@@ -387,7 +475,9 @@ export function CloseYearForm({
         </div>
         <p className="mt-3 text-xs text-slate-500">
           Carry amounts start blank: enter an amount for every field — type 0 for none. A blank field
-          blocks the close. After the close, settlement lifecycle events (paying existing commitments) can still be
+          blocks the close. The close records a snapshot of available / carried / not-carried per entity
+          and component; the not-carried reason is required whenever part of the amount stays behind.
+          After the close, settlement lifecycle events (paying existing commitments) can still be
           recorded and are audited; all other edits on the closed year are blocked.
         </p>
       </Card>

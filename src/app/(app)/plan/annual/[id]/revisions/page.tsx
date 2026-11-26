@@ -4,9 +4,10 @@ import { notFound } from 'next/navigation';
 import { Form, HiddenField, SubmitButton, TextAreaField, TextField } from '@/components/form';
 import { PlanNav } from '@/components/plan-nav';
 import { RevisionForm } from '@/components/plan/revision-form';
+import { listRevisionLines } from '@/components/plan/revision-lines';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import { isRecordId } from '@/lib/record-id';
-import { toDateInputValue } from '@/lib/format';
+import { formatDate, toDateInputValue } from '@/lib/format';
 import { recordRevisionDecisionAction } from '@/server/plan/revision-actions';
 import { getRevisionPageData } from '@/server/plan/revision-queries';
 
@@ -15,6 +16,7 @@ export const metadata: Metadata = { title: 'Budget revisions' };
 
 const linkClass =
   'text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900';
+const th = 'py-2 pr-3 text-left text-xs uppercase tracking-wide text-slate-500';
 
 function todayIso(): string {
   return toDateInputValue(new Date());
@@ -42,6 +44,11 @@ export default async function BudgetRevisionsPage({
   const archived = data.strategicPlan.status === 'archived';
   const canPost = data.annualPlan.status === 'active' && !archived;
   const canRecordDecision = !archived;
+  // Each revision's lines, labelled for display: a program line links to its
+  // program page so the register is a navigable document, not just a total.
+  const linesByRevision = await listRevisionLines(
+    data.revisions.map((row) => row.revision.id),
+  );
 
   return (
     <div>
@@ -61,20 +68,31 @@ export default async function BudgetRevisionsPage({
         <Card
           title="Revision register"
           description="A revision is never edited or deleted: a correction is a new revision."
-          actions={<Badge>{data.revisions.length}</Badge>}
+          actions={
+            <div className="flex flex-wrap gap-2">
+              <Badge>{data.revisions.length}</Badge>
+              {data.revisions.some((row) => row.awaitingDecision) ? (
+                <Badge tone="warning">
+                  {data.revisions.filter((row) => row.awaitingDecision).length} awaiting decision
+                </Badge>
+              ) : null}
+            </div>
+          }
         >
           {data.revisions.length === 0 ? (
             <EmptyState>No budget revisions posted for FY{data.annualPlan.fiscalYear} yet.</EmptyState>
           ) : (
             <ul className="space-y-4">
-              {data.revisions.map((row) => (
+              {data.revisions.map((row) => {
+                const lines = linesByRevision.get(row.revision.id) ?? [];
+                return (
                 <li key={row.revision.id} className="rounded-lg border border-slate-200 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="flex items-center gap-2 font-semibold">
                         {row.number}
                         <span className="text-sm font-normal text-slate-500">
-                          {row.revision.revisionDate}
+                          {formatDate(row.revision.revisionDate)}
                         </span>
                         {row.awaitingDecision ? (
                           <Badge tone="warning">awaiting decision reference</Badge>
@@ -104,6 +122,50 @@ export default async function BudgetRevisionsPage({
                       <span className="font-medium">{row.revision.decisionReference}</span>
                     )}
                   </p>
+
+                  {lines.length > 0 ? (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-xs">
+                        <thead>
+                          <tr>
+                            <th className={th}>Line</th>
+                            <th className={th}>Component</th>
+                            <th className={th}>Delta</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {lines.map((line) => (
+                            <tr key={line.id}>
+                              <td className="py-2 pr-3">
+                                {line.entityType === 'program' ? (
+                                  <Link
+                                    href={`/plan/programs/${line.entityId}`}
+                                    className={linkClass}
+                                  >
+                                    {line.entityCode}
+                                    {line.entityName ? ` · ${line.entityName}` : ''}
+                                  </Link>
+                                ) : (
+                                  <span>
+                                    {line.entityCode}
+                                    {line.entityName ? ` · ${line.entityName}` : ''}
+                                    <span className="ml-2 text-slate-500">
+                                      project allocation (de-allocation)
+                                    </span>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 pr-3 uppercase">{line.component}</td>
+                              <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
+                                {line.delta > 0 ? '+' : ''}
+                                <Money value={line.delta} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
 
                   {row.awaitingDecision && canRecordDecision ? (
                     <details className="mt-3">
@@ -135,7 +197,8 @@ export default async function BudgetRevisionsPage({
                     </details>
                   ) : null}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </Card>

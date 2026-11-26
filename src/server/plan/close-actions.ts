@@ -1,11 +1,10 @@
 'use server';
 
 import { eq } from 'drizzle-orm';
-import { getDb } from '@/db/client';
+import { getDb, type Db } from '@/db/client';
 import {
   annualPlans,
-  annualPrograms,
-  carryOverEntries,
+  closeSnapshots,
   projectYearAllocations,
   type AnnualPlan,
 } from '@/db/schema';
@@ -13,9 +12,9 @@ import { closeFiscalYearSchema } from '@/domain/inputs';
 import {
   CloseError,
   assertCloseConfirmation,
-  validateCarryOverAmount,
+  type CarryOverTotalsByEntity,
 } from '@/domain/close';
-import { carryOverFieldName, readCarryOverField } from '@/lib/close-form';
+import { buildClosePlan, type ClosePlan } from '@/lib/close-form';
 import type { FormState } from '@/lib/form-state';
 import {
   FormError,
@@ -25,36 +24,27 @@ import {
   validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
+import {
+  appendCarryEntry,
+  assertCarryCacheMatches,
+  recomputeCarryCache,
+} from './carry-ledger';
+import {
+  carryInvariantKey,
+  listReceiptEntriesForEntities,
+  summarizeCloseEntries,
+} from './carry-queries';
 import { getCloseState } from './close-queries';
 
-interface CarryEntry {
-  entityType: 'program' | 'allocation';
-  sourceEntityId: string;
-  targetEntityId: string;
-  component: 'capex' | 'opex';
-  amount: number;
-}
-
 /**
- * Reads one carry-over field through the shared form schema (W4a): blank is
- * rejected, so a zero carry-over is an explicit "0".
+ * The year close (#113, ADR-0006 §3). One transaction writes the ledger
+ * receipts (origin `close`), one immutable snapshot row per source entity and
+ * component — zero carry included — the recomputed `carry_in_*` cache, and the
+ * closed status. The snapshot invariants are checked against the ledger in the
+ * same transaction, so a partially applied close can never exist.
  */
-function parseAmount(formData: FormData, key: string, label: string): number {
-  const parsed = readCarryOverField(formData.get(key), label);
-  if (!parsed.ok) throw new FormError(parsed.message);
-  return parsed.value;
-}
 
-function requireTarget<T>(targets: T[], value: string | null, label: string): T {
-  const target = targets.find((candidate) => candidate === value);
-  if (!target) throw new FormError(`Choose a target program for ${label}.`);
-  return target;
-}
-
-/**
- * The typed phrase is a form error (shown on the close page); other close-rule
- * failures keep their existing handling.
- */
+/** The typed phrase is a form error (shown on the close page). */
 function requireConfirmation(confirmation: string, fiscalYear: number): void {
   try {
     assertCloseConfirmation(confirmation, fiscalYear);
@@ -64,11 +54,49 @@ function requireConfirmation(confirmation: string, fiscalYear: number): void {
   }
 }
 
+function requireNoCloseError(build: () => ClosePlan): ClosePlan {
+  try {
+    return build();
+  } catch (error) {
+    if (error instanceof CloseError) throw new FormError(error.message);
+    throw error;
+  }
+}
+
+/** One receipt's lineage parent: the single receipt that funded the source entity, if any. */
+function receiptAncestors(
+  entries: Awaited<ReturnType<typeof listReceiptEntriesForEntities>>,
+): Map<string, string> {
+  const grouped = new Map<string, string[]>();
+  for (const entry of entries) {
+    if (!entry.sourceEntityId) continue;
+    const key = carryInvariantKey(entry.entityType, entry.sourceEntityId, entry.component);
+    const list = grouped.get(key) ?? [];
+    list.push(entry.id);
+    grouped.set(key, list);
+  }
+  const single = new Map<string, string>();
+  for (const [key, ids] of grouped) {
+    // Carry of carry is one hop per entry. With a single receipt the lineage is
+    // unambiguous; with several the amount is a fungible pool and the chain is
+    // not invented here.
+    if (ids.length === 1) single.set(key, ids[0]!);
+  }
+  return single;
+}
+
+interface WrittenClose {
+  closed: AnnualPlan;
+  totals: CarryOverTotalsByEntity;
+  entryCount: number;
+  snapshotCount: number;
+}
+
 async function closeFiscalYear(
   userId: string,
   input: { annualPlanId: string; reference: string; confirmation: string },
   formData: FormData,
-): Promise<AnnualPlan> {
+): Promise<WrittenClose> {
   const state = await getCloseState(input.annualPlanId);
   if (!state) throw new FormError('Annual plan not found.');
   if (state.plan.status === 'closed') throw new FormError('This fiscal year is already closed.');
@@ -92,242 +120,168 @@ async function closeFiscalYear(
   }
   requireConfirmation(input.confirmation, state.plan.fiscalYear);
 
-  const programCarries = new Map<string, { capex: number; opex: number }>();
-  for (const row of state.programs) {
-    programCarries.set(row.program.id, {
-      capex: parseAmount(
-        formData,
-        carryOverFieldName('program', row.program.id, 'capex'),
-        `${row.program.code} capex`,
-      ),
-      opex: parseAmount(
-        formData,
-        carryOverFieldName('program', row.program.id, 'opex'),
-        `${row.program.code} opex`,
-      ),
-    });
-  }
+  const closePlan = requireNoCloseError(() =>
+    buildClosePlan(
+      {
+        defaultEntryReason: `Carried into FY${targetPlan.fiscalYear} at the FY${state.plan.fiscalYear} close (${input.reference})`,
+        programs: state.programs.map((row) => ({
+          id: row.program.id,
+          code: row.program.code,
+          name: row.program.name,
+          availableCapex: row.availableCapex,
+          availableOpex: row.availableOpex,
+          continuationProgramId: row.continuationProgramId,
+          targetProgramIds: row.targetProgramIds,
+        })),
+        allocations: state.allocations.map((row) => ({
+          id: row.allocation.id,
+          projectCode: row.project.code,
+          programId: row.allocation.annualProgramId,
+          availableCapex: row.availableCapex,
+          availableOpex: row.availableOpex,
+          targetAllocationId: row.targetAllocation?.id ?? null,
+          canCreateTarget: row.canCreateTarget,
+          note: row.note,
+        })),
+      },
+      formData,
+    ),
+  );
 
-  const programTargets = new Map<string, string>();
-  for (const row of state.programs) {
-    const carry = programCarries.get(row.program.id) ?? { capex: 0, opex: 0 };
-    const chosen = formData.get(`target_program_${row.program.id}`);
-    const value = typeof chosen === 'string' ? chosen.trim() : '';
-    if (carry.capex + carry.opex === 0) {
-      programTargets.set(row.program.id, value);
-      continue;
-    }
-    const target = requireTarget(
-      row.targetPrograms.map((candidate) => candidate.value),
-      value,
-      `${row.program.code} ${row.program.name}`,
-    );
-    programTargets.set(row.program.id, target);
-  }
+  const receipts = await listReceiptEntriesForEntities(
+    state.plan.id,
+    [
+      ...state.programs.map((row) => ({ entityType: 'program' as const, entityId: row.program.id })),
+      ...state.allocations.map((row) => ({
+        entityType: 'allocation' as const,
+        entityId: row.allocation.id,
+      })),
+    ],
+  );
+  const ancestors = receiptAncestors(receipts);
 
-  const entries: CarryEntry[] = [];
-  for (const row of state.programs) {
-    const targetProgramId = programTargets.get(row.program.id);
-    const carry = programCarries.get(row.program.id) ?? { capex: 0, opex: 0 };
-    for (const component of ['capex', 'opex'] as const) {
-      const amount = component === 'capex' ? carry.capex : carry.opex;
-      if (amount === 0) continue;
-      validateCarryOverAmount({
-        amount,
-        available: component === 'capex' ? row.unallocatedCapex : row.unallocatedOpex,
-        label: `${row.program.code} ${component} carry-over`,
-      });
-      if (!targetProgramId) throw new FormError(`Choose a target program for ${row.program.code}.`);
-      entries.push({
-        entityType: 'program',
-        sourceEntityId: row.program.id,
-        targetEntityId: targetProgramId,
-        component,
-        amount,
-      });
-    }
-  }
-
-  for (const row of state.allocations) {
-    for (const component of ['capex', 'opex'] as const) {
-      const amount = parseAmount(
-        formData,
-        carryOverFieldName('allocation', row.allocation.id, component),
-        `${row.project.code} ${component}`,
-      );
-      if (amount === 0) continue;
-      validateCarryOverAmount({
-        amount,
-        available: component === 'capex' ? row.remainingCapex : row.remainingOpex,
-        label: `${row.project.code} ${component} carry-over`,
-      });
-      if (!row.targetAllocation && !row.canCreateTarget) {
-        throw new FormError(
-          row.note ?? `Cannot carry ${row.project.code} into FY${targetPlan.fiscalYear}.`,
-        );
-      }
-      const targetEntityId =
-        row.targetAllocation?.id ?? `new-allocation:${row.allocation.id}`;
-      entries.push({
-        entityType: 'allocation',
-        sourceEntityId: row.allocation.id,
-        targetEntityId,
-        component,
-        amount,
-      });
-    }
-  }
-
-  let closed: AnnualPlan | undefined;
+  let written: WrittenClose | undefined;
   await getDb().transaction(async (tx) => {
-    const targetProgramsById = new Map(
-      (
-        await tx
-          .select()
-          .from(annualPrograms)
-          .where(eq(annualPrograms.annualPlanId, targetPlan?.id ?? ''))
-      ).map((program) => [program.id, program]),
-    );
+    const entryIds: string[] = [];
+    const touchedTargets = new Map<string, { entityType: 'program' | 'allocation'; entityId: string }>();
 
-    for (const entry of entries.filter((candidate) => candidate.entityType === 'program')) {
-      const target = targetProgramsById.get(entry.targetEntityId);
-      if (!target) throw new FormError('A target program was not found.');
-      await tx
-        .update(annualPrograms)
-        .set(
-          entry.component === 'capex'
-            ? { carryInCapex: target.carryInCapex + entry.amount, updatedBy: userId, updatedAt: new Date() }
-            : { carryInOpex: target.carryInOpex + entry.amount, updatedBy: userId, updatedAt: new Date() },
-        )
-        .where(eq(annualPrograms.id, target.id));
+    // New target allocations referenced by a `new-allocation:` marker are
+    // created first, so the receipts point at real rows.
+    const resolvedTargets = new Map<string, string>();
+    const allocationEntries = closePlan.entries.filter((entry) => entry.entityType === 'allocation');
+    for (const entry of allocationEntries) {
+      if (!entry.targetEntityId.startsWith('new-allocation:')) {
+        resolvedTargets.set(entry.targetEntityId, entry.targetEntityId);
+      }
+    }
+    for (const sourceAllocationId of new Set(allocationEntries.map((entry) => entry.sourceEntityId))) {
+      const marker = allocationEntries.find(
+        (entry) => entry.sourceEntityId === sourceAllocationId,
+      )?.targetEntityId;
+      if (!marker || !marker.startsWith('new-allocation:')) continue;
+      const row = state.allocations.find(
+        (candidate) => candidate.allocation.id === sourceAllocationId,
+      );
+      if (!row) throw new FormError('An allocation to carry over was not found.');
+      const targetProgramId = closePlan.programTargets.get(row.allocation.annualProgramId);
+      if (!targetProgramId) {
+        throw new FormError(`No target program for ${row.project.code}.`);
+      }
       const [created] = await tx
-        .insert(carryOverEntries)
+        .insert(projectYearAllocations)
         .values({
-          sourceAnnualPlanId: state.plan.id,
-          targetAnnualPlanId: targetPlan.id,
-          entityType: 'program',
-          sourceEntityId: entry.sourceEntityId,
-          targetEntityId: target.id,
-          component: entry.component,
-          amount: entry.amount,
-          approvalReference: input.reference,
+          projectId: row.project.id,
+          annualPlanId: targetPlan.id,
+          annualProgramId: targetProgramId,
+          allocationCapex: 0,
+          allocationOpex: 0,
+          notes: `Carry-over from FY${state.plan.fiscalYear} (${input.reference}).`,
           createdBy: userId,
+          updatedBy: userId,
         })
         .returning();
+      if (!created) throw new Error('failed to create the target allocation');
+      resolvedTargets.set(marker, created.id);
+      await recordAudit(tx, {
+        actorUserId: userId,
+        action: 'create',
+        entityType: 'project_year_allocation',
+        entityId: created.id,
+        after: {
+          projectId: row.project.id,
+          annualPlanId: targetPlan.id,
+          annualProgramId: targetProgramId,
+        },
+        reason: `Created by the FY${state.plan.fiscalYear} close: ${input.reference}`,
+      });
+    }
+
+    for (const entry of closePlan.entries) {
+      const targetEntityId =
+        entry.entityType === 'allocation'
+          ? (resolvedTargets.get(entry.targetEntityId) ?? entry.targetEntityId)
+          : entry.targetEntityId;
+      const receipt = await appendCarryEntry(tx, {
+        origin: 'close',
+        sourceAnnualPlanId: state.plan.id,
+        sourceEntityId: entry.sourceEntityId,
+        targetAnnualPlanId: targetPlan.id,
+        entityType: entry.entityType,
+        targetEntityId,
+        component: entry.component,
+        amount: entry.amount,
+        reason: entry.reason,
+        approvalReference: input.reference,
+        sourceEntryId:
+          ancestors.get(carryInvariantKey(entry.entityType, entry.sourceEntityId, entry.component)) ??
+          null,
+        actorUserId: userId,
+      });
+      entryIds.push(receipt.id);
+      touchedTargets.set(`${entry.entityType}:${targetEntityId}`, {
+        entityType: entry.entityType,
+        entityId: targetEntityId,
+      });
       await recordAudit(tx, {
         actorUserId: userId,
         action: 'carry_over',
-        entityType: 'annual_program',
-        entityId: target.id,
+        entityType: entry.entityType === 'program' ? 'annual_program' : 'project_year_allocation',
+        entityId: targetEntityId,
         after: {
+          origin: 'close',
           amount: entry.amount,
           component: entry.component,
           sourceAnnualPlanId: state.plan.id,
+          sourceEntityId: entry.sourceEntityId,
           targetAnnualPlanId: targetPlan.id,
-          carryOverEntryId: created?.id,
+          carryOverEntryId: receipt.id,
+          sourceEntryId: receipt.sourceEntryId,
         },
         reason: input.reference,
       });
     }
 
-    // Allocation carry-over: group per source allocation.
-    const allocationGroups = new Map<string, CarryEntry[]>();
-    for (const entry of entries.filter((candidate) => candidate.entityType === 'allocation')) {
-      const list = allocationGroups.get(entry.sourceEntityId) ?? [];
-      list.push(entry);
-      allocationGroups.set(entry.sourceEntityId, list);
+    // One immutable snapshot row per source entity and component, zero included.
+    for (const snapshot of closePlan.snapshots) {
+      await tx.insert(closeSnapshots).values({
+        annualPlanId: state.plan.id,
+        entityType: snapshot.entityType,
+        entityId: snapshot.entityId,
+        component: snapshot.component,
+        available: snapshot.available,
+        carried: snapshot.carried,
+        notCarried: snapshot.notCarried,
+        notCarriedReason: snapshot.notCarriedReason,
+      });
     }
-    for (const [sourceAllocationId, group] of allocationGroups.entries()) {
-      const row = state.allocations.find((candidate) => candidate.allocation.id === sourceAllocationId);
-      if (!row) throw new FormError('An allocation to carry over was not found.');
-      const carryCapex = group.find((entry) => entry.component === 'capex')?.amount ?? 0;
-      const carryOpex = group.find((entry) => entry.component === 'opex')?.amount ?? 0;
 
-      let targetAllocationId = row.targetAllocation?.id ?? null;
-      if (targetAllocationId) {
-        const [target] = await tx
-          .select()
-          .from(projectYearAllocations)
-          .where(eq(projectYearAllocations.id, targetAllocationId))
-          .limit(1);
-        if (!target) throw new FormError('The target allocation was not found.');
-        await tx
-          .update(projectYearAllocations)
-          .set({
-            carryInCapex: target.carryInCapex + carryCapex,
-            carryInOpex: target.carryInOpex + carryOpex,
-            updatedBy: userId,
-            updatedAt: new Date(),
-          })
-          .where(eq(projectYearAllocations.id, target.id));
-      } else {
-        const targetProgramId = programTargets.get(row.allocation.annualProgramId);
-        if (!targetProgramId) {
-          throw new FormError(`No target program for ${row.project.code}.`);
-        }
-        const [created] = await tx
-          .insert(projectYearAllocations)
-          .values({
-            projectId: row.project.id,
-            annualPlanId: targetPlan.id,
-            annualProgramId: targetProgramId,
-            allocationCapex: 0,
-            allocationOpex: 0,
-            carryInCapex: carryCapex,
-            carryInOpex: carryOpex,
-            notes: `Carry-over from FY${state.plan.fiscalYear} (${input.reference}).`,
-            createdBy: userId,
-            updatedBy: userId,
-          })
-          .returning();
-        if (!created) throw new Error('failed to create the target allocation');
-        targetAllocationId = created.id;
-        await recordAudit(tx, {
-          actorUserId: userId,
-          action: 'create',
-          entityType: 'project_year_allocation',
-          entityId: created.id,
-          after: {
-            projectId: row.project.id,
-            annualPlanId: targetPlan.id,
-            carryInCapex: carryCapex,
-            carryInOpex: carryOpex,
-          },
-          reason: `Created by FY${state.plan.fiscalYear} close: ${input.reference}`,
-        });
-      }
-
-      for (const entry of group) {
-        const [createdEntry] = await tx
-          .insert(carryOverEntries)
-          .values({
-            sourceAnnualPlanId: state.plan.id,
-            targetAnnualPlanId: targetPlan.id,
-            entityType: 'allocation',
-            sourceEntityId: sourceAllocationId,
-            targetEntityId: targetAllocationId,
-            component: entry.component,
-            amount: entry.amount,
-            approvalReference: input.reference,
-            createdBy: userId,
-          })
-          .returning();
-        await recordAudit(tx, {
-          actorUserId: userId,
-          action: 'carry_over',
-          entityType: 'project_year_allocation',
-          entityId: targetAllocationId,
-          after: {
-            amount: entry.amount,
-            component: entry.component,
-            sourceAnnualPlanId: state.plan.id,
-            targetAnnualPlanId: targetPlan.id,
-            carryOverEntryId: createdEntry?.id,
-          },
-          reason: input.reference,
-        });
-      }
+    // The guarded cache is written only here, from the ledger sum.
+    for (const target of touchedTargets.values()) {
+      await recomputeCarryCache(tx, { ...target, actorUserId: userId });
+      await assertCarryCacheMatches(tx, target);
     }
+
+    await assertCloseInvariants(tx, state.plan.id, closePlan);
 
     const [row] = await tx
       .update(annualPlans)
@@ -342,7 +296,7 @@ async function closeFiscalYear(
       .where(eq(annualPlans.id, state.plan.id))
       .returning();
     if (!row) throw new FormError('Annual plan not found.');
-    closed = row;
+
     await recordAudit(tx, {
       actorUserId: userId,
       action: 'close',
@@ -353,13 +307,49 @@ async function closeFiscalYear(
         status: 'closed',
         closeReference: input.reference,
         targetAnnualPlanId: targetPlan.id,
-        carryOverEntries: entries.length,
+        carryOverEntries: entryIds.length,
+        closeSnapshots: closePlan.snapshots.length,
       },
       reason: input.reference,
     });
+
+    written = {
+      closed: row,
+      totals: closePlan.totals,
+      entryCount: entryIds.length,
+      snapshotCount: closePlan.snapshots.length,
+    };
   });
-  if (!closed) throw new FormError('Annual plan not found.');
-  return closed;
+
+  if (!written) throw new FormError('Annual plan not found.');
+  return written;
+}
+
+/**
+ * ADR-0006 §3, checked inside the close transaction: for every snapshot row,
+ * carried equals the sum of the entries written for that source entity and
+ * component, and available equals carried plus not-carried.
+ */
+async function assertCloseInvariants(
+  tx: Pick<Db, 'select'>,
+  sourceAnnualPlanId: string,
+  closePlan: ClosePlan,
+): Promise<void> {
+  const ledger = await summarizeCloseEntries(tx, sourceAnnualPlanId);
+  for (const snapshot of closePlan.snapshots) {
+    const key = carryInvariantKey(snapshot.entityType, snapshot.entityId, snapshot.component);
+    const written = ledger.get(key) ?? 0;
+    if (written !== snapshot.carried) {
+      throw new FormError(
+        `The close could not be recorded: the snapshot carries ${snapshot.carried} Rupiah for ${key}, but the ledger wrote ${written}.`,
+      );
+    }
+    if (snapshot.available !== snapshot.carried + snapshot.notCarried) {
+      throw new FormError(
+        `The close could not be recorded: available ${snapshot.available} Rupiah is not carried plus not-carried for ${key}.`,
+      );
+    }
+  }
 }
 
 export async function closeFiscalYearAction(
@@ -370,14 +360,14 @@ export async function closeFiscalYearAction(
   const parsed = validateForm(previous, closeFiscalYearSchema, formData);
   if (!parsed.ok) return parsed.state;
 
-  let closed: AnnualPlan;
+  let written: WrittenClose;
   try {
-    closed = await closeFiscalYear(actor.id, parsed.data, formData);
+    written = await closeFiscalYear(actor.id, parsed.data, formData);
   } catch (error) {
     return failureState(previous, error, parsed.values);
   }
   finishWith(
-    `/plan/annual/${closed.id}`,
-    `Fiscal year FY${closed.fiscalYear} closed and carry-over recorded.`,
+    `/plan/annual/${written.closed.id}`,
+    `Fiscal year FY${written.closed.fiscalYear} closed and carry-over recorded (${written.entryCount} receipt${written.entryCount === 1 ? '' : 's'}, ${written.snapshotCount} snapshot rows).`,
   );
 }

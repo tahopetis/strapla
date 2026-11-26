@@ -1,0 +1,1 @@
+CREATE INDEX "carry_over_entries_target_idx" ON "carry_over_entries" USING btree ("entity_type","target_entity_id","component");

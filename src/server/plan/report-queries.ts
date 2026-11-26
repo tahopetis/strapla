@@ -527,6 +527,8 @@ export interface ProjectRegisterReport {
     approved: number;
     finalDeal: number;
     allocated: number;
+    carryInCapex: number;
+    carryInOpex: number;
     lifetimeCommitments: number;
     openingSpent: number;
     inAppCommitments: number;
@@ -651,6 +653,8 @@ export async function getProjectRegisterReport(
       approved: total.approved + (row.approvedAmount ?? 0),
       finalDeal: total.finalDeal + (row.finalDealPrice ?? 0),
       allocated: total.allocated + row.totalAllocated,
+      carryInCapex: total.carryInCapex + row.carryInCapex,
+      carryInOpex: total.carryInOpex + row.carryInOpex,
       lifetimeCommitments: total.lifetimeCommitments + row.lifetimeCommitments,
       openingSpent: total.openingSpent + row.project.openingSpent,
       inAppCommitments: total.inAppCommitments + row.inAppCommitments,
@@ -664,6 +668,8 @@ export async function getProjectRegisterReport(
       approved: 0,
       finalDeal: 0,
       allocated: 0,
+      carryInCapex: 0,
+      carryInOpex: 0,
       lifetimeCommitments: 0,
       openingSpent: 0,
       inAppCommitments: 0,
@@ -689,6 +695,9 @@ export interface BudgetVsActualRow {
   programName: string;
   capexAvailable: number;
   opexAvailable: number;
+  /** Carry-in included in the available figures, per component (ledger cache). */
+  carryInCapex: number;
+  carryInOpex: number;
   allocatedCapex: number;
   allocatedOpex: number;
   commitmentCapex: number;
@@ -713,6 +722,8 @@ export interface BudgetVsActualReport {
   totals: {
     capexAvailable: number;
     opexAvailable: number;
+    carryInCapex: number;
+    carryInOpex: number;
     allocatedCapex: number;
     allocatedOpex: number;
     commitmentCapex: number;
@@ -743,6 +754,8 @@ export async function getBudgetVsActualReport(
     programName: row.programName,
     capexAvailable: row.availableCapex,
     opexAvailable: row.availableOpex,
+    carryInCapex: row.carryInCapex,
+    carryInOpex: row.carryInOpex,
     allocatedCapex: row.allocatedCapex,
     allocatedOpex: row.allocatedOpex,
     commitmentCapex: row.commitmentCapex,
@@ -765,6 +778,8 @@ export async function getBudgetVsActualReport(
     (total, row) => ({
       capexAvailable: total.capexAvailable + row.capexAvailable,
       opexAvailable: total.opexAvailable + row.opexAvailable,
+      carryInCapex: total.carryInCapex + row.carryInCapex,
+      carryInOpex: total.carryInOpex + row.carryInOpex,
       allocatedCapex: total.allocatedCapex + row.allocatedCapex,
       allocatedOpex: total.allocatedOpex + row.allocatedOpex,
       commitmentCapex: total.commitmentCapex + row.commitmentCapex,
@@ -783,6 +798,8 @@ export async function getBudgetVsActualReport(
     {
       capexAvailable: 0,
       opexAvailable: 0,
+      carryInCapex: 0,
+      carryInOpex: 0,
       allocatedCapex: 0,
       allocatedOpex: 0,
       commitmentCapex: 0,

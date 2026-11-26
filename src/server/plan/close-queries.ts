@@ -15,29 +15,43 @@ import {
   type StrategicPlan,
 } from '@/db/schema';
 import { revisedProgramBudgetPosition } from '@/domain/funding';
+import { carryOverCandidate, nextFiscalYear, type CarryOverTotalsByEntity } from '@/domain/close';
 import { NO_DELTAS } from '@/domain/revisions';
-import { nextFiscalYear } from '@/domain/close';
 import { getAllocationFunding } from './execution-queries';
+import { listCloseSnapshots, type CloseSnapshotRow } from './carry-queries';
 import { getRevisionDeltasForPlan } from './revision-queries';
 
-/** Queries for the year-close review and the carry-over snapshot (M4 #21). */
+/** Queries for the year-close review and the carry-over snapshot (M4 #21, #113). */
 
 export interface CloseProgramRow {
   program: AnnualProgram;
+  /** The positive carry candidate, per component (unallocated budget). */
   availableCapex: number;
   availableOpex: number;
   allocatedCapex: number;
   allocatedOpex: number;
+  /** Unallocated budget as computed; negative when over-allocated (shown, not carried). */
   unallocatedCapex: number;
   unallocatedOpex: number;
+  /**
+   * The continuation program in the target year. When it exists it is the only
+   * valid carry target (ADR-0006 §3); a null means the source is discontinued
+   * or merged and the owner must pick another same-initiative program
+   * explicitly.
+   */
+  continuationProgramId: string | null;
+  /** Same-initiative target programs offered when the source is discontinued. */
+  targetProgramIds: string[];
   targetPrograms: Array<{ value: string; label: string }>;
-  defaultTargetProgramId: string | null;
 }
 
 export interface CloseAllocationRow {
   allocation: ProjectYearAllocation;
   project: Project;
   program: AnnualProgram;
+  /** The positive carry candidate, per component (allocation remaining). */
+  availableCapex: number;
+  availableOpex: number;
   remainingCapex: number;
   remainingOpex: number;
   targetAllocation: ProjectYearAllocation | null;
@@ -53,6 +67,9 @@ export interface CloseState {
   programs: CloseProgramRow[];
   allocations: CloseAllocationRow[];
   carryOvers: CarryOverEntry[];
+  /** Immutable snapshot rows when the plan is already closed. */
+  snapshots: CloseSnapshotRow[];
+  carriedTotals: CarryOverTotalsByEntity;
   totalCarryCapex: number;
   totalCarryOpex: number;
 }
@@ -152,25 +169,23 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
       allocatedCapex: allocated.capex,
       allocatedOpex: allocated.opex,
     });
-    const candidates = targetPrograms
-      .filter((target) => target.siId === program.siId)
-      .map((target) => ({
-        value: target.id,
-        label: `${target.code} · ${target.name} (FY${targetPlan?.fiscalYear ?? ''})`,
-      }));
-    const continuation = targetPrograms.find(
-      (target) => target.prevProgramId === program.id,
-    );
+    const candidates = targetPrograms.filter((target) => target.siId === program.siId);
+    const continuation = candidates.find((target) => target.prevProgramId === program.id) ?? null;
+    const options = candidates.map((target) => ({
+      value: target.id,
+      label: `${target.code} · ${target.name} (FY${targetPlan?.fiscalYear ?? ''})`,
+    }));
     return {
       program,
-      availableCapex: position.capex.available,
-      availableOpex: position.opex.available,
+      availableCapex: carryOverCandidate(position.capex.unallocated),
+      availableOpex: carryOverCandidate(position.opex.unallocated),
       allocatedCapex: allocated.capex,
       allocatedOpex: allocated.opex,
       unallocatedCapex: position.capex.unallocated,
       unallocatedOpex: position.opex.unallocated,
-      targetPrograms: candidates,
-      defaultTargetProgramId: continuation?.id ?? candidates[0]?.value ?? null,
+      continuationProgramId: continuation?.id ?? null,
+      targetProgramIds: candidates.map((target) => target.id),
+      targetPrograms: options,
     };
   });
 
@@ -181,15 +196,17 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
     const remainingOpex = funding?.totals.remainingOpex ?? 0;
     const targetAllocation = targetAllocationByProject.get(row.project.id) ?? null;
     const programRow = programs.find((candidate) => candidate.program.id === row.program.id);
-    const targetProgramId = programRow?.defaultTargetProgramId ?? null;
+    const targetProgramId = programRow?.continuationProgramId ?? null;
     const projectInTargetYear =
       row.project.startFiscalYear <= (targetPlan?.fiscalYear ?? 0) &&
       row.project.endFiscalYear >= (targetPlan?.fiscalYear ?? 0);
-    const canCreateTarget = targetPlan !== null && projectInTargetYear && targetProgramId !== null;
+    const canCreateTarget = targetPlan !== null && projectInTargetYear;
     allocations.push({
       allocation: row.allocation,
       project: row.project,
       program: row.program,
+      availableCapex: carryOverCandidate(remainingCapex),
+      availableOpex: carryOverCandidate(remainingOpex),
       remainingCapex,
       remainingOpex,
       targetAllocation,
@@ -207,12 +224,10 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
   }
 
   const carryOvers = await listCarryOvers(planId);
-  const totalCarryCapex = carryOvers
-    .filter((entry) => entry.component === 'capex')
-    .reduce((sum, entry) => sum + entry.amount, 0);
-  const totalCarryOpex = carryOvers
-    .filter((entry) => entry.component === 'opex')
-    .reduce((sum, entry) => sum + entry.amount, 0);
+  const snapshots = await listCloseSnapshots(planId);
+  const carriedTotals = carriedTotalsFrom(snapshots, carryOvers);
+  const totalCarryCapex = carriedTotals.program.capex + carriedTotals.allocation.capex;
+  const totalCarryOpex = carriedTotals.program.opex + carriedTotals.allocation.opex;
 
   return {
     plan: loaded.plan,
@@ -221,7 +236,34 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
     programs,
     allocations,
     carryOvers,
+    snapshots,
+    carriedTotals,
     totalCarryCapex,
     totalCarryOpex,
   };
+}
+
+/**
+ * Totals shown on the close receipt: the snapshot rows when the plan is closed,
+ * otherwise what the ledger already holds for this source plan (zero before the
+ * close).
+ */
+function carriedTotalsFrom(
+  snapshots: readonly CloseSnapshotRow[],
+  entries: readonly CarryOverEntry[],
+): CarryOverTotalsByEntity {
+  const totals: CarryOverTotalsByEntity = {
+    program: { capex: 0, opex: 0 },
+    allocation: { capex: 0, opex: 0 },
+  };
+  if (snapshots.length > 0) {
+    for (const { snapshot } of snapshots) {
+      totals[snapshot.entityType][snapshot.component] += snapshot.carried;
+    }
+    return totals;
+  }
+  for (const entry of entries) {
+    totals[entry.entityType][entry.component] += entry.amount;
+  }
+  return totals;
 }

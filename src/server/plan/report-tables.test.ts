@@ -155,6 +155,8 @@ describe('postCloseAdjustmentTable (#98)', () => {
       programName: 'Post-close programme',
       capexAvailable: 100_000_000,
       opexAvailable: 0,
+      carryInCapex: 0,
+      carryInOpex: 0,
       allocatedCapex: 80_000_000,
       allocatedOpex: 0,
       commitmentCapex: 30_000_000,
