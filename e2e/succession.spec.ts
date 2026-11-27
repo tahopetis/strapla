@@ -86,11 +86,9 @@ const closeYearWithZeroCarry = async (page: Page, year: number): Promise<string>
   }
   await page.locator('input[name="reference"]').fill(`E2E-CLOSE-FY${year}`);
   await page.locator('input[name="confirmation"]').fill(`CLOSE FY${year}`);
-  await page
-    .getByRole('button', { name: new RegExp(`^Close FY${year} and carry over$`) })
-    .click();
+  await page.getByRole('button', { name: `Close FY${year} and carry over` }).click();
   await expect(
-    page.getByText(new RegExp(`Fiscal year FY${year} closed and carry-over recorded`)),
+    page.getByText(`Fiscal year FY${year} closed and carry-over recorded`),
   ).toBeVisible();
   return annualUrl;
 };
