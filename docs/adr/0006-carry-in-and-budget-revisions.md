@@ -42,7 +42,7 @@ Once a carry-over is approved, the amount enters the target year as one budget i
 
 Once an annual plan is **activated**, its program budgets are frozen. Changes to a program's capex or opex budget — and the de-allocation lines of a switch — go through a **budget revision**. Nothing else does: non-amount fields (name, notes, SI) and project year allocations remain editable in place with the usual reason and audit, and a program created during an active year starts with a zero budget and is funded by a revision.
 
-- **Scope.** Revisions exist only for `active` annual plans. Draft plans are edited directly; closed plans are read-only. The first revision-enabled year is **FY2027**; FY2026 stays manually closed outside the app. For an FY2027 plan that is already active at rollout, the baseline is the budget at rollout — no retroactive revisions.
+- **Scope.** Revisions exist only for `active` annual plans. Draft plans are edited directly; a closed plan accepts in-place corrections only and never a revision ([ADR-0007](0007-closed-year-audited-corrections.md)). The first revision-enabled year is **FY2027**; FY2026 stays manually closed outside the app. For an FY2027 plan that is already active at rollout, the baseline is the budget at rollout — no retroactive revisions.
 - **Document.** A revision has a header (system number per fiscal year, e.g. `REV-2027-001`, date, decision reference, reason, actor) and lines (entity, component, signed delta). It is multi-line, applied atomically, immutable after posting, and corrected by a new revision — never edited or deleted.
 - **No component shift.** Every line names a component; capex and opex never offset each other. A switch is a balanced pair of lines in the same document and the same component: one program down, another up. The no-shift rule applies on every path — draft edits, revisions, and allocation edits.
 - **Switch floor.** A switch may take only a program's unallocated budget, or must carry explicit de-allocation lines. A de-allocation may not push a project year allocation below its open commitments plus current-year spend.
@@ -68,7 +68,7 @@ Once an annual plan is **activated**, its program budgets are frozen. Changes to
 ### 7. Scope and non-goals
 
 - **Recurring ops items are out of scope.** They have no SI link and no year-close carry; their opex budget and single carry-in column stay in-place audited fields. Adding them to the ledger or revision model is a separate decision.
-- **Closed-year corrections remain unimplemented**, as before. This ADR does not add a correction path for a posted close or a closed year.
+- **Closed-year corrections are out of this ADR's scope.** This ADR adds no correction path; a corrected closed year is [ADR-0007](0007-closed-year-audited-corrections.md), which leaves this ADR's snapshot, ledger and revision rules unchanged.
 - No reserve account, no negative carry entry, no destination accounting, no automatic envelope split.
 
 ## Consequences

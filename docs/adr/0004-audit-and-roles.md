@@ -30,7 +30,7 @@ The owner's stated need is *full traceback without rollback*: every change must 
 - While a fiscal year is **open** (annual plan draft or active), administrators edit records in place. Every update and void requires a **reason**; creates do not.
 - `before`/`after` snapshots make each change reconstructable without a version-restore feature.
 - Cancellation uses a **void status with a reason**; records are never hard-deleted.
-- While a fiscal year is **closed**, ordinary mutations are blocked. Administrators may perform audited corrections with a reason. Settlement lifecycle events (ADR-0003) are allowed after close and are audited.
+- While a fiscal year is **closed**, ordinary mutations are blocked. Administrators may perform audited corrections with a reason: an in-place update of an existing plan record, audited as `correction`, while the close snapshot and the carry-over ledger stay immutable ([ADR-0007](0007-closed-year-audited-corrections.md)). Settlement lifecycle events (ADR-0003) are allowed after close and are audited.
 - There is no reopen of a closed year, no rollback, no undo, and no version restore.
 
 ### Visibility
