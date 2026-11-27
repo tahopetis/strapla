@@ -67,18 +67,10 @@ export function ProjectAllocationsSection({
             />
             <MoneyField label="Capex allocation" name="allocationCapex" defaultValue={0} required />
             <MoneyField label="Opex allocation" name="allocationOpex" defaultValue={0} required />
-            <MoneyField
-              label="Capex carry-in"
-              name="carryInCapex"
-              defaultValue={0}
-              hint="Opening balance or prior-year carry-over."
-            />
-            <MoneyField
-              label="Opex carry-in"
-              name="carryInOpex"
-              defaultValue={0}
-              hint="Opening balance or prior-year carry-over."
-            />
+            <p className="sm:col-span-2 lg:col-span-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Carry-in is not typed on an allocation: it is received through the carry-over ledger
+              (a year close or a reasoned manual receipt).
+            </p>
             <div className="sm:col-span-2 lg:col-span-3">
               <TextAreaField label="Notes" name="notes" rows={2} />
             </div>
@@ -217,16 +209,11 @@ function AllocationCard({
                 defaultValue={allocation.allocationOpex}
                 required
               />
-              <MoneyField
-                label="Capex carry-in"
-                name="carryInCapex"
-                defaultValue={allocation.carryInCapex}
-              />
-              <MoneyField
-                label="Opex carry-in"
-                name="carryInOpex"
-                defaultValue={allocation.carryInOpex}
-              />
+              <p className="sm:col-span-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Carry-in received: capex <Money value={allocation.carryInCapex} /> · opex{' '}
+                <Money value={allocation.carryInOpex} /> — recorded in the carry-over ledger, not
+                edited here.
+              </p>
               <div className="sm:col-span-2">
                 <TextAreaField label="Notes" name="notes" defaultValue={allocation.notes} rows={2} />
               </div>

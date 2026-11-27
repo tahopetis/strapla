@@ -126,6 +126,7 @@ async function loadPortfolio(plan: StrategicPlan) {
       {
         label: 'Capex',
         available: availableCapex,
+        carryIn: programCarryCapex,
         allocated: allocatedCapex,
         openCommitments: executionTotal.openCommitmentCapex,
         currentSpend: executionTotal.currentSpendCapex,
@@ -134,6 +135,7 @@ async function loadPortfolio(plan: StrategicPlan) {
       {
         label: 'Opex',
         available: availableOpex,
+        carryIn: programCarryOpex,
         allocated: allocatedOpex,
         openCommitments: executionTotal.openCommitmentOpex,
         currentSpend: executionTotal.currentSpendOpex,
@@ -142,6 +144,7 @@ async function loadPortfolio(plan: StrategicPlan) {
       {
         label: 'Total',
         available: availableCapex + availableOpex,
+        carryIn: programCarryCapex + programCarryOpex,
         allocated: allocatedCapex + allocatedOpex,
         openCommitments: openCommitmentTotal,
         currentSpend: executionTotal.currentSpendCapex + executionTotal.currentSpendOpex,
@@ -269,6 +272,7 @@ export default async function DashboardPage() {
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 pr-3">Component</th>
                   <th className="py-2 pr-3">Available</th>
+                  <th className="py-2 pr-3">Program carry-in</th>
                   <th className="py-2 pr-3">Allocated</th>
                   <th className="py-2 pr-3">Open commitments</th>
                   <th className="py-2 pr-3">Current-year spend</th>
@@ -281,6 +285,9 @@ export default async function DashboardPage() {
                     <td className="py-2 pr-3">{row.label}</td>
                     <td className="py-2 pr-3 whitespace-nowrap">
                       <Money value={row.available} />
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      <Money value={row.carryIn} />
                     </td>
                     <td className="py-2 pr-3 whitespace-nowrap">
                       <Money value={row.allocated} />

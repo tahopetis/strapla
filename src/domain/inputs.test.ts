@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allocationCreateSchema,
+  allocationUpdateSchema,
   budgetRevisionCreateSchema,
   budgetRevisionDecisionSchema,
   carryOverAmountSchema,
@@ -9,8 +11,11 @@ import {
   customFieldUpdateSchema,
   initiativeCreateSchema,
   initiativeUpdateSchema,
+  manualCarryReceiptSchema,
   openingReconciliationSaveSchema,
   parseSignedRupiah,
+  programCreateSchema,
+  programUpdateSchema,
 } from './inputs';
 
 const base = {
@@ -406,5 +411,120 @@ describe('budget revision decision input', () => {
         reason: '  ',
       }).success,
     ).toBe(false);
+  });
+});
+
+const program = {
+  annualPlanId: recordId,
+  code: 'PRG-01',
+  name: 'Network refresh',
+  siId: recordId,
+  capexBudget: '2.000.000.000',
+  opexBudget: '750.000.000',
+  // Retired direct inputs: carry-in is received through the ledger only.
+  carryInCapex: '25.000.000',
+  carryInOpex: '10.000.000',
+};
+
+const allocation = {
+  projectId: recordId,
+  annualProgramId: recordId,
+  allocationCapex: '500.000.000',
+  allocationOpex: '250.000.000',
+  carryInCapex: '25.000.000',
+  carryInOpex: '10.000.000',
+};
+
+describe('program and allocation forms no longer write carry-in', () => {
+  it('drops the carry-in fields from a parsed program', () => {
+    const created = programCreateSchema.parse(program);
+    expect(created).toMatchObject({ capexBudget: 2_000_000_000, opexBudget: 750_000_000 });
+    expect(created).not.toHaveProperty('carryInCapex');
+    expect(created).not.toHaveProperty('carryInOpex');
+
+    const updated = programUpdateSchema.parse({
+      ...program,
+      id: recordId,
+      reason: 'Rename the program.',
+    });
+    expect(updated).not.toHaveProperty('carryInCapex');
+    expect(updated).not.toHaveProperty('carryInOpex');
+  });
+
+  it('drops the carry-in fields from a parsed allocation', () => {
+    const created = allocationCreateSchema.parse(allocation);
+    expect(created).toMatchObject({ allocationCapex: 500_000_000, allocationOpex: 250_000_000 });
+    expect(created).not.toHaveProperty('carryInCapex');
+    expect(created).not.toHaveProperty('carryInOpex');
+
+    const updated = allocationUpdateSchema.parse({
+      ...allocation,
+      id: recordId,
+      reason: 'Adjust the allocation.',
+    });
+    expect(updated).not.toHaveProperty('carryInCapex');
+    expect(updated).not.toHaveProperty('carryInOpex');
+  });
+});
+
+const manualReceipt = {
+  annualPlanId: recordId,
+  entityType: 'program',
+  entityId: recordId,
+  component: 'capex',
+  amount: '1.234.567',
+  reason: 'Management grant approved at the November meeting.',
+};
+
+describe('manual carry receipt input', () => {
+  it('parses a positive, reasoned receipt for a program', () => {
+    expect(manualCarryReceiptSchema.parse(manualReceipt)).toMatchObject({
+      annualPlanId: recordId,
+      entityType: 'program',
+      entityId: recordId,
+      component: 'capex',
+      amount: 1_234_567,
+      reason: 'Management grant approved at the November meeting.',
+    });
+  });
+
+  it('accepts an allocation receipt in opex', () => {
+    expect(
+      manualCarryReceiptSchema.parse({
+        ...manualReceipt,
+        entityType: 'allocation',
+        component: 'opex',
+      }),
+    ).toMatchObject({ entityType: 'allocation', component: 'opex' });
+  });
+
+  it('rejects a zero, negative or malformed amount', () => {
+    for (const amount of ['0', '-5', 'lots', '']) {
+      expect(
+        manualCarryReceiptSchema.safeParse({ ...manualReceipt, amount }).success,
+        amount,
+      ).toBe(false);
+    }
+  });
+
+  it('requires a reason, a valid target and a valid entity type', () => {
+    expect(manualCarryReceiptSchema.safeParse({ ...manualReceipt, reason: '  ' }).success).toBe(
+      false,
+    );
+    expect(
+      manualCarryReceiptSchema.safeParse({ ...manualReceipt, entityType: 'recurring_ops' }).success,
+    ).toBe(false);
+    expect(
+      manualCarryReceiptSchema.safeParse({ ...manualReceipt, component: 'total' }).success,
+    ).toBe(false);
+    expect(
+      manualCarryReceiptSchema.safeParse({ ...manualReceipt, entityId: 'program-1' }).success,
+    ).toBe(false);
+
+    for (const field of ['annualPlanId', 'entityId', 'reason'] as const) {
+      const without: Record<string, unknown> = { ...manualReceipt };
+      delete without[field];
+      expect(manualCarryReceiptSchema.safeParse(without).success, field).toBe(false);
+    }
   });
 });

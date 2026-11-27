@@ -120,7 +120,7 @@ There is no self-service sign-up or password reset; if the only administrator lo
 Strategic plan (e.g. 2026–2030; one per deployment)
 └── Strategic initiative (SI) — five-year envelope, prior consumption
     └── Annual plan (exactly one per fiscal year; draft → active → closed)
-        └── Annual program (one SI; capex + opex budget; carry-in; continuation link)
+        └── Annual program (one SI; initial capex/opex budget + revisions; ledger carry-in; continuation link)
             └── Project (created once for its whole life)
                 └── Project year allocation (the project's slice in one fiscal year)
                     ├── Commitment entries (POs / contract milestones; open → settled)
@@ -137,6 +137,10 @@ A project is never duplicated year over year. Each fiscal year gets one **annual
 instead, attached to that year's program for the same SI. Programs continue across years through a
 **continuation link**, which forms a **program thread**.
 
+Since ADR-0006, an **active** year's program budgets are frozen: a change is a numbered, immutable
+**budget revision**, never an in-place edit. **Carry-in** is received through the carry-over ledger
+(an audited receipt), not typed on a program or allocation.
+
 ### 2.2 The objects in one table
 
 | Object | What it represents | Where you manage it |
@@ -144,7 +148,7 @@ instead, attached to that year's program for the same SI. Programs continue acro
 | **Strategic plan** | The multi-year horizon (start/end fiscal year) and its status. One plan per deployment. | Plan → Strategic plan & SIs |
 | **Strategic initiative (SI)** | A five-year envelope: code, name, owner, objective, prior program budget consumed. | Plan → Strategic plan & SIs |
 | **Annual plan** | One fiscal year inside the horizon; draft → active → closed. | Plan → Annual plans |
-| **Annual program** | A budget line for one SI in one year: capex budget, opex budget, carry-in, optional continuation. | Annual plan page |
+| **Annual program** | A budget line for one SI in one year: initial capex/opex budget (frozen once the plan is active), effective budget, ledger carry-in, optional continuation. | Annual plan page |
 | **Project** | The whole-life investment record: full-life allocated budget, submitted price, final deal price, years, owner, originating program. | Plan → Projects |
 | **Ijin prinsip** | The directors' in-principle approval for a project: document number, date, approved amount, approver, document link. | Project page → Ijin prinsip |
 | **Project year allocation** | The project's slice of a program's budget in one fiscal year: allocation and carry-in per component. | Project page → Annual allocations |
@@ -152,7 +156,10 @@ instead, attached to that year's program for the same SI. Programs continue acro
 | **Commitment entry** | A purchase order or contract milestone attached to an allocation or recurring ops item. | Open commitments & spend |
 | **Spend entry** | Realized spend (for example an invoice) with category, vendor and reference. | Open commitments & spend |
 | **Settlement** | The link recording that a spend entry pays part or all of a commitment. | Recorded with the spend entry |
-| **Carry-over** | Budget remaining at year close, explicitly moved into the next fiscal year with an approval reference. | Annual plan → Close fiscal year |
+| **Budget revision** | A numbered, immutable document that changes an active year's program budgets (or de-allocates an allocation) with a reason and, when it arrives later, a decision reference. | Annual plan → Budget revisions |
+| **Carry-in receipt** | One append-only ledger entry: the money a program or project-year allocation received, its origin (`close`, `opening`, `manual`), reason and — for a close receipt — the source year/entity and approval reference. | Year close, opening import, or a reasoned manual grant on the annual plan page |
+| **Close snapshot** | The immutable per-entity, per-component close decision: available, carried, not carried and why. | Annual plan → Close receipt (after the close) |
+| **Carry-over** | The close decision that moves remaining budget into the next fiscal year; the carried amounts become carry-in receipts in the next year's ledger. | Annual plan → Close fiscal year |
 | **Custom field** | An administrator-defined extra typed field on eight record types. Metadata only; never part of money rules. | Administration → Custom fields |
 
 ### 2.3 Statuses and what changes them
@@ -173,12 +180,14 @@ instead, attached to that year's program for the same SI. Programs continue acro
 | Term | Meaning |
 | --- | --- |
 | **Envelope** | The SI's five-year ceiling. Consumed = prior program budget consumed + in-app program budgets. |
-| **Program budget** | The budget for one SI in one fiscal year, per component. |
-| **Available program budget** | `budget + carry-in`. |
+| **Program budget** | The budget for one SI in one fiscal year, per component. Once the plan is active the stored figure is the frozen **initial** budget. |
+| **Effective program budget** | The initial budget plus every posted budget revision delta, per component. Every screen and report uses this, never the initial column alone. |
+| **Available program budget** | `effective budget + carry-in`. The two inputs stay visible separately. |
 | **Unallocated program budget** | `available − allocations`. Always visible; allocating above it is flagged, not blocked. |
+| **Budget revision** | A numbered (`REV-<FY>-<nnn>`), immutable document with one signed line per program/component (and de-allocation lines). It may be posted before its formal decision exists; the register then shows *awaiting decision reference*. |
+| **Carry-in** | Money received into a program or project-year allocation from the carry-over **ledger** (year close, opening balance, or reasoned manual grant). It adds to available money but is not part of this year's initial budget. The `carry_in_*` columns are a guarded cache; the ledger is the source of truth. |
+| **Carry-over** | The year-close decision that moves remaining budget into the next year. The close records a snapshot (available / carried / not carried + reason) and writes one receipt per carried amount. |
 | **Allocation** | The project's slice of a program's available budget for one fiscal year. |
-| **Carry-in** | Budget explicitly carried in from a previous year (or the opening balance). It adds to available money but is not part of this year's program budget. |
-| **Carry-over** | The amount moved into next year at close, per component, with an approval reference. |
 | **Commitment** | Money promised (PO / contract milestone) but not necessarily paid yet. |
 | **Open commitment** | `commitment amount − settled amount`. Open commitments reduce remaining but are **not** carry-over. |
 | **Spend** | Realized money booked (for example an invoice). |
@@ -187,15 +196,26 @@ instead, attached to that year's program for the same SI. Programs continue acro
 | **Prior-year opening payment** | A spend paying a commitment that existed before Strapla. Excluded from the current year's remaining; reported separately. |
 | **Post-close settlement** | A spend in an open year paying a commitment whose annual plan is **closed**. The closed-year portion is either charged to the current year or reserved in the closed year. |
 | **Post-close adjustment (reserve)** | The closed year's separately labelled report line for reserve-treated post-close settlements. Never part of the locked close snapshot or carry-over. |
-| **Remaining** | `allocation + carry-in − open commitments − current-year spend`, per component. |
+| **Remaining (allocation)** | `allocation + carry-in − open commitments − current-year spend`, per component. |
+| **Remaining (program money line)** | `effective budget + carry-in − open commitments − current-year spend`, per component. |
+| **Over-allocated** | Allocations exceed the program's available money; a warning flag, never a block. |
+| **Unfunded** | A budget cut left the program's remaining below zero; a warning flag, never a block. |
 | **Lifetime commitments** | Opening committed + all in-app commitment amounts of a project; compared with the contract value (BR-8). |
 
-### 2.5 Two formulas to remember
+### 2.5 The formulas to remember
 
 ```
+Effective program budget    = initial budget + Σ posted revisions
+Available program money     = effective budget + carry-in
 Remaining (per component)   = allocation + carry-in − open commitments − current-year spend
-Unallocated program budget  = budget + carry-in − allocations
+Program money remaining     = effective budget + carry-in − open commitments − current-year spend
+Unallocated program budget  = effective budget + carry-in − allocations
 ```
+
+- Revisions exist only while the annual plan is **active**: a draft is edited directly and a closed
+  plan is read-only, so a closed year's effective budget equals its initial budget.
+- Carry-in is **ledger-only**. The program and allocation forms no longer accept it; a manual grant
+  needs a reason and is audited, and the program page lists the receipts behind each amount.
 
 - Open commitments are **not** carry-over. Committed-but-unpaid money stays a commitment until it is
   settled; only remaining budget can be carried at year close.
@@ -217,7 +237,8 @@ owner.
 | Final deal price is above the highest submitted price | BR-18 | Project page and project register |
 | Lifetime commitments exceed the contract value | BR-8 | Project page and project register |
 | Annual allocations exceed the project full-life allocated budget | full-life consistency (soft) | Project page |
-| Allocations exceed the program's available budget | BR-7 | Program card (`over-allocated`) and reports |
+| Allocations exceed the program's available budget | BR-7 | Program card and the program money line (`over-allocated`); reports |
+| A cut left the program's remaining below zero | ADR-0006 §4 | Program money line (`unfunded`) |
 | SI program budgets exceed the SI envelope | BR-2 | SI card and reports (`Over envelope`) |
 | Current-year spend exceeds the fiscal-year commitments | BR-11 | Allocation card, execution summary and reports |
 
@@ -255,7 +276,9 @@ execution. Each step needs the step above it.
 1. Choose a **Fiscal year** inside the horizon and click **Create annual plan**. The plan starts as a
    draft and is the only plan for that year.
 2. For a draft plan, the page header carries the status and an **Activate annual plan** form; enter a
-   reason and activate it when the budget is settled. Programs stay editable until the close.
+   reason and activate it when the budget is settled. Activation **freezes the program budgets**:
+   from then on a budget change is a budget revision (§3.8). Non-amount fields stay editable, and the
+   page header shows the revision count and how many are awaiting their decision reference.
 3. A plan can be closed only through the year-close workflow (§6). The **Annual plans** table lists
    fiscal year, status, program count, recurring ops count and an **Open** link; the **Program
    threads** card lists continuation chains.
@@ -270,18 +293,23 @@ Open an annual plan and use **Add annual program**:
 | Name | Short descriptive name. |
 | Strategic initiative | One SI per program (BR-4). |
 | Continues program | Optional: the prior fiscal year's program of the same SI. This creates the program thread. |
-| Capex budget / Opex budget | The program's budget for the year, per component. |
-| Capex carry-in / Opex carry-in | Opening balance or prior-year carry-over. |
+| Capex budget / Opex budget | The program's **initial** budget for the year, per component. A draft plan edits these in place; an active plan creates the program at zero and funds it by revision. |
 | Notes | Free text. |
+
+Carry-in is not a field: the carry-over ledger delivers it (a year close, the opening import, or a
+reasoned manual receipt on the annual plan page).
 
 Rules:
 
 - A program belongs to exactly one annual plan and exactly one SI.
 - A continuation must be a program from an **earlier** fiscal year, in the same strategic plan and
   the same SI; a program cannot continue itself.
-- The program card shows **Capex available (budget + carry-in)**, **Capex allocated** and **Capex
-  unallocated**, and the same for opex. Allocating above available is flagged (`over-allocated`),
-  never blocked (BR-7).
+- The program card shows **Capex available (effective budget + carry-in)**, **Capex allocated** and
+  **Capex unallocated**, and the same for opex. Allocating above available is flagged
+  (`over-allocated`), never blocked (BR-7).
+- The program page (**Thread**) carries the full money line: initial budget | carry-in received |
+  revisions (with their numbers) | effective budget | allocations | open commitments | current-year
+  spend | remaining, per component, plus the `over-allocated` and `unfunded` flags.
 - Use **Thread** to open the cross-year program thread (§6.4).
 - A program with projects, or one that a later program continues, cannot be voided; remove those
   dependencies first.
@@ -370,10 +398,13 @@ For each data set:
    existing ones; duplicate codes and unknown references fail the whole file.
 4. The **Opening import** card on **Opening balances** then shows the record count per data set.
 
-Allocation carry-in is **not** imported: enter it when you create the allocation; plans, recurring ops, commitments and spend are form entry only.
+Allocation carry-in is **not** imported: the close writes it into the target-year allocation, and a
+manual grant goes through the carry-over ledger. Plans, recurring ops, commitments and spend are form
+entry only.
 
-**Reconciliation and sign-off.** On **Plan → Opening balances**, enter the eight spreadsheet
-**control totals** and click **Save control totals**. The comparison table shows each control total
+**Reconciliation and sign-off.** On **Plan → Opening balances**, enter the ten spreadsheet
+**control totals** (the SI envelope and prior consumption are per component) and click **Save control
+totals**. The comparison table shows each control total
 against the in-app figure, with **Difference** and a *match* / *difference* status. A non-zero
 difference is allowed but recorded. When you accept the figures, enter a **Sign-off reason** and click
 **Sign off opening balances**. Sign-off is one-time and audited; the control totals then become
@@ -389,8 +420,11 @@ page, use **Add annual allocation**:
 | --- | --- |
 | Fiscal year program | A program in a draft or active annual plan for the project's SI, in a year inside the project's start/end years that has no allocation yet. |
 | Capex allocation / Opex allocation | The project's slice of that year's program budget, per component. |
-| Capex carry-in / Opex carry-in | Opening balance or prior-year carry-over. |
 | Notes | Free text. |
+
+Carry-in is not typed on an allocation: it is received through the carry-over ledger (the year close
+writes it into the target-year allocation, the opening import supplies the first year, and a reasoned
+manual receipt is possible from the annual plan page).
 
 Rules and behaviour:
 
@@ -399,11 +433,38 @@ Rules and behaviour:
 - The allocation must use a program for the project's SI (BR-6). The year must be inside the
   project's years and the annual plan must not be closed.
 - Allocating above the program's available budget is flagged (BR-7), never blocked.
-- Each allocation card shows **allocation**, **carry-in** and **remaining** per component, plus
-  **capex spend above commitment** / **opex spend above commitment** badges when BR-11 applies.
+- Each allocation card shows **allocation**, **carry-in received** and **remaining** per component,
+  plus **capex spend above commitment** / **opex spend above commitment** badges when BR-11 applies.
+  The carry-in is read from the ledger, not from the guarded cache.
 - **Open commitments & spend** opens the execution page for that year (§4).
 - The year-close workflow writes carry-in into the next year's allocation, creating the allocation
   automatically when the project spans into the target year. A closed year's allocation is read-only.
+
+### 3.8 Budget revisions (active years)
+
+**Annual plan → Budget revisions**
+
+Once an annual plan is **active**, its program budgets are frozen. A change — an addition, a cut, or
+a switch between programs — is a **budget revision**:
+
+| Field | Notes |
+| --- | --- |
+| Revision date | Defaults to today. |
+| Decision reference | Optional. Leave it blank when the steering committee has not met yet; the register shows *awaiting decision reference* and **Record the decision reference** attaches it later as metadata only. |
+| Reason | Required; part of the immutable record. |
+| Lines | One signed delta per program and component. A switch is a balanced pair in the same component (one program down, one up); a de-allocation line lowers a project year allocation and may not go below its open commitments + current-year spend. |
+
+Rules:
+
+- Revisions are numbered per fiscal year (for example `REV-2027-001`), applied atomically and never
+  edited or deleted — a correction is a new revision.
+- Capex and opex never shift into each other; every line names one component.
+- A cut that leaves a program over-allocated or unfunded is a **flag**, never a block (BR-17);
+  resolve it with a later revision or a project de-allocation.
+- The register lists every revision with its date, decision reference (or the awaiting badge), reason,
+  total delta and each line; every program line links to that program's page.
+- The annual plan header shows the revision count and how many are awaiting a decision. The plan's
+  program cards show the effective budget (initial + revisions) and the initial/revision split.
 
 ## 4. Execution: commitments, spend and settlement
 
@@ -537,10 +598,10 @@ What happens to the numbers:
 
 | Report | What it shows |
 | --- | --- |
-| **SI five-year view** | Envelope, prior consumption, in-app program budgets, allocations, commitments, spend, consumed and headroom per SI, with a portfolio total. Capex and opex are combined here. |
-| **Annual plan by SI and program** | Every annual program with capex/opex budget, carry-in, available, allocated and unallocated money, plus committed and spent; a second table lists recurring operations with opex budget, carry-in, available, committed, spent, prior-year openings and remaining. |
-| **Project register** | Full-life figures, ijin prinsip approved amount, submitted and final deal price, allocations, lifetime commitments, spent to date and flags; the footer adds open commitments, prior-year opening settlements and in-app spend. |
-| **Budget versus actual** | Program-level available, allocated and unallocated per component, plus committed, spent, prior-year settlements and prior-year openings, with a status badge. A **Post-close adjustments (reserve)** block follows the table. |
+| **SI five-year view** | Envelope, prior consumption, **effective** program budgets, allocations, commitments, spend, consumed and headroom per SI, **capex and opex as separate column groups** (they never share headroom), with a per-component portfolio total. Carry-in is excluded from the envelope check by design. |
+| **Annual plan by SI and program** | Every annual program with its initial budget, revisions, **effective budget**, carry-in, available, allocated and unallocated money, plus committed and spent, per component; a second table lists recurring operations with opex budget, carry-in, available, committed, spent, prior-year openings and remaining. |
+| **Project register** | Full-life figures, ijin prinsip approved amount, submitted and final deal price, **effective** allocation, **carry-in**, lifetime commitments, spent to date and flags; the footer adds open commitments, prior-year opening settlements and in-app spend. |
+| **Budget versus actual** | Program-level effective budget + carry-in as available money (the carry-in is its own column), allocated and unallocated per component, plus committed, spent, prior-year settlements and prior-year openings, with a status badge. A **Post-close adjustments (reserve)** block follows the table. |
 
 Reports are read-only; all data comes from the plan, funding and execution records. Without a strategic plan each report asks you to create one first.
 
@@ -580,6 +641,9 @@ and no version restore.
 - Agree the carry-over amounts and the approval reference with the portfolio owner.
 - Remember: only **remaining budget** and **unallocated program budget** can be carried. Open
   commitments are not carry-over; they stay commitments.
+- Any amount deliberately **not** carried needs a **not-carried reason**: the close records it in the
+  immutable snapshot per entity and component. Every program row also needs a carry target: the
+  continuation program when one exists, otherwise an explicit same-SI choice.
 - The confirmation phrase is exactly **`CLOSE FY<year>`** (for example `CLOSE FY2027`).
 
 ### 6.2 How to close
@@ -601,9 +665,15 @@ and no version restore.
    the close.
 6. Enter the **Approval reference** (board approval or memo number), type the **Typed confirmation**
    phrase exactly, and click **Close FY<year> and carry over**.
-7. On success the year becomes `closed`: carry-in is added to the target programs and allocations
-   (creating allocations when needed), every carry-over entry and the close are audited, and the page
-   shows the snapshot with the approval reference, closed date, totals and entries.
+7. On success the year becomes `closed`: the ledger receives one carry-in receipt per carried amount
+   (with origin `close`, the approval reference and the source entity), the target programs and
+   allocations show the carry-in (creating allocations when needed), and every receipt and the close
+   are audited.
+8. The page becomes the **close receipt**: approval reference, closed date, carried totals, the
+   **close snapshot** per entity and component (available / carried / not carried / reason, with a
+   link from each carried amount to its target), and the **carry-over receipts** (source entity,
+   amount, target, origin, reason, who recorded it). The receipt stays reachable from the closed
+   annual plan through **Close receipt**.
 
 ### 6.3 After the close
 
@@ -617,29 +687,40 @@ and no version restore.
   spend in the **open** year and settle the closed-year commitment there (§4.4). The locked close
   snapshot and carry-over figures never change.
 - The **Fiscal year closed** card shows the approval reference, closed date, and the carried amounts
-  per entity and component. The locked snapshot figures for the closed year stay frozen.
+  per entity and component. The locked snapshot figures for the closed year stay frozen. The **Close
+  receipt** page shows the snapshot and the ledger receipts; the approval reference links to them.
+  Carry-in in the receiving year is read from the ledger, so a receipt list always explains the
+  amount, including an opening balance or a manual grant.
 
 ### 6.4 Program threads
 
 Open **Thread** on a program card, or a thread from **Plan → Annual plans → Program threads**, to see
 the program across fiscal years:
 
-- Each year's program with plan status, budget, carry-in, allocated, unallocated and project count.
-- **Carry-in reconciliation** — carry-over recorded at the prior year close against the carry-in on the
-  continuation program, with the approval reference and a badge: *carry-in includes the close* or
-  *carry-in below the close snapshot*.
-- The current program links back to the prior year's program. Program carry-in can also come from the
-  opening balances, which have no close entry.
+- Each year's program with plan status, effective budget, revisions, carry-in, allocated,
+  unallocated and project count.
+- **Money line** for the selected program: initial budget | carry-in received | revisions (with their
+  numbers) | effective budget | allocations | open commitments | current-year spend | remaining, per
+  component, plus the `over-allocated` and `unfunded` flags. The receipts behind the carry-in are
+  listed underneath with their origin, approval reference and source entity.
+- **Carry-in reconciliation** — ledger receipts against the carry-in on the continuation program,
+  with the approval reference and a badge: *carry-in includes the close* or *carry-in below the close
+  snapshot*.
+- The current program links back to the prior year's program. Program carry-in can also come from an
+  opening-balance receipt or a reasoned manual grant; both appear in the ledger with an origin.
 
 ## 7. Dashboard
 
 The **Dashboard** summarises portfolio health:
 
-- **Stat cards** — Envelope, Program budget + carry-in, Allocated + carry-in, Open commitments,
-  In-app spend, Remaining, Fiscal-year commitments, and Flags (with a count of over-allocated programs
-  and flagged projects).
-- **Plan versus execution** — available, allocated, open commitments, current-year spend and remaining
-  for capex, opex and the total, with the cross-year and prior-year opening amounts excluded underneath.
+- **Stat cards** — **Capex envelope** and **Opex envelope** (with consumed and remaining per
+  component), **Effective budget** (initial + posted revisions), **Carry-in received** (a separate
+  input), Allocated, Open commitments, In-app spend, Remaining, Fiscal-year commitments, and Flags
+  (with a count of over-allocated programs and flagged projects). The budget and carry-in are never
+  folded into one figure.
+- **Plan versus execution** — available (effective budget + carry-in), **program carry-in**,
+  allocated, open commitments, current-year spend and remaining for capex, opex and the total, with
+  the cross-year and prior-year opening amounts excluded underneath.
 - **Fiscal years** — every annual plan with its status, program and recurring-ops counts; a closed year
   also shows its approval reference and close date.
 - **Program threads** — continuation chains across years.
@@ -733,9 +814,10 @@ detailed, exportable sources.
 **Before the fiscal year**
 
 - [ ] Strategic plan created and **active**; SIs with envelopes and prior consumption up to date.
-- [ ] Annual plan created and **active**; programs created with their capex/opex budgets, carry-in and continuation links.
+- [ ] Annual plan created and **active**; programs created with their capex/opex initial budgets and continuation links. Any later budget change is a **budget revision** (§3.8), and carry-in arrives through the ledger (§6).
 - [ ] Projects created with full-life figures and ijin prinsip, and their annual allocations entered; recurring operations items created with their opex budgets and carry-in.
-- [ ] Opening balances loaded and reconciled, then signed off (first in-app year only).
+- [ ] Opening balances loaded and reconciled (ten per-component control totals), then signed off (first in-app year only).
+- [ ] When the year closes: review the carry receipt (snapshot + receipts) and confirm every partial carry has a not-carried reason.
 
 **During the year**
 
@@ -806,6 +888,11 @@ Member account:   active ──deactivate──▶ deactivated ──activate─
 | `Type "CLOSE FY2027" exactly to confirm the close.` | Wrong confirmation phrase. | Type the phrase exactly, including case and spacing. |
 | `Choose a target program for …` | A carry amount has no target program. | Select the target program in the close form. |
 | `A blank or non-numeric field blocks the close.` / `… carry-over is required (use 0 for none).` | A carry field was left empty. | Type `0` for every component with no carry-over. |
+| `Part of the available amount is not carried: a reason is required.` | A partial carry (including 0) needs the owner's reason for the rest. | Enter the not-carried reason on that row; the close snapshots it. |
+| `Budget revisions are only posted once the annual plan is active…` | The year is a draft. | Edit the draft program budgets in place; revisions begin after activation. |
+| `… lines do not balance: a switch must net to zero…` | A revision mixes an increase and a decrease per component without netting to zero. | Make it a balanced switch in the same component, or two separate documents (a pure cut and a pure addition). |
+| `A revision can only de-allocate a project year allocation; it cannot add money to one.` | An allocation line is positive. | Use a negative amount; revisions never add money to an allocation. |
+| `Capex and opex never offset each other…` | One component nets positive while the other nets negative. | Post separate revisions per component; a cut is "just gone", not moved to the other component. |
 | `You cannot deactivate your own account.` / `The last active account cannot be deactivated.` | Member-management guard. | Keep at least one active administrator and use another admin for your own account. |
 | `Cannot restore “…”` … | A custom-field name or key already exists on that record type. | Rename the active field or use another name before restoring. |
 
@@ -814,6 +901,22 @@ Member account:   active ──deactivate──▶ deactivated ──activate─
 **Is there a default administrator username or password?**
 No. A fresh database has no account; open `/setup` and create the first administrator. Every other
 account is created in Administration → Members.
+
+**Why can I not edit a program budget any more?**
+The annual plan is **active**, so its program budgets are frozen. Post a **budget revision** instead
+(§3.8): it is numbered, immutable and audited, and its deltas build the effective budget that every
+screen and report uses. A draft year is still edited in place; a closed year is read-only.
+
+**Where does carry-in come from, and why can I not type it?**
+Carry-in is a receipt in the append-only carry-over ledger — written by a year close, by the opening
+balance load, or by a reasoned manual grant on the annual plan page. The program/allocation
+`carry_in_*` fields are only a cache that the ledger service keeps equal to the receipts; no form
+writes them. The program page lists the receipts, so every carry-in amount has provenance.
+
+**What does "awaiting decision reference" mean on a revision?**
+The revision was posted before its formal budget decision existed. The lines and totals are already
+frozen; **Record the decision reference** on the register attaches the reference later as metadata
+and is audited. It is not an approval step and it cannot change the amounts.
 
 **Who can do what?**
 Every signed-in account is an administrator: all accounts can manage members, edit open-year data and

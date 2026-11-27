@@ -324,3 +324,29 @@ describe('planOpeningLoad — custom-field registry values (W9)', () => {
     });
   });
 });
+
+describe('planProgramsLoad opening carry-in (ADR-0006 §2)', () => {
+  it('surfaces the opening carry-in instead of writing the program columns', () => {
+    const { plan, errors } = planProgramsLoad(
+      [programRow(2, 'PRG-90', { carryInCapex: 1_000, carryInOpex: 250 })],
+      context(),
+    );
+    expect(errors).toEqual([]);
+    expect(plan.programs[0]?.values).not.toHaveProperty('carryInCapex');
+    expect(plan.programs[0]?.values).not.toHaveProperty('carryInOpex');
+    expect(plan.programs[0]?.openingCarry).toEqual({ capex: 1_000, opex: 250 });
+  });
+
+  it('omits the opening carry when both components are zero', () => {
+    const { plan } = planProgramsLoad([programRow(2, 'PRG-90')], context());
+    expect(plan.programs[0]?.openingCarry).toBeUndefined();
+  });
+
+  it('rejects a negative opening carry-in', () => {
+    const { errors } = planProgramsLoad(
+      [programRow(2, 'PRG-90', { carryInCapex: -1 })],
+      context(),
+    );
+    expect(errors[0]).toMatchObject({ line: 2, column: 'Capex carry-in' });
+  });
+});

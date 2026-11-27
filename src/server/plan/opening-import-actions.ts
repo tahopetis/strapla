@@ -20,6 +20,7 @@ import { parseOpeningImport, type ParsedRow } from '@/lib/opening-import/parse';
 import { withCustomFields, type CustomFieldDefinition, type CustomFieldEntityType, type CustomFieldValues } from '@/domain/custom-fields';
 import { actionUser, describeError, finishWith } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
+import { receiveCarry } from './carry-ledger';
 import {
   saveCustomFieldValues,
   type CustomFieldExecutor,
@@ -68,14 +69,14 @@ function initiativeAfter(row: StrategicInitiative): Record<string, unknown> {
   };
 }
 
-function programAfter(row: AnnualProgram): Record<string, unknown> {
+function programAfter(row: AnnualProgram, carryIn?: { capex: number; opex: number }): Record<string, unknown> {
   return {
     code: row.code,
     name: row.name,
     capexBudget: row.capexBudget,
     opexBudget: row.opexBudget,
-    carryInCapex: row.carryInCapex,
-    carryInOpex: row.carryInOpex,
+    carryInCapex: carryIn?.capex ?? row.carryInCapex,
+    carryInOpex: carryIn?.opex ?? row.carryInOpex,
     prevProgramId: row.prevProgramId,
     notes: row.notes,
   };
@@ -187,12 +188,51 @@ async function writeOpeningLoad(
           planned.customFieldValues,
           userId,
         );
+
+        // Opening carry-in is a ledger receipt, not a program column
+        // (ADR-0006 §2): the receipt carries the load reason, and the guarded
+        // contract case is recomputed from the ledger sum.
+        let carryIn: { capex: number; opex: number } | undefined;
+        for (const component of ['capex', 'opex'] as const) {
+          const amount = planned.openingCarry?.[component] ?? 0;
+          if (amount <= 0) continue;
+          const receipt = await receiveCarry(tx, {
+            origin: 'opening',
+            targetAnnualPlanId: row.annualPlanId,
+            entityType: 'program',
+            targetEntityId: row.id,
+            component,
+            amount,
+            reason,
+            actorUserId: userId,
+          });
+          carryIn = receipt.cache;
+          await recordAudit(tx, {
+            actorUserId: userId,
+            action: 'carry_over',
+            entityType: 'annual_program',
+            entityId: row.id,
+            after: {
+              origin: 'opening',
+              component,
+              amount,
+              targetAnnualPlanId: row.annualPlanId,
+              carryOverEntryId: receipt.entry.id,
+            },
+            reason,
+          });
+        }
+
         await recordAudit(tx, {
           actorUserId: userId,
           action: 'create',
           entityType: 'annual_program',
           entityId: row.id,
-          after: withCustomFields(programAfter(row), definitions, planned.customFieldValues),
+          after: withCustomFields(
+            programAfter(row, carryIn),
+            definitions,
+            planned.customFieldValues,
+          ),
           reason,
         });
         created += 1;

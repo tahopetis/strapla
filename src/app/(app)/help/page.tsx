@@ -64,7 +64,8 @@ export default function HelpPage() {
                 Create the annual plan
               </Link>{' '}
               for the fiscal year and activate it; add the annual programs with capex/opex budgets (and
-              continuation links where a program continues).
+              continuation links where a program continues). Activation freezes the program budgets:
+              from then on a budget change is a numbered budget revision.
             </li>
             <li>
               <Link href="/plan/projects" className={linkClass}>
@@ -110,13 +111,20 @@ Recurring operations (opex only, no SI, no project)
           </Card>
 
           <Card title="Money rules to remember" description="Capex and opex are always separate.">
-            <pre className="overflow-x-auto text-[11px] leading-5 text-slate-700">{`Remaining = allocation + carry-in
+            <pre className="overflow-x-auto text-[11px] leading-5 text-slate-700">{`Effective program budget = initial budget + posted revisions
+Available program money  = effective budget + carry-in
+
+Remaining = allocation + carry-in
             − open commitments
             − current-year spend
 
-Unallocated program budget = budget + carry-in
-                            − allocations`}</pre>
+Program money remaining = effective budget + carry-in
+                          − open commitments − current-year spend
+
+Unallocated program budget = effective budget + carry-in
+                             − allocations`}</pre>
             <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
+              <li>Carry-in is received through the append-only carry-over <strong>ledger</strong> (a year close, the opening balance, or a reasoned manual grant) — it is never typed on a program or allocation. The program page lists the receipts behind each amount.</li>
               <li>Open commitments are <strong>not</strong> carry-over; they stay commitments until settled.</li>
               <li>
                 A same-year settlement moves money from open commitments to spend without changing remaining (it
@@ -186,14 +194,23 @@ Unallocated program budget = budget + carry-in
             <li>Open the annual plan and click <strong>Close fiscal year</strong>.</li>
             <li>
               Enter the carry-over amounts per program (unallocated budget) and per project allocation
-              (remaining), choose the target program, and record the approval reference.
+              (remaining), choose the target program (the continuation program when there is one, otherwise
+              an explicit same-SI choice), and record the approval reference. Every partial carry — including
+              0 — needs a <strong>not-carried reason</strong>.
             </li>
             <li>
-              Submit: carry-in is written to the next year&apos;s programs/allocations, the year is closed and the
-              snapshot is recorded. There is no reopen.
+              Submit: the close writes one ledger receipt per carried amount, the receiving programs and
+              allocations show the carry-in, and the year becomes read-only with a permanent close snapshot.
+              There is no reopen.
             </li>
           </ol>
           <p className="mt-3 text-sm text-slate-600">
+            <strong>Close receipt.</strong> After a close, open the closed annual plan and click
+            <strong> Close receipt</strong>: it shows the per-entity snapshot (available, carried, not carried
+            and the reason) with a link from each carried amount to its target, and the ledger receipts
+            (source, target, origin, reason). The approval reference on the page jumps to the receipts.
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
             Open commitments are not carried. Closed years are read-only; settlement lifecycle events
             (paying existing commitments) remain possible, and a payment recorded in the open year can
             settle a closed-year commitment. A post-close payment&apos;s treatment decides whether its
@@ -202,21 +219,53 @@ Unallocated program budget = budget + carry-in
           </p>
         </Card>
 
+        <Card
+          title="Budget revisions (active years)"
+          description="Once the annual plan is active, the program budgets are frozen."
+        >
+          <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
+            <li>
+              Open <strong>Annual plan → Budget revisions</strong>. A revision is numbered, immutable and
+              applied atomically; every line names one component, and capex and opex never shift into each
+              other. A switch is a balanced pair in the same component; a de-allocation line lowers a project
+              year allocation and cannot go below its open commitments plus current-year spend.
+            </li>
+            <li>
+              The decision reference is optional: post the revision now and record the committee reference
+              later. The register shows <strong>awaiting decision reference</strong> until then; recording it
+              only adds metadata and never changes the amounts.
+            </li>
+            <li>
+              The register lists each document with its date, reference or awaiting badge, reason and total
+              delta; every program line links to that program. The annual plan header shows the revision count
+              and how many await a decision.
+            </li>
+            <li>
+              A cut that leaves a program over-allocated or unfunded is a flag, never a block. Every screen
+              and report uses the <strong>effective budget</strong> — the initial budget plus the posted
+              revisions.
+            </li>
+          </ul>
+        </Card>
+
         <Card title="Reports, dashboard and audit" description="Where to review and what to export.">
           <ul className="list-disc space-y-2 pl-5 text-sm text-slate-700">
             <li>
               <Link href="/dashboard" className={linkClass}>
                 Dashboard
               </Link>{' '}
-              — portfolio health: envelope, budget, allocated, open commitments, spend, remaining, flags, year
-              status, program threads, recent activity.
+              — portfolio health: capex and opex envelopes with their consumed and remaining amounts,
+              effective budget, carry-in received (shown separately), allocated, open commitments, spend,
+              remaining, flags, year status, program threads and recent activity.
             </li>
             <li>
               <Link href="/reports" className={linkClass}>
                 Reports
               </Link>{' '}
-              — SI five-year view, annual plan, project register, budget versus actual. Every report has CSV,
-              XLSX and Print/PDF.
+              — SI five-year view, annual plan, project register, budget versus actual. All four use the
+              effective program budget and the effective allocation; carry-in is its own column wherever it
+              changes available money, and the SI envelope is per component. Every report has CSV, XLSX and
+              Print/PDF.
             </li>
             <li>
               <Link href="/admin/audit" className={linkClass}>
@@ -297,6 +346,29 @@ Unallocated program budget = budget + carry-in
                 year may settle a commitment from a closed year; choose whether the closed-year portion is
                 charged to the current year or reserved in the closed year. The close snapshot and the
                 carry-over figures never change.
+              </p>
+            </FaqItem>
+            <FaqItem question="Why is the program budget not editable any more?">
+              <p>
+                The annual plan is active, so its program budgets are frozen. Post a <strong>budget
+                revision</strong> instead: it is numbered, immutable and audited, and its deltas build the
+                effective budget used by every screen and report. A draft year is still edited in place; a
+                closed year is read-only.
+              </p>
+            </FaqItem>
+            <FaqItem question="Where does carry-in come from, and why can I not type it?">
+              <p>
+                Carry-in is a receipt in the append-only carry-over ledger — written by a year close, the
+                opening balance load, or a reasoned manual grant on the annual plan page. The carry-in fields
+                on programs and allocations are only a cache that the ledger service keeps equal to the
+                receipts. The program page lists each receipt with its origin, approval reference and source.
+              </p>
+            </FaqItem>
+            <FaqItem question="What does “awaiting decision reference” mean?">
+              <p>
+                The revision was posted before its formal budget decision existed. The lines and totals are
+                already frozen; <strong>Record the decision reference</strong> on the register attaches the
+                reference later as audited metadata. It is not an approval step and cannot change the amounts.
               </p>
             </FaqItem>
             <FaqItem question="Can I import my spreadsheet, attach documents or send notifications?">

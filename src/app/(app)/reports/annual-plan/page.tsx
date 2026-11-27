@@ -109,9 +109,13 @@ export default async function AnnualPlanReportPage({
               <tr>
                 <th className={th}>FY</th>
                 <th className={th}>SI / program</th>
+                <th className={th}>Capex effective budget</th>
+                <th className={th}>Capex carry-in</th>
                 <th className={th}>Capex available</th>
                 <th className={th}>Capex allocated</th>
                 <th className={th}>Capex unallocated</th>
+                <th className={th}>Opex effective budget</th>
+                <th className={th}>Opex carry-in</th>
                 <th className={th}>Opex available</th>
                 <th className={th}>Opex allocated</th>
                 <th className={th}>Opex unallocated</th>
@@ -132,6 +136,12 @@ export default async function AnnualPlanReportPage({
                     <p className="text-slate-600">{row.programName}</p>
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.effectiveCapexBudget} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.carryInCapex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.availableCapex} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
@@ -139,6 +149,12 @@ export default async function AnnualPlanReportPage({
                   </td>
                   <td className={`py-3 pr-4 whitespace-nowrap ${row.overCapex ? 'text-red-700' : ''}`}>
                     <Money value={row.unallocatedCapex} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.effectiveOpexBudget} />
+                  </td>
+                  <td className="py-3 pr-4 whitespace-nowrap">
+                    <Money value={row.carryInOpex} />
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.availableOpex} />
@@ -176,6 +192,12 @@ export default async function AnnualPlanReportPage({
                   Total
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.effectiveCapexBudget} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.carryInCapex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.effectiveCapexBudget + report.totals.carryInCapex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
@@ -183,6 +205,12 @@ export default async function AnnualPlanReportPage({
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.unallocatedCapex} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.effectiveOpexBudget} />
+                </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  <Money value={report.totals.carryInOpex} />
                 </td>
                 <td className="py-3 pr-4 whitespace-nowrap">
                   <Money value={report.totals.effectiveOpexBudget + report.totals.carryInOpex} />

@@ -40,6 +40,12 @@ export interface OpeningLoadContext {
 export interface PlannedOpeningRecord<T> {
   values: T;
   customFieldValues: CustomFieldValues;
+  /**
+   * Opening-balance carry-in (ADR-0006 §2). It is not a program column any
+   * more: the caller records it as a ledger receipt of origin 'opening' and
+   * recomputes the guarded cache.
+   */
+  openingCarry?: { capex: number; opex: number };
 }
 
 /**
@@ -255,6 +261,16 @@ export function planProgramsLoad(
       valid = false;
     }
     const custom = planCustomFields(customFields, row, errors);
+    const carryInCapex = number(row, 'carryInCapex') ?? 0;
+    const carryInOpex = number(row, 'carryInOpex') ?? 0;
+    if (carryInCapex < 0) {
+      pushError(errors, row, 'Capex carry-in', 'Capex carry-in cannot be negative.');
+      valid = false;
+    }
+    if (carryInOpex < 0) {
+      pushError(errors, row, 'Opex carry-in', 'Opex carry-in cannot be negative.');
+      valid = false;
+    }
     if (!valid || !code || !name || !siId || custom === null) continue;
 
     seen.add(code);
@@ -268,11 +284,12 @@ export function planProgramsLoad(
         name,
         capexBudget: number(row, 'capexBudget') ?? 0,
         opexBudget: number(row, 'opexBudget') ?? 0,
-        carryInCapex: number(row, 'carryInCapex') ?? 0,
-        carryInOpex: number(row, 'carryInOpex') ?? 0,
         notes: text(row, 'notes'),
       },
       customFieldValues: custom,
+      ...(carryInCapex > 0 || carryInOpex > 0
+        ? { openingCarry: { capex: carryInCapex, opex: carryInOpex } }
+        : {}),
     });
   }
 

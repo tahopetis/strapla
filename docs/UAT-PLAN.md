@@ -1,7 +1,8 @@
 # UAT plan — v0.5.0 beta
 
 Acceptance testing for the **v0.5.0 beta release**: the complete loop — plan, funding, execution and
-settlement, year close and carry-over, reports/exports, administration and custom fields. Everything
+settlement, in-year budget revisions, the carry-over ledger and close receipt, reports/exports,
+administration and custom fields. Everything
 runs against a **fresh database** so the opening-balance load can be validated end to end.
 
 | Field | Value |
@@ -10,7 +11,7 @@ runs against a **fresh database** so the opening-balance load can be validated e
 | Tester | Portfolio owner (product owner) |
 | Support | Engineering lead (this build team) |
 | Environment | A hosted instance with the release image (see `GO-LIVE-CHECKLIST.md`); for a dry run, the development box works |
-| Data | The real FY2027 plan draft and the FY2026 closing figures (see `OPENING-BALANCE-LOAD.md`) |
+| Data | The real FY2027 plan draft and the FY2026 closing figures (see `OPENING-BALANCE-LOAD.md`); the SI envelope and prior consumption are captured per component |
 | Tracker | GitHub issues in `tahopetis/strapla`, labelled `needs-triage` until reviewed |
 
 ## Purpose
@@ -41,13 +42,13 @@ entry/timestamp in the sign-off table below.
 | ID | Scenario | Expected result | Criteria |
 | --- | --- | --- | --- |
 | UAT-01 | Fresh instance: complete first-run setup, sign in, sign out; confirm `/setup` is no longer reachable | Administrator created, authenticated shell, no second signup | Access model (§5) |
-| UAT-02 | Create the strategic plan 2026–2030; add initiatives with owners, objectives, envelopes and prior program budget consumed | Plan appears as active; SI headroom reflects the opening consumption | SC-1, SC-5 |
-| UAT-03 | Create the FY2027 annual plan, add notes, activate it with a reason | FY2027 plan active; status change visible in the audit trail | SC-2 |
-| UAT-04 | Create annual programs under SIs with capex/opex budgets and carry-in; continue the FY2026 program where applicable | Programs listed per SI; continuation links render; program available = budget + carry-in | SC-2 |
+| UAT-02 | Create the strategic plan 2026–2030; add initiatives with owners, objectives, **capex and opex envelopes** and prior program budget consumed per component | Plan appears as active; each SI shows a capex and an opex headroom, never a shared one | SC-1, SC-5 |
+| UAT-03 | Create the FY2027 annual plan, add notes, activate it with a reason | FY2027 plan active; status change visible in the audit trail; the plan header shows 0 revisions | SC-2 |
+| UAT-04 | Create annual programs under SIs with initial capex/opex budgets; continue the FY2026 program where applicable. Do **not** type carry-in. Have the opening-balance load/close supply the FY2027 carry-in and check each program page's money line | Programs listed per SI; continuation links render; available = effective budget + carry-in, with the carry-in listed as a ledger receipt (origin `opening`) | SC-2 |
 | UAT-05 | Create the multi-year projects with full-life allocated budget, submitted price, final deal price and the ijin prinsip record (number, date, approved amount, approver, document link) | Project register shows the pricing chain; approved amount equals the document | SC-3, SC-4 |
-| UAT-06 | Allocate program budget to each project's FY2027 slice (with carry-in where applicable); check program unallocated and project remaining | Unallocated budget visible per component; remaining = allocation + carry-in (no commitments yet) | SC-3, SC-6 |
+| UAT-06 | Allocate program budget to each project's FY2027 slice; check program unallocated and project remaining | Unallocated budget visible per component; remaining = effective allocation + carry-in (no commitments yet); the allocation card shows the ledger carry-in separately | SC-3, SC-6 |
 | UAT-07 | Add the recurring operations items with opex budgets, carry-in and categories | Items appear in the annual plan and the reports; opex only | SC-8 |
-| UAT-08 | Load the opening balances for SIs, programs and projects with the import wizard (validate, then load; nothing written on a bad file); enter the eight spreadsheet control totals on `/plan/opening-balances`, compare every difference and sign off | Malformed file reports each bad line and writes nothing; totals reconcile; the signed-off state records the reason | SC-12 |
+| UAT-08 | Load the opening balances for SIs, programs and projects with the import wizard (validate, then load; nothing written on a bad file); enter the **ten** spreadsheet control totals (per-component envelopes and prior consumption) on `/plan/opening-balances`, compare every difference and sign off | Malformed file reports each bad line and writes nothing; totals reconcile; the signed-off state records the reason | SC-12 |
 | UAT-09 | Flag checks with stress data: final deal price above approved amount; above submitted price; allocation above program budget; cumulative program budgets above the SI envelope | Each flag appears in context; saving is still possible (BR-17); void the stress records afterwards | SC-6 |
 | UAT-10 | Fill in one complete real project (ijin prinsip, allocations, recurring ops cross-check) and spot-check traceability from a number back to SI and annual plan | Every figure traces to project → program → SI → annual plan | SC-4 |
 | UAT-11 | Open the four reports; export CSV and XLSX; print/PDF the SI five-year view; hand the exports to finance for a sanity check | Exports match the screen; print view is readable on A4 landscape | SC-10 |
@@ -57,6 +58,10 @@ entry/timestamp in the sign-off table below.
 | UAT-15 | Sign out/in from a second browser; confirm sessions end on sign-out and on password reset | No session leaks; deactivated account cannot sign in | ADR-0002 |
 | UAT-16 | Record one real spend entry in under one minute | The spend form fills and saves from the allocation in under a minute; remaining and BR-11 update immediately | SC-9 |
 | UAT-17 | Record a commitment, settle part of it with a spend, then settle the rest; check the execution columns in the reports | The commitment moves open → partially settled → settled; remaining follows the formula; the reports show commitment, spend and open amounts | SC-9, SC-10 |
+| UAT-18 | **Revision register:** post a capex addition and a balanced switch on the active year, one of them without a decision reference; open the register, follow a line link to its program, then record the decision reference | Each revision is numbered, dated, and shows reason, per-line deltas and total delta; the missing reference shows *awaiting decision reference* until recorded; the plan header count updates; the program page money line shows initial + revisions = effective budget | SC-2, SC-6 |
+| UAT-19 | **Freeze check:** try to edit a program budget in the active year; then use the money line to confirm the effective budget and both warning flags | The budget form is replaced by the revision path; over-allocated and unfunded show as flags without blocking a save | SC-6, SC-12 |
+| UAT-20 | **Year close receipt:** close a test year with a partial carry (a not-carried reason) and a continuation target; reopen **Close receipt** from the closed plan | The close snapshot shows available / carried / not carried + reason per entity and component, each carried amount links to its target, the ledger receipts list source, target, origin and reason, and the approval reference links to them | SC-7, SC-12 |
+| UAT-21 | **Carry-in provenance:** on the continuation program, open the money line and the thread; confirm the carry-in equals the ledger receipts and the receipt names the prior close. Then post a reasoned manual carry receipt and re-check | The money line shows carry-in separately from the initial/effective budget; every amount has a receipt with an origin; the guarded cache equals the ledger | SC-2, SC-7 |
 
 ## Defect handling
 
@@ -97,6 +102,10 @@ entry/timestamp in the sign-off table below.
 | UAT-15 |  |  |  |
 | UAT-16 |  |  |  |
 | UAT-17 |  |  |  |
+| UAT-18 |  |  |  |
+| UAT-19 |  |  |  |
+| UAT-20 |  |  |  |
+| UAT-21 |  |  |  |
 
 ### Task timing baselines (W8)
 

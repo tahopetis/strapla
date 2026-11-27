@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import ExcelJS from 'exceljs';
 import { assertEmptyStates } from './support/empty-states';
+import { withSql } from './support/db';
 
 /**
  * M1 happy path (charter §7 W-0..W-3 and the plan module): first-run setup,
@@ -129,7 +130,9 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
   await programForm.locator('input[name="opexBudget"]').fill('300000000');
   await page.getByRole('button', { name: 'Add program' }).click();
   await expect(page.getByText(/Annual program PRG-2027-001 created\./)).toBeVisible();
-  await expect(page.getByText('PRG-2027-001 · Workplace Modernisation 2027')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'PRG-2027-001 · Workplace Modernisation 2027' }),
+  ).toBeVisible();
 
   // The post-close settlement fixture needs its own FY2027 program. It is also
   // created while the plan is a draft: activation freezes program budgets, so a
@@ -1167,6 +1170,12 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
     await carryInputs.nth(index).fill('0');
   }
   await closeProgramRow.locator('input[name$="_capex"]').fill('100000000');
+  // Anything left behind needs a reason: the close snapshot records it (#113,
+  // ADR-0006 §3), so every row whose available amount is not fully carried gets one.
+  const notCarriedReasons = page.locator('input[name^="not_carried_reason_"]');
+  for (let index = 0; index < (await notCarriedReasons.count()); index += 1) {
+    await notCarriedReasons.nth(index).fill('Not carried: no approved use in FY2028.');
+  }
   await expect(
     page.getByRole('region', { name: 'Carry-over totals preview' }),
   ).toContainText('Rp 100.000.000');
@@ -1180,14 +1189,94 @@ test('builds and reconciles the FY2027 plan end to end @t1', async ({ page }) =>
 
   await page.locator('input[name="confirmation"]').fill('CLOSE FY2027');
   await page.getByRole('button', { name: /Close FY2027 and carry over/ }).click();
-  await expect(page.getByText(/Fiscal year FY2027 closed and carry-over recorded\./)).toBeVisible();
+  await expect(page.getByText(/Fiscal year FY2027 closed and carry-over recorded/)).toBeVisible();
   await page.goto('/plan/annual');
   await expect(page.locator('tbody tr', { hasText: 'FY2027' }).getByText('closed')).toBeVisible();
 
+  // The guarded cache equals the ledger after the close (ADR-0006 §2). This is
+  // a direct database assertion because the receipt screen cannot prove the
+  // columns for rows the close did not touch.
+  const drift = await withSql(async (sql) => {
+    const rows = await sql<{ programs: number; allocations: number }[]>`
+      select
+        (
+          select count(*)::int from annual_programs p
+          where p.carry_in_capex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'program' and e.target_entity_id = p.id and e.component = 'capex'
+            ), 0)
+             or p.carry_in_opex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'program' and e.target_entity_id = p.id and e.component = 'opex'
+            ), 0)
+        ) as programs,
+        (
+          select count(*)::int from project_year_allocations a
+          where a.carry_in_capex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'allocation' and e.target_entity_id = a.id and e.component = 'capex'
+            ), 0)
+             or a.carry_in_opex <> coalesce((
+              select sum(e.amount) from carry_over_entries e
+              where e.entity_type = 'allocation' and e.target_entity_id = a.id and e.component = 'opex'
+            ), 0)
+        ) as allocations
+    `;
+    return rows[0];
+  });
+  expect(drift).toEqual({ programs: 0, allocations: 0 });
+
+  // The close receipt (#113/#115): the immutable snapshot (available, carried,
+  // not carried and the reason) plus the ledger receipts that delivered it.
+  await page.locator('tbody tr', { hasText: 'FY2027' }).getByRole('link', { name: 'Open' }).click();
+  await expect(page.getByRole('heading', { name: 'FY2027 annual plan' })).toBeVisible();
+  await page.getByRole('link', { name: 'Close receipt' }).click();
+  await expect(page.getByRole('heading', { name: 'Close FY2027' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Fiscal year closed' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'E2E-CLOSE-FY2027' })).toBeVisible();
+  const snapshotCard = page.locator('section').filter({ hasText: 'Close snapshot' });
+  const snapshotRow = snapshotCard.locator('tbody tr').filter({ hasText: 'PRG-2027-001' }).first();
+  await expect(snapshotRow).toContainText('Rp 100.000.000');
+  await expect(snapshotRow).toContainText('Not carried: no approved use in FY2028.');
+  await expect(
+    snapshotRow.getByRole('link', { name: /FY2028 · PRG-2028-001/ }),
+  ).toBeVisible();
+  const receiptsCard = page.locator('section').filter({ hasText: 'Carry-over receipts' });
+  await expect(
+    receiptsCard.locator('tbody tr').filter({ hasText: 'PRG-2027-001' }).first(),
+  ).toContainText('Rp 100.000.000');
+  await expect(receiptsCard.getByText(/E2E-CLOSE-FY2027/).first()).toBeVisible();
+
   // carry-in landed on the FY2028 continuation program and the thread is visible
+  await page.goto('/plan/annual');
   await page.locator('tbody tr', { hasText: 'FY2028' }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: 'FY2028 annual plan' })).toBeVisible();
   await expect(page.getByText('Rp 100.000.000').first()).toBeVisible();
+
+  // The program money line (#115, ADR-0006 §6): initial | carry-in received |
+  // revisions | effective budget | allocations | commitments | spend | remaining,
+  // per component, with the ledger receipts shown as provenance.
+  const continuingProgramCard = page
+    .locator('section')
+    .filter({ hasText: 'PRG-2028-001 · Workplace Modernisation 2028' })
+    .first();
+  await continuingProgramCard.getByRole('link', { name: 'Thread' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'PRG-2028-001 · Workplace Modernisation 2028' }),
+  ).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Initial budget', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('columnheader', { name: 'Carry-in received', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('columnheader', { name: 'Effective budget', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Remaining', exact: true })).toBeVisible();
+  const capexMoneyLine = page.locator('tbody tr').filter({ hasText: 'Capex' }).first();
+  await expect(capexMoneyLine).toContainText('Rp 100.000.000');
+  await expect(page.getByText('Carry-in receipts (ledger)')).toBeVisible();
+  await expect(page.getByText('E2E-CLOSE-FY2027').first()).toBeVisible();
+
   await page.goto('/plan/annual');
   await expect(page.getByRole('heading', { name: 'Program threads' })).toBeVisible();
   await expect(page.getByText('FY2028 PRG-2028-001').first()).toBeVisible();

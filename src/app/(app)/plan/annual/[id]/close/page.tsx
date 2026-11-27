@@ -7,6 +7,7 @@ import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
 import { formatDate } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import { getCloseState } from '@/server/plan/close-queries';
+import { listCarryRegister, type CarryRegisterRow } from '@/server/plan/carry-queries';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Close fiscal year' };
@@ -25,13 +26,22 @@ export default async function CloseYearPage({
   const { error, message } = await searchParams;
   const state = await getCloseState(id);
   if (!state) notFound();
-
-  const carryCapexTotal = state.carryOvers
-    .filter((entry) => entry.component === 'capex')
-    .reduce((sum, entry) => sum + entry.amount, 0);
-  const carryOpexTotal = state.carryOvers
-    .filter((entry) => entry.component === 'opex')
-    .reduce((sum, entry) => sum + entry.amount, 0);
+  // The receipt is the ledger view of the close: labels, targets and the
+  // approval reference come from the register rows, while the snapshot supplies
+  // available / carried / not-carried per entity and component.
+  const receipts =
+    state.plan.status === 'closed' ? await listCarryRegister({ sourceAnnualPlanId: id }) : [];
+  const receiptsBySource = new Map<string, CarryRegisterRow[]>();
+  for (const row of receipts) {
+    const key = `${row.entry.entityType}:${row.entry.sourceEntityId ?? ''}:${row.entry.component}`;
+    const list = receiptsBySource.get(key) ?? [];
+    list.push(row);
+    receiptsBySource.set(key, list);
+  }
+  const targetLink = (row: CarryRegisterRow): string =>
+    row.entry.entityType === 'program'
+      ? `/plan/programs/${row.entry.targetEntityId}`
+      : `/plan/annual/${row.entry.targetAnnualPlanId}`;
 
   return (
     <div>
@@ -57,7 +67,19 @@ export default async function CloseYearPage({
             <dl className="grid gap-4 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-slate-500">Approval reference</dt>
-                <dd className="mt-1 font-medium">{state.plan.closeReference ?? '—'}</dd>
+                <dd className="mt-1 font-medium">
+                  {state.plan.closeReference ? (
+                    <a
+                      href="#carry-receipts"
+                      className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                      title="Jump to the carry-over receipts this close wrote"
+                    >
+                      {state.plan.closeReference}
+                    </a>
+                  ) : (
+                    '—'
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-slate-500">Closed at</dt>
@@ -68,39 +90,163 @@ export default async function CloseYearPage({
               <div>
                 <dt className="text-slate-500">Carried into FY{state.plan.fiscalYear + 1}</dt>
                 <dd className="mt-1 font-medium">
-                  capex <Money value={carryCapexTotal} /> · opex <Money value={carryOpexTotal} />
+                  capex <Money value={state.totalCarryCapex} /> · opex{' '}
+                  <Money value={state.totalCarryOpex} />
                 </dd>
               </div>
             </dl>
-            {state.carryOvers.length > 0 ? (
-              <div className="mt-5 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead>
-                    <tr>
-                      <th className={th}>Entity</th>
-                      <th className={th}>Component</th>
-                      <th className={th}>Amount</th>
-                      <th className={th}>Approval reference</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {state.carryOvers.map((entry) => (
-                      <tr key={entry.id}>
-                        <td className="py-2 pr-3">{entry.entityType}</td>
-                        <td className="py-2 pr-3 uppercase">{entry.component}</td>
-                        <td className="py-2 pr-3 whitespace-nowrap">
-                          <Money value={entry.amount} />
-                        </td>
-                        <td className="py-2 pr-3">{entry.approvalReference}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-slate-600">No carry-over was recorded at close.</p>
-            )}
           </Card>
+
+          <div id="close-snapshot" className="scroll-mt-24">
+            <Card
+              title="Close snapshot"
+              description="Available, carried and deliberately not carried per entity and component, as recorded at the close. Zero-carry entities are included; the targets column links each carried amount to the receipt that delivered it."
+              actions={<Badge>{state.snapshots.length}</Badge>}
+            >
+              {state.snapshots.length === 0 ? (
+                <p className="text-sm text-slate-600">No snapshot rows were recorded for this close.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead>
+                      <tr>
+                        <th className={th}>Entity</th>
+                        <th className={th}>Component</th>
+                        <th className={th}>Available</th>
+                        <th className={th}>Carried</th>
+                        <th className={th}>Not carried</th>
+                        <th className={th}>Reason</th>
+                        <th className={th}>Targets</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {state.snapshots.map(({ snapshot, label }) => {
+                        const targets =
+                          receiptsBySource.get(
+                            `${snapshot.entityType}:${snapshot.entityId}:${snapshot.component}`,
+                          ) ?? [];
+                        return (
+                          <tr
+                            key={`${snapshot.entityType}:${snapshot.entityId}:${snapshot.component}`}
+                          >
+                            <td className="py-2 pr-3">
+                              {snapshot.entityType === 'program' ? (
+                                <Link
+                                  href={`/plan/programs/${snapshot.entityId}`}
+                                  className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                                >
+                                  {label}
+                                </Link>
+                              ) : (
+                                label
+                              )}
+                              <span className="ml-2 text-xs text-slate-500">
+                                {snapshot.entityType}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 uppercase">{snapshot.component}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">
+                              <Money value={snapshot.available} />
+                            </td>
+                            <td className="py-2 pr-3 whitespace-nowrap">
+                              <Money value={snapshot.carried} />
+                            </td>
+                            <td className="py-2 pr-3 whitespace-nowrap">
+                              <Money value={snapshot.notCarried} />
+                            </td>
+                            <td className="py-2 pr-3">{snapshot.notCarriedReason || '—'}</td>
+                            <td className="py-2 pr-3">
+                              {targets.length === 0 ? (
+                                <span className="text-slate-500">—</span>
+                              ) : (
+                                <ul className="space-y-1">
+                                  {targets.map((row) => (
+                                    <li key={row.entry.id}>
+                                      <Link
+                                        href={targetLink(row)}
+                                        className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                                      >
+                                        {row.targetLabel}
+                                      </Link>{' '}
+                                      <Money value={row.entry.amount} />
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <div id="carry-receipts" className="scroll-mt-24">
+            <Card
+              title="Carry-over receipts"
+              description={`The ledger entries this close wrote (approval reference ${state.plan.closeReference ?? '—'}), with their source entity, target and treatment reason.`}
+              actions={<Badge>{receipts.length}</Badge>}
+            >
+              {receipts.length === 0 ? (
+                <p className="text-sm text-slate-600">No carry-over entries were recorded at close.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead>
+                      <tr>
+                        <th className={th}>Source entity</th>
+                        <th className={th}>Component</th>
+                        <th className={th}>Amount</th>
+                        <th className={th}>Target</th>
+                        <th className={th}>Origin</th>
+                        <th className={th}>Reason</th>
+                        <th className={th}>Recorded by</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {receipts.map((row) => (
+                        <tr key={row.entry.id}>
+                          <td className="py-2 pr-3">
+                            {row.entry.sourceEntityId && row.entry.entityType === 'program' ? (
+                              <Link
+                                href={`/plan/programs/${row.entry.sourceEntityId}`}
+                                className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                              >
+                                {row.sourceLabel ?? row.entry.sourceEntityId}
+                              </Link>
+                            ) : (
+                              (row.sourceLabel ?? '—')
+                            )}
+                            <span className="ml-2 text-xs text-slate-500">
+                              {row.entry.entityType}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 uppercase">{row.entry.component}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <Money value={row.entry.amount} />
+                          </td>
+                          <td className="py-2 pr-3">
+                            <Link
+                              href={targetLink(row)}
+                              className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                            >
+                              {row.targetLabel}
+                            </Link>
+                          </td>
+                          <td className="py-2 pr-3">{row.entry.origin}</td>
+                          <td className="py-2 pr-3">{row.entry.reason || '—'}</td>
+                          <td className="py-2 pr-3">{row.createdByName ?? 'system'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
       ) : state.plan.status !== 'active' ? (
         <Card title="Activate the annual plan first" description="Only an active plan can be closed.">
@@ -124,7 +270,7 @@ export default async function CloseYearPage({
         <div className="space-y-6">
           <Card
             title="Close review"
-            description="Review what remains, decide the carry-over per component, and record the approval reference. Open commitments are not carried: they remain commitments (charter §6.7)."
+            description="Review what remains, decide the carry-over per component, and record the approval reference. Open commitments are not carried: they remain commitments (charter §6.7). Anything not carried needs a reason — the close records it in the snapshot."
           >
             <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
@@ -134,13 +280,13 @@ export default async function CloseYearPage({
               <div>
                 <p className="text-slate-500">Programs with unallocated budget</p>
                 <p className="mt-1 font-medium">
-                  {state.programs.filter((row) => row.unallocatedCapex + row.unallocatedOpex > 0).length}
+                  {state.programs.filter((row) => row.availableCapex + row.availableOpex > 0).length}
                 </p>
               </div>
               <div>
                 <p className="text-slate-500">Allocations with remaining</p>
                 <p className="mt-1 font-medium">
-                  {state.allocations.filter((row) => row.remainingCapex + row.remainingOpex > 0).length}
+                  {state.allocations.filter((row) => row.availableCapex + row.availableOpex > 0).length}
                 </p>
               </div>
               <div>
@@ -150,8 +296,8 @@ export default async function CloseYearPage({
             </div>
             <p className="mt-4 text-xs text-slate-500">
               Remaining = allocation + carry-in − open commitments − current-year spend. Unallocated program
-              budget = budget + carry-in − allocations. Cross-year settlement portions and prior-year opening
-              payments do not count against this year.
+              budget = effective budget + carry-in − allocations. Cross-year settlement portions and prior-year
+              opening payments do not count against this year.
             </p>
           </Card>
 
@@ -163,17 +309,17 @@ export default async function CloseYearPage({
               id: row.program.id,
               code: row.program.code,
               name: row.program.name,
-              unallocatedCapex: row.unallocatedCapex,
-              unallocatedOpex: row.unallocatedOpex,
-              defaultTargetProgramId: row.defaultTargetProgramId,
+              availableCapex: row.availableCapex,
+              availableOpex: row.availableOpex,
+              continuationProgramId: row.continuationProgramId,
               targetPrograms: row.targetPrograms,
             }))}
             allocations={state.allocations.map((row) => ({
               id: row.allocation.id,
               projectCode: row.project.code,
               projectName: row.project.name,
-              remainingCapex: row.remainingCapex,
-              remainingOpex: row.remainingOpex,
+              availableCapex: row.availableCapex,
+              availableOpex: row.availableOpex,
               hasTargetAllocation: row.targetAllocation !== null,
               note: row.note,
             }))}

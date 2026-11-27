@@ -6,6 +6,7 @@ import {
   annualPlans,
   annualPrograms,
   projects,
+  projectYearAllocations,
   strategicInitiatives,
   strategicPlans,
   type AnnualPlan,
@@ -15,13 +16,16 @@ import {
 import {
   annualPlanCreateSchema,
   annualPlanStatusSchema,
+  manualCarryReceiptSchema,
   programCreateSchema,
   programUpdateSchema,
   programVoidSchema,
   type AnnualPlanCreateInput,
+  type ManualCarryReceiptInput,
   type ProgramCreateInput,
   type ProgramUpdateInput,
 } from '@/domain/inputs';
+import { formatRupiah } from '@/domain/money';
 import { withCustomFields } from '@/domain/custom-fields';
 import { isComponentShift } from '@/domain/revisions';
 import { planContainsFiscalYear } from '@/domain/plan';
@@ -40,6 +44,7 @@ import {
   type CustomFieldPayload,
 } from '@/server/custom-fields/form';
 import { recordAudit } from '@/server/audit';
+import { receiveCarry } from './carry-ledger';
 import { getStrategicPlan } from './queries';
 
 const ANNUAL_PAGE = '/plan/annual';
@@ -332,8 +337,6 @@ async function createProgram(
         name: input.name,
         capexBudget: input.capexBudget,
         opexBudget: input.opexBudget,
-        carryInCapex: input.carryInCapex,
-        carryInOpex: input.carryInOpex,
         notes: input.notes,
         createdBy: userId,
         updatedBy: userId,
@@ -410,8 +413,6 @@ async function updateProgram(
         name: input.name,
         capexBudget: input.capexBudget,
         opexBudget: input.opexBudget,
-        carryInCapex: input.carryInCapex,
-        carryInOpex: input.carryInOpex,
         notes: input.notes,
         updatedBy: userId,
         updatedAt: new Date(),
@@ -482,6 +483,96 @@ async function voidProgram(userId: string, id: string, reason: string): Promise<
   });
   if (!updated) throw new FormError('Annual program not found.');
   return updated;
+}
+
+/**
+ * A manual carry-in receipt (ADR-0006 §2): a reasoned grant written to the
+ * ledger, which recomputes the guarded `carry_in_*` cache. There is no other
+ * way to put carry-in on a program or allocation, and no way to take it back
+ * except a budget revision.
+ */
+async function receiveManualCarry(
+  userId: string,
+  input: ManualCarryReceiptInput,
+): Promise<{ annualPlan: AnnualPlan; label: string }> {
+  const { annualPlan, strategicPlan } = await loadAnnualPlan(input.annualPlanId);
+  if (strategicPlan.status === 'archived') {
+    throw new FormError('The strategic plan is archived and read-only.');
+  }
+  if (annualPlan.status === 'closed') {
+    throw new FormError('This fiscal year is closed and read-only.');
+  }
+
+  let label: string;
+  if (input.entityType === 'program') {
+    const rows = await getDb()
+      .select({
+        id: annualPrograms.id,
+        annualPlanId: annualPrograms.annualPlanId,
+        code: annualPrograms.code,
+        voidedAt: annualPrograms.voidedAt,
+      })
+      .from(annualPrograms)
+      .where(eq(annualPrograms.id, input.entityId))
+      .limit(1);
+    const program = rows[0];
+    if (!program || program.annualPlanId !== annualPlan.id) {
+      throw new FormError('That program is not part of this annual plan.');
+    }
+    if (program.voidedAt) throw new FormError('That program is voided and read-only.');
+    label = program.code;
+  } else {
+    const rows = await getDb()
+      .select({
+        id: projectYearAllocations.id,
+        annualPlanId: projectYearAllocations.annualPlanId,
+        projectCode: projects.code,
+        voidedAt: projectYearAllocations.voidedAt,
+      })
+      .from(projectYearAllocations)
+      .innerJoin(projects, eq(projectYearAllocations.projectId, projects.id))
+      .where(eq(projectYearAllocations.id, input.entityId))
+      .limit(1);
+    const allocation = rows[0];
+    if (!allocation || allocation.annualPlanId !== annualPlan.id) {
+      throw new FormError('That project year allocation is not part of this annual plan.');
+    }
+    if (allocation.voidedAt) {
+      throw new FormError('That project year allocation is voided and read-only.');
+    }
+    label = allocation.projectCode;
+  }
+
+  await getDb().transaction(async (tx) => {
+    const receipt = await receiveCarry(tx, {
+      origin: 'manual',
+      targetAnnualPlanId: annualPlan.id,
+      entityType: input.entityType,
+      targetEntityId: input.entityId,
+      component: input.component,
+      amount: input.amount,
+      reason: input.reason,
+      actorUserId: userId,
+    });
+    await recordAudit(tx, {
+      actorUserId: userId,
+      action: 'carry_over',
+      entityType: input.entityType === 'program' ? 'annual_program' : 'project_year_allocation',
+      entityId: input.entityId,
+      after: {
+        origin: 'manual',
+        component: input.component,
+        amount: input.amount,
+        targetAnnualPlanId: annualPlan.id,
+        carryOverEntryId: receipt.entry.id,
+        carryInCapex: receipt.cache.capex,
+        carryInOpex: receipt.cache.opex,
+      },
+      reason: input.reason,
+    });
+  });
+
+  return { annualPlan, label };
 }
 
 // ---------------------------------------------------------------- actions
@@ -568,6 +659,26 @@ export async function updateProgramAction(
   finishWith(
     `${ANNUAL_PAGE}/${updated.annualPlanId}`,
     `Annual program ${updated.code} updated.`,
+  );
+}
+
+export async function receiveManualCarryAction(
+  previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await actionUser();
+  const parsed = validateForm(previous, manualCarryReceiptSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  let saved: { annualPlan: AnnualPlan; label: string };
+  try {
+    saved = await receiveManualCarry(user.id, parsed.data);
+  } catch (error) {
+    return failureState(previous, error, parsed.values);
+  }
+  finishWith(
+    `${ANNUAL_PAGE}/${saved.annualPlan.id}`,
+    `Carry-in ${formatRupiah(parsed.data.amount)} recorded for ${saved.label}.`,
   );
 }
 
