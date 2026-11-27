@@ -1,5 +1,9 @@
 import type { AnnualPlan } from '@/db/schema';
-import { isCorrectionAfterClose, isCorrectionReason } from '@/domain/corrections';
+import {
+  isCorrectionAfterClose,
+  isCorrectionReason,
+  updateAuditAction,
+} from '@/domain/corrections';
 import { FormError } from '@/server/actions/common';
 
 /**
@@ -30,4 +34,19 @@ export function requireCorrectionReason(
 ): void {
   if (!isCorrectionAfterClose(annualPlan)) return;
   if (!isCorrectionReason(reason)) throw new FormError(CORRECTION_REASON_MESSAGE);
+}
+
+/**
+ * The two rule calls every in-place update path makes, in one place
+ * (ADR-0007 §5): classify the audit action from the governing plan's status at
+ * write time, then hold a correction to its reason. Returning the action keeps
+ * the six wirings one rule instead of six copies of the same preamble.
+ */
+export function correctionAuditAction(
+  annualPlan: Pick<AnnualPlan, 'status'>,
+  reason: string | null | undefined,
+): 'correction' | 'update' {
+  const action = updateAuditAction(annualPlan);
+  requireCorrectionReason(annualPlan, reason);
+  return action;
 }

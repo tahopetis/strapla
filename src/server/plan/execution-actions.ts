@@ -21,9 +21,8 @@ import {
 } from '@/db/schema';
 import {
   CORRECTION_WRITE,
-  updateAuditAction,
 } from '@/domain/corrections';
-import { requireCorrectionReason } from './correction-guards';
+import { correctionAuditAction } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import {
   commitmentCreateSchema,
@@ -285,10 +284,9 @@ async function updateCommitment(
 ): Promise<CommitmentEntry> {
   if (commitment.voidedAt) throw new FormError('This commitment is voided and read-only.');
   requireEditable(context, CORRECTION_WRITE);
-  // ADR-0007 §5: the governing plan's status at write time names the audit
-  // action, so a closed year records exactly one `correction` entry.
-  const auditAction = updateAuditAction(context.annualPlan);
-  requireCorrectionReason(context.annualPlan, input.reason);
+  // ADR-0007 §5: the plan status names the audit action and a correction
+  // needs its reason; one call keeps the six paths one rule.
+  const auditAction = correctionAuditAction(context.annualPlan, input.reason);
   requireComponentAllowed(context, input.component);
   const settled = await settledAmount(commitment.id);
   if (input.amount < settled) {

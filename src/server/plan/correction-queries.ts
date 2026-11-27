@@ -22,9 +22,11 @@ import { CORRECTION_ACTION } from '@/domain/corrections';
  * shapes the product needs.
  *
  * - {@link loadCorrectionMarkers} answers "which records of this plan were
- *   corrected", plus the derived groups the four reports and the closed plan's
- *   banner need (a program row is marked when the program **or one of its
- *   allocations** was corrected, because both move that row's figures).
+ *   corrected", plus the derived groups the four reports need. A row is marked
+ *   only when a record that **moves that row's figures** was corrected: a
+ *   program row is marked for a corrected program, one of its allocations or one
+ *   of its commitments, but not for a corrected project name or ijin document —
+ *   correcting metadata never changes the money a report adds up.
  * - {@link listPlanCorrections} answers "what was corrected in this fiscal
  *   year", with a label, a link, the reason and the actor, for the closed
  *   annual plan's banner and the close receipt notice.
@@ -83,18 +85,23 @@ export interface PlanCorrection {
 export interface CorrectionMarkers {
   /** Every corrected record id, for a per-record badge. */
   corrected: ReadonlySet<string>;
-  /** Program ids whose row shows corrected money (the program or an allocation). */
+  /**
+   * Program ids whose annual-plan or budget-vs-actual row shows a corrected
+   * figure: a corrected program, one of its allocations, or one of its
+   * commitments — never a metadata-only correction elsewhere in its thread.
+   */
   programs: ReadonlySet<string>;
-  /** Initiative ids whose five-year row rests on a corrected program or allocation. */
+  /** Initiative ids whose five-year row aggregates a corrected program, allocation or commitment. */
   initiatives: ReadonlySet<string>;
-  /** Project ids whose register row rests on a corrected project, ijin or allocation. */
+  /**
+   * Project ids whose register row shows a corrected figure: a corrected
+   * project, its ijin prinsip, one of its allocations or one of its commitments.
+   */
   projects: ReadonlySet<string>;
-  /** How many correction entries the strategic plan has, for the banner and the footnote. */
-  count: number;
 }
 
 function emptyMarkers(): CorrectionMarkers {
-  return { corrected: new Set(), programs: new Set(), initiatives: new Set(), projects: new Set(), count: 0 };
+  return { corrected: new Set(), programs: new Set(), initiatives: new Set(), projects: new Set() };
 }
 
 /** A plan record, loaded with the keys the marker grouping and the links need. */
@@ -372,22 +379,35 @@ export async function loadCorrectionMarkers(
     const record = records.get(correction.entityId);
     if (!record) continue;
     corrected.add(record.entityId);
-    if (record.programId) programs.add(record.programId);
-    if (record.initiativeId) initiatives.add(record.initiativeId);
-    // An allocation's row is the program's row, so mark the program either way;
-    // a commitment moves the same program's committed figures.
+
+    // A program row adds up its budget, its allocations and its commitments, so
+    // any of those three moves it. A corrected project name or ijin document
+    // does not, and marking the row for it would claim a change that is not
+    // there (ADR-0007 §8: mark the rows whose figures rest on the correction).
+    if (movesMoney(record.entityType)) {
+      if (record.programId) programs.add(record.programId);
+      if (record.initiativeId) initiatives.add(record.initiativeId);
+    }
+
+    // Every one of the six record types except the recurring item sits under a
+    // project — a project row is the only report row that shows all of them.
     if (record.projectId) projectsCorrected.add(record.projectId);
   }
 
-  // A project row also rests on its ijin prinsip record, and a program row on
-  // nothing but itself and its allocations — both are already covered above.
-  return {
-    corrected,
-    programs,
-    initiatives,
-    projects: projectsCorrected,
-    count: corrections.length,
-  };
+  return { corrected, programs, initiatives, projects: projectsCorrected };
+}
+
+/**
+ * Whether a corrected record changes a figure a report adds up. Metadata
+ * corrections (a project's owner, an ijin prinsip document number) move no
+ * money, so they mark the record itself but never an aggregated row.
+ */
+function movesMoney(entityType: CorrectionEntityType): boolean {
+  return (
+    entityType === 'annual_program' ||
+    entityType === 'project_year_allocation' ||
+    entityType === 'commitment_entry'
+  );
 }
 
 /**
@@ -428,11 +448,4 @@ export async function listPlanCorrections(annualPlanId: string): Promise<PlanCor
     });
   }
   return result.reverse();
-}
-
-/** How many corrections one fiscal year's plan records carry, for the banner. */
-export async function countPlanCorrections(annualPlanId: string): Promise<number> {
-  const records = await loadPlanRecords([annualPlanId]);
-  const corrections = await loadCorrectionRows([...records.keys()]);
-  return corrections.length;
 }

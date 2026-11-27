@@ -27,9 +27,8 @@ import {
 } from '@/domain/inputs';
 import {
   CORRECTION_WRITE,
-  updateAuditAction,
 } from '@/domain/corrections';
-import { requireCorrectionReason } from './correction-guards';
+import { correctionAuditAction } from './correction-guards';
 import { formatRupiah } from '@/domain/money';
 import { withCustomFields } from '@/domain/custom-fields';
 import { isComponentShift } from '@/domain/revisions';
@@ -405,10 +404,9 @@ async function updateProgram(
   const loaded = await loadProgram(input.id);
   if (loaded.program.voidedAt) throw new FormError('This program is voided and read-only.');
   await requireEditableAnnualPlan(loaded.annualPlan.id, CORRECTION_WRITE);
-  // ADR-0007 §5: the governing plan's status at write time names the audit
-  // action, so a closed year records exactly one `correction` entry.
-  const auditAction = updateAuditAction(loaded.annualPlan);
-  requireCorrectionReason(loaded.annualPlan, input.reason);
+  // ADR-0007 §5: the plan status names the audit action and a correction
+  // needs its reason; one call keeps the six paths one rule.
+  const auditAction = correctionAuditAction(loaded.annualPlan, input.reason);
   requireBudgetFrozen(loaded, input);
   await validateInitiative(input.siId, loaded.strategicPlan.id);
   await validateContinuation({
