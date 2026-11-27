@@ -56,6 +56,8 @@ The create form defaults the start year to the year after the most recent archiv
 
 A plan horizon edit is refused when the new range would exclude an existing annual plan or any project's full-life years, and the message names the offending annual plan year or project code. The horizon is not a display setting: it is the set of years the plan owns.
 
+The **start year does not move once the opening balances are signed off**: the prior year of that bridge is derived from it (ADR-0003 §5), so moving the start would silently relabel signed-off figures. An edit that moves the start back over an archived plan's horizon is refused as well — the horizon-disjoint rule applies to edits, not only to creation.
+
 Ending a plan **early** is therefore an explicit sequence, not a horizon edit:
 
 1. shrink the horizon to the last year that still contains every annual plan and every project's full-life years;
@@ -80,7 +82,7 @@ The first plan's signed-off opening balances remain readable from that plan's ar
 
 The **Archived plans** list is reachable from **Plan → Archived plans**. It lists each archived plan with its name, horizon, archived date and archived reason — the date and reason are read from the `status_change` audit entry that archived it, not stored on the plan row.
 
-An entry opens a read-only archived plan page: the plan's initiatives with their envelope figures, and its annual plans, with links into the existing read-only annual plan, program, project and allocation pages. Every write control is absent; the archived plan is history with a working index.
+An entry opens a read-only archived plan page: the plan's initiatives with their envelope figures, its annual plans, annual programs and projects, and links into the existing read-only annual plan, program, project and allocation pages. Every write control is absent; the archived plan is history with a working index.
 
 ### 9. Scope and non-goals
 

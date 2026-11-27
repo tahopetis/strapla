@@ -43,7 +43,10 @@ export default async function OpeningBalancesPage({
   const requestedPlanId = planParam ? planParam : null;
   if (requestedPlanId !== null && !isRecordId(requestedPlanId)) notFound();
   const requestedPlan = requestedPlanId ? await getStrategicPlan(requestedPlanId) : null;
-  if (requestedPlanId !== null && !requestedPlan) notFound();
+  // ?plan=<id> exists for the archived plans list, which links one archived
+  // plan's signed-off figures read-only; it is not a way to view an editable
+  // plan without its write controls.
+  if (requestedPlanId !== null && requestedPlan?.status !== 'archived') notFound();
 
   const plan = requestedPlan ?? (await getCurrentStrategicPlan());
 
@@ -69,7 +72,7 @@ export default async function OpeningBalancesPage({
     );
   }
 
-  const readOnly = requestedPlan !== null || plan.status === 'archived';
+  const readOnly = plan.status === 'archived';
   const firstPlan = await isFirstStrategicPlan(plan);
   // A successor plan starts without opening balances: it gets the explanation,
   // not the import or the sign-off forms (#109).
@@ -85,13 +88,7 @@ export default async function OpeningBalancesPage({
   const priorYear = plan.startFiscalYear;
   const firstInAppYear = priorYear + 1;
   const signedOffAt = reconciliation?.signedOffAt ?? null;
-  const notice = readOnly
-    ? plan.status === 'archived'
-      ? READ_ONLY_NOTICE
-      : 'Read-only opening balances.'
-    : successor
-      ? SUCCESSOR_NOTICE
-      : null;
+  const notice = readOnly ? READ_ONLY_NOTICE : successor ? SUCCESSOR_NOTICE : null;
 
   const controlFields = [
     { name: 'controlEnvelopeCapex', label: 'Total envelope (capex)', app: totals.envelopeCapex },

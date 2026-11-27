@@ -469,3 +469,85 @@ describe('updatePlanAction — horizon containment', () => {
     expect(tx.update).not.toHaveBeenCalled();
   });
 });
+
+describe('updatePlanAction — succession boundaries', () => {
+  it('refuses an edit that moves the start year back over the archived plan', async () => {
+    // The draft successor is the only editable plan; its horizon may not start
+    // before the archived plan's end (#109 §3: horizons never overlap).
+    mocks.getStrategicPlan.mockResolvedValue({
+      id: PLAN_ID,
+      name: 'IT Strategic Plan 2031–2035',
+      startFiscalYear: 2031,
+      endFiscalYear: 2035,
+      status: 'draft',
+      createdBy: null,
+      updatedBy: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const { db, tx } = database([
+      [],
+      [],
+      [planRow({ status: 'archived' })],
+      [],
+    ]);
+    mocks.getDb.mockReturnValue(db);
+
+    const state = await updatePlanAction(
+      INITIAL,
+      planUpdateForm({ name: 'IT Strategic Plan 2031–2035', startFiscalYear: '2030', endFiscalYear: '2035' }),
+    );
+
+    expect(state.status).toBe('error');
+    expect(state.message).toContain(
+      'The successor plan must start after FY2030, the end of “IT Strategic Plan 2026–2030”.',
+    );
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses moving the start year once the opening balances are signed off', async () => {
+    // The prior year of the opening-balance bridge is derived from the start
+    // year, so a signed-off plan cannot move it (#109 §7).
+    const { db, tx } = database([
+      [{ fiscalYear: 2027 }],
+      [],
+      [],
+      [{ signedOffAt: new Date('2026-11-01T00:00:00Z') }],
+    ]);
+    mocks.getDb.mockReturnValue(db);
+
+    const state = await updatePlanAction(INITIAL, planUpdateForm({ startFiscalYear: '2027' }));
+
+    expect(state.status).toBe('error');
+    expect(state.message).toBe(
+      'The opening balances for FY2026 are signed off, so the start fiscal year cannot move. Shrink the plan horizon from the end year instead.',
+    );
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it('allows the end year to shrink while the start year stays put', async () => {
+    const { db, tx } = database([[{ fiscalYear: 2027 }], [], [], [{ signedOffAt: new Date() }]]);
+    tx.update.mockReturnValue(
+      updateChain([
+        {
+          id: PLAN_ID,
+          name: CURRENT_PLAN.name,
+          startFiscalYear: 2026,
+          endFiscalYear: 2028,
+          status: 'active',
+          createdBy: null,
+          updatedBy: 'user-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]),
+    );
+    mocks.getDb.mockReturnValue(db);
+
+    await expect(
+      updatePlanAction(INITIAL, planUpdateForm({ endFiscalYear: '2028' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(tx.update).toHaveBeenCalledTimes(1);
+  });
+});

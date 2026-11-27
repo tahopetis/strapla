@@ -152,7 +152,7 @@ budget, carry-in, project or initiative — and the successor starts empty (§6.
 | Object | What it represents | Where you manage it |
 | --- | --- | --- |
 | **Strategic plan** | The multi-year horizon (start/end fiscal year) and its status. One plan is active or draft at a time; a successor follows the archived plan. | Plan → Strategic plan & SIs |
-| **Archived plans** | The read-only list of archived plans, with each plan's read-only page: its initiatives with envelope figures, its annual plans and links into the annual plan, program, project and allocation pages. | Plan → Archived plans |
+| **Archived plans** | The read-only list of archived plans, with each plan's read-only page: its initiatives with envelope figures, its annual plans, annual programs and projects, and links into the annual plan, program, project and allocation pages. | Plan → Archived plans |
 | **Strategic initiative (SI)** | A five-year envelope: code, name, owner, objective, prior program budget consumed. | Plan → Strategic plan & SIs |
 | **Annual plan** | One fiscal year inside the horizon; draft → active → closed. | Plan → Annual plans |
 | **Annual program** | A budget line for one SI in one year: initial capex/opex budget (frozen once the plan is active), effective budget, ledger carry-in, optional continuation. | Annual plan page |
@@ -868,7 +868,8 @@ Nothing crosses the boundary. Four steps:
 1. **Shrink the horizon if the plan ends early.** Edit the plan and set **End fiscal year** to the
    last year that still contains every annual plan and every project's full-life years. A save that
    would exclude an annual plan or a project is refused, and the message names the offending year or
-   project. A plan that runs to its planned end skips this step.
+   project. Only the end year moves: the start year is the opening-balance bridge year, so once the
+   balances are signed off it cannot change. A plan that runs to its planned end skips this step.
 2. **Final-close the last annual plan** (§6.5). It needs no next-year annual plan and carries nothing.
 3. **Archive the plan.** **Archive plan** becomes possible once every annual plan under it is closed,
    and it is final: the plan becomes read-only. A draft plan may be archived directly, which is how a
@@ -905,8 +906,8 @@ portfolio.* — so the portfolio never falls back to an empty state.
 **Archived plans.** **Plan → Archived plans** lists every archived plan with its name, horizon,
 archived date and archived reason (the reason typed when the plan was archived, read from the audit
 trail). Each opens a read-only archived plan page: the plan's initiatives with their envelope figures,
-and its annual plans, with links into the existing read-only annual plan, program, project and
-allocation pages. There are no add, edit, archive or void controls anywhere on an archived plan; for
+its annual plans, annual programs and projects, and links into the existing read-only annual plan,
+program, project and allocation pages. There are no add, edit, archive or void controls anywhere on an archived plan; for
 the first plan, the page also links to its signed-off opening balances (§3.6).
 
 ## 7. Dashboard
@@ -1107,6 +1108,7 @@ Member account:   active ──deactivate──▶ deactivated ──activate─
 | `The successor plan must start after FY<year>, the end of “<plan name>”.` | The new start year overlaps an archived plan's horizon. | Choose a start year after the archived plan's end year; the form defaults to the first free year (§6.6). |
 | `Every annual plan must be closed before the strategic plan is archived: FY<year> is still <status>.` | The plan still has an open annual plan. | Close that year (as a final close if it is the plan's end year) before archiving (§6.5–6.6). A draft plan with no annual plans can be archived directly. |
 | `Another strategic plan is active. Archive it before activating this one.` | Only one plan may be active at a time. | Archive the active plan first, then activate this one. |
+| `The opening balances for FY<year> are signed off, so the start fiscal year cannot move. Shrink the plan horizon from the end year instead.` | The edit would move the start year the signed-off opening-balance bridge was based on. | Keep the start year and shrink only the end year (§6.6). |
 | `The new horizon excludes the FY<year> annual plan. An annual plan must stay inside the plan horizon.` | A horizon edit would leave an annual plan outside the plan. | Keep that year inside the horizon: a horizon can only shrink to the last year that has an annual plan or project (§6.6). |
 | `The new horizon excludes project <code> (FY<start>–FY<end>). A project's full-life years must stay inside the plan horizon.` | A horizon edit would cut a project's life. | Keep the project's years inside the horizon; work continuing after the boundary starts as a new project under the successor (§6.6). |
 | `This plan is archived and read-only. Create a successor plan to continue the portfolio.` | The current plan is archived and has no successor yet. | Create the successor from the same page; the archived plan is history until then (§6.6). |

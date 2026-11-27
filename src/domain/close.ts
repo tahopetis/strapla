@@ -99,3 +99,13 @@ export function carryOverTotals(entries: readonly CarryOverAmount[]): CarryOverT
 export function nextFiscalYear(current: number): number {
   return current + 1;
 }
+
+/**
+ * The final close (#109, ADR-0008 §3): the annual plan in the strategic plan's
+ * end year has no next year inside the horizon, so it closes with no target and
+ * nothing carried across the plan boundary. A year beyond the end year is
+ * treated as final too — it has no inside-horizon target either.
+ */
+export function isFinalCloseYear(annualPlanFiscalYear: number, planEndFiscalYear: number): boolean {
+  return annualPlanFiscalYear >= planEndFiscalYear;
+}

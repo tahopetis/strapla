@@ -53,12 +53,13 @@ kept for it.
   empty and as a draft. Nothing carries across the boundary — no budget, carry-in, initiative, program
   or project — and opening balances stay first-plan-only.
 - Horizon edits are refused when the new range would exclude an existing annual plan or a project's
-  full-life years, and the message names the record. Ending a plan early is: shrink the horizon,
-  final-close it, archive it.
+  full-life years, and the message names the record; a signed-off plan's start year cannot move, so
+  early termination shrinks from the end. Ending a plan early is: shrink the horizon, final-close it,
+  archive it.
 - A read-only **Archived plans** list and per-plan read-only pages show each plan's name, horizon,
-  archived date and reason from the status-change audit entry, its initiatives with envelope figures
-  and its annual plans, linking into the existing read-only annual plan, program, project and
-  allocation pages. With a successor present every surface uses the non-archived plan; until then the
+  archived date and reason from the status-change audit entry, its initiatives with envelope figures,
+  and its annual plans, annual programs and projects, linking into the existing read-only annual plan,
+  program, project and allocation pages. With a successor present every surface uses the non-archived plan; until then the
   archived plan stays visible with a prompt to create the successor.
 
 ### Documentation

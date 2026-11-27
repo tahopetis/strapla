@@ -5,6 +5,7 @@ import {
   carryOverCandidate,
   carryOverTotals,
   closeConfirmationPhrase,
+  isFinalCloseYear,
   nextFiscalYear,
   totalCarryOver,
   validateCarryOverAmount,
@@ -117,5 +118,20 @@ describe('carryOverTotals', () => {
     expect(() =>
       carryOverTotals([{ entityType: 'allocation', component: 'opex', amount: 1.5 }]),
     ).toThrow(CloseError);
+  });
+});
+
+describe('isFinalCloseYear', () => {
+  it('treats the plan end year as the final close', () => {
+    expect(isFinalCloseYear(2030, 2030)).toBe(true);
+  });
+
+  it('keeps every earlier year an ordinary close', () => {
+    expect(isFinalCloseYear(2029, 2030)).toBe(false);
+    expect(isFinalCloseYear(2027, 2030)).toBe(false);
+  });
+
+  it('treats a year beyond the horizon as final: it has no inside-horizon target', () => {
+    expect(isFinalCloseYear(2031, 2030)).toBe(true);
   });
 });

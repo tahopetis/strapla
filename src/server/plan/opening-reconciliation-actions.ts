@@ -19,7 +19,7 @@ import {
   validateForm,
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
-import { getOpeningReconciliation } from './opening-queries';
+import { FIRST_PLAN_ONLY_WRITE_REFUSAL, getOpeningReconciliation } from './opening-queries';
 import { getStrategicPlan, isFirstStrategicPlan } from './queries';
 
 const LANDING = '/plan/opening-balances';
@@ -54,7 +54,7 @@ async function requirePlan(planId: string) {
   // Opening balances are signed off once, for the first plan (#109,
   // ADR-0008 §7): a successor plan starts without them.
   if (!(await isFirstStrategicPlan(plan))) {
-    throw new FormError('Opening balances are recorded once, for the first plan.');
+    throw new FormError(FIRST_PLAN_ONLY_WRITE_REFUSAL);
   }
   return plan;
 }

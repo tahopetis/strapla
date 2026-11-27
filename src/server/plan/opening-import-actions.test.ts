@@ -32,7 +32,10 @@ vi.mock('./queries', () => ({
   getCurrentStrategicPlan: mocks.getCurrentStrategicPlan,
   isFirstStrategicPlan: mocks.isFirstStrategicPlan,
 }));
-vi.mock('./opening-queries', () => ({ getOpeningLoadScene: mocks.getOpeningLoadScene }));
+vi.mock('./opening-queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./opening-queries')>()),
+  getOpeningLoadScene: mocks.getOpeningLoadScene,
+}));
 vi.mock('./opening-import-fields', () => ({
   listOpeningRegistryFields: mocks.listOpeningRegistryFields,
 }));

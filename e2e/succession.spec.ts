@@ -126,13 +126,13 @@ test('final-closes the plan end year and archives the strategic plan @t4', async
   await expect(editForm.locator('textarea[name="reason"]')).toHaveValue(HORIZON_REASON);
 
   // A horizon that still contains every annual plan year saves and is audited.
-  await editForm.locator('input[name="startFiscalYear"]').fill('2027');
+  // The start year stays put on purpose: it is the opening-balance bridge year,
+  // so moving it after the sign-off is refused — the supported early end shrinks
+  // from the end year (#109 §6–7), which is what this restores after the refusal.
   await editForm.locator('input[name="endFiscalYear"]').fill('2030');
   await editForm.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText(`Strategic plan “${ARCHIVED_PLAN}” updated.`)).toBeVisible();
-  // The saved horizon is what the page now shows: the start year moved to FY2027,
-  // the end year stayed FY2030 (the name is unchanged).
-  await expect(page.getByText('2027–2030', { exact: true })).toBeVisible();
+  await expect(page.getByText('2026–2030', { exact: true })).toBeVisible();
 
   const horizonAudit = await withSql(async (sql) => {
     const rows = await sql<
@@ -153,7 +153,7 @@ test('final-closes the plan end year and archives the strategic plan @t4', async
     return rows[0];
   });
   expect(horizonAudit?.reason).toBe(HORIZON_REASON);
-  expect(horizonAudit).toMatchObject({ start_year: '2027', end_year: '2030' });
+  expect(horizonAudit).toMatchObject({ start_year: '2026', end_year: '2030' });
 
   // --------------------------------------- archive needs every year closed
   // Archive is final, so it may not freeze an open annual plan that could never
@@ -451,9 +451,9 @@ test('reopens the archived plan read-only while every surface uses the successor
   await expect(page.getByRole('heading', { name: 'Archived plans', exact: true })).toBeVisible();
   const archivedRow = page.locator('tbody tr', { hasText: ARCHIVED_PLAN });
   await expect(archivedRow).toHaveCount(1);
-  // The horizon the plan ended with: the start year was moved to FY2027 by the
-  // validated edit in the first test, the name and end year are unchanged.
-  await expect(archivedRow).toContainText('2027–2030');
+  // The horizon the plan ended with: the validated edit in the first test kept the
+  // start year and restored the end year.
+  await expect(archivedRow).toContainText('2026–2030');
   // columns: name, horizon, archived (dd/mm/yyyy), reason
   await expect(archivedRow.getByRole('cell').nth(2)).toHaveText(archivedOn);
   await expect(archivedRow).toContainText(ARCHIVE_REASON);
@@ -490,6 +490,18 @@ test('reopens the archived plan read-only while every surface uses the successor
       /^\/plan\/annual\/[0-9a-f-]+$/,
     );
   }
+
+  // Its programs and projects stay navigable: each opens its existing read-only
+  // page, and a project opens its allocations (#109 §5).
+  const deliveryCard = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Programs and projects' }) });
+  await expect(
+    deliveryCard.getByRole('link', { name: 'PRG-2027-001 · Workplace Modernisation 2027' }),
+  ).toHaveAttribute('href', /^\/plan\/programs\/[0-9a-f-]+$/);
+  await expect(
+    deliveryCard.getByRole('link', { name: 'PRJ-2027-001 · Device Refresh 2027' }),
+  ).toHaveAttribute('href', /^\/plan\/projects\/[0-9a-f-]+$/);
 
   // An archived plan offers no write control of any kind.
   await expect(

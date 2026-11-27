@@ -16,6 +16,14 @@ import type { OpeningLoadContext } from './opening-load';
 import { listProjects, type ProjectListRow } from './project-queries';
 
 /**
+ * The one refusal the opening-balance writes share (#109, ADR-0008 §7): the
+ * import and the sign-off are first-plan-only, so a successor plan starts
+ * without them. Kept here so both actions say exactly the same thing.
+ */
+export const FIRST_PLAN_ONLY_WRITE_REFUSAL =
+  'Opening balances are recorded once, for the first plan.';
+
+/**
  * Opening-balance reconciliation data (charter §6.9, ADR-0003 §5).
  * Opening figures are entered on the entity forms (SI, program, project); this
  * module aggregates them for the one-time sign-off view.

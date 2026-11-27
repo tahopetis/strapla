@@ -21,7 +21,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
 vi.mock('@/server/auth/session', () => ({ requireUser: mocks.requireUser }));
 vi.mock('@/db/client', () => ({ getDb: mocks.getDb }));
-vi.mock('./opening-queries', () => ({ getOpeningReconciliation: mocks.getOpeningReconciliation }));
+vi.mock('./opening-queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./opening-queries')>()),
+  getOpeningReconciliation: mocks.getOpeningReconciliation,
+}));
 vi.mock('./queries', () => ({
   getStrategicPlan: mocks.getStrategicPlan,
   isFirstStrategicPlan: mocks.isFirstStrategicPlan,
