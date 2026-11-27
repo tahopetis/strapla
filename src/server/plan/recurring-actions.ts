@@ -11,6 +11,11 @@ import {
   type RecurringOpsItem,
   type StrategicPlan,
 } from '@/db/schema';
+import {
+  CORRECTION_WRITE,
+  updateAuditAction,
+} from '@/domain/corrections';
+import { requireCorrectionReason } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import {
   recurringOpsCreateSchema,
@@ -66,11 +71,16 @@ async function loadAnnualPlanContext(annualPlanId: string): Promise<Context> {
   return row;
 }
 
-function requireEditable(context: Context): void {
+/**
+ * The recurring ops editability guard. `allowClosed` is the correction path
+ * (ADR-0007 §1): a closed fiscal year still accepts an in-place correction of an
+ * item that already exists, with a reason. Creates and voids keep refusing.
+ */
+function requireEditable(context: Context, options: { allowClosed?: boolean } = {}): void {
   if (context.strategicPlan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
   }
-  if (context.annualPlan.status === 'closed') {
+  if (context.annualPlan.status === 'closed' && !options.allowClosed) {
     throw new FormError('This fiscal year is closed and read-only.');
   }
 }
@@ -153,7 +163,11 @@ async function updateItem(
 ): Promise<RecurringOpsItem> {
   const loaded = await loadItem(input.id);
   if (loaded.item.voidedAt) throw new FormError('This item is voided and read-only.');
-  requireEditable(loaded.context);
+  requireEditable(loaded.context, CORRECTION_WRITE);
+  // ADR-0007 §5: the governing plan's status at write time names the audit
+  // action, so a closed year records exactly one `correction` entry.
+  const auditAction = updateAuditAction(loaded.context.annualPlan);
+  requireCorrectionReason(loaded.context.annualPlan, input.reason);
   await validateCategory(input.categoryId);
 
   let updated: RecurringOpsItem | undefined;
@@ -166,6 +180,11 @@ async function updateItem(
         categoryId: input.categoryId,
         owner: input.owner,
         opexBudget: input.opexBudget,
+        // A recurring ops item's carry-in is an in-place input, not a ledger
+        // cache: ADR-0006 §7 keeps the item outside the ledger and outside the
+        // year close, so ADR-0007 §2 lists its carry-in as correctable together
+        // with the opex budget. (A program's or an allocation's carry-in *is* a
+        // ledger cache and a correction never writes it, ADR-0007 §4.)
         carryInOpex: input.carryInOpex,
         notes: input.notes,
         updatedBy: userId,
@@ -184,7 +203,7 @@ async function updateItem(
     });
     await recordAudit(tx, {
       actorUserId: userId,
-      action: 'update',
+      action: auditAction,
       entityType: 'recurring_ops_item',
       entityId: input.id,
       before: withCustomFields(snapshot(loaded.item), custom.fields, beforeValues),

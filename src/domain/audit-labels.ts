@@ -21,6 +21,7 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   report_preference_save: 'Report column selection saved',
   revision_post: 'Budget revision posted',
   revision_decision: 'Budget revision decision recorded',
+  correction: 'Corrected after close',
 };
 
 const ENTITY_TYPE_LABELS: Readonly<Record<string, string>> = {

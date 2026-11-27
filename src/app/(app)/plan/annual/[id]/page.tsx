@@ -15,14 +15,18 @@ import {
   TextField,
 } from '@/components/form';
 import { CarryReceiptForm } from '@/components/plan/carry-receipt-form';
+import { CorrectionDisclosure } from '@/components/plan/correction-disclosure';
 import { RecurringOpsSection } from '@/components/plan/recurring-ops-section';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
+import { formatDate } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import type { AnnualPlanDetail, ProgramRow } from '@/server/plan/annual-queries';
 import { getAnnualPlanDetail } from '@/server/plan/annual-queries';
 import { listCarryTargetOptions } from '@/server/plan/carry-queries';
+import { listPlanCorrections, type PlanCorrection } from '@/server/plan/correction-queries';
 import { listCustomFieldDefinitions, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
   activateAnnualPlanAction,
@@ -51,9 +55,17 @@ export default async function AnnualPlanPage({
   if (!detail) notFound();
 
   const editable = detail.annualPlan.status !== 'closed' && detail.strategicPlan.status !== 'archived';
+  // Correction mode (ADR-0007 §7): a closed year still accepts in-place updates
+  // of its programs and recurring ops items, revealed behind an explicit
+  // affordance. An archived strategic plan is fully read-only, so it allows none.
+  const correctable =
+    detail.annualPlan.status === 'closed' && detail.strategicPlan.status !== 'archived';
   // Once the plan is active the program budgets are frozen (#112, ADR-0006 §4):
-  // the form keeps the non-amount fields and points at the revision register.
-  const budgetEditable = editable && detail.annualPlan.status !== 'active';
+  // the form keeps the non-amount fields and points at the revision register. A
+  // closed year is the exception — a correction changes the budget in place and
+  // posts no revision (ADR-0007 §3).
+  const budgetEditable =
+    detail.annualPlan.status !== 'active' && (editable || correctable);
   const canActivate =
     editable && detail.annualPlan.status === 'draft' && detail.strategicPlan.status === 'active';
 
@@ -71,6 +83,14 @@ export default async function AnnualPlanPage({
     ),
     listCarryTargetOptions(detail.annualPlan.id),
   ]);
+
+  // The corrections recorded against this fiscal year (ADR-0007 §6, §8). Only a
+  // closed year has any; the card is rendered only when the count is above zero.
+  const corrections: PlanCorrection[] =
+    detail.annualPlan.status === 'closed'
+      ? await listPlanCorrections(detail.annualPlan.id)
+      : [];
+  const correctedRecords = new Set(corrections.map((correction) => correction.entityId));
 
   return (
     <div>
@@ -137,11 +157,45 @@ export default async function AnnualPlanPage({
           </dl>
 
           {detail.annualPlan.status === 'closed' ? (
-            <p className="mt-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              This fiscal year is closed and read-only.
+            <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {correctable
+                ? 'This fiscal year is closed. Figures can still be corrected with a reason; every correction is audited and the close snapshot stays frozen.'
+                : 'This fiscal year is closed and the strategic plan is archived; the page is read-only.'}
             </p>
           ) : null}
         </Card>
+
+        {corrections.length > 0 ? (
+          <Card
+            title="Corrections after close"
+            description="Each correction is audited; the close snapshot stays the historical record while the figures below show the corrected values."
+            actions={<Badge tone="warning">{corrections.length}</Badge>}
+          >
+            <p className="text-sm text-slate-600">
+              <span className="font-medium">
+                {corrections.length} correction{corrections.length === 1 ? '' : 's'}
+              </span>{' '}
+              after close.
+            </p>
+            <ul className="mt-3 divide-y divide-slate-100">
+              {corrections.map((correction) => (
+                <li key={`${correction.entityType}:${correction.entityId}`} className="py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={correction.href} className={linkClass}>
+                      {correction.label}
+                    </Link>
+                    <span className="text-xs text-slate-500">{correction.entityTypeLabel}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {correction.reason ?? 'No reason recorded'} ·{' '}
+                    {correction.actorName ?? correction.actorEmail ?? 'system'} ·{' '}
+                    {formatDate(correction.correctedAt)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
 
         <Card
           title="Budget revisions"
@@ -177,7 +231,8 @@ export default async function AnnualPlanPage({
               <CarryReceiptForm annualPlanId={detail.annualPlan.id} options={carryTargets} />
             ) : (
               <p className="text-sm text-slate-600">
-                This fiscal year is closed or archived; carry-in receipts are read-only.
+                This fiscal year is closed or archived; carry-in comes from the ledger and is
+                not edited here.
               </p>
             )}
           </Card>
@@ -186,7 +241,9 @@ export default async function AnnualPlanPage({
         <ProgramsSection
           detail={detail}
           editable={editable}
+          correctable={correctable}
           budgetEditable={budgetEditable}
+          correctedRecords={correctedRecords}
           customFields={programFields}
           customValues={programValues}
         />
@@ -194,6 +251,8 @@ export default async function AnnualPlanPage({
         <RecurringOpsSection
           detail={detail}
           editable={editable}
+          correctable={correctable}
+          correctedRecords={correctedRecords}
           customFields={recurringFields}
           customValues={recurringValues}
         />
@@ -205,13 +264,17 @@ export default async function AnnualPlanPage({
 function ProgramsSection({
   detail,
   editable,
+  correctable,
   budgetEditable,
+  correctedRecords,
   customFields,
   customValues,
 }: {
   detail: AnnualPlanDetail;
   editable: boolean;
+  correctable: boolean;
   budgetEditable: boolean;
+  correctedRecords: ReadonlySet<string>;
   customFields: readonly CustomFieldDefinition[];
   customValues: Map<string, CustomFieldValues>;
 }) {
@@ -296,7 +359,9 @@ function ProgramsSection({
               row={row}
               detail={detail}
               editable={editable}
+              correctable={correctable}
               budgetEditable={budgetEditable}
+              corrected={correctedRecords.has(row.program.id)}
               customFields={customFields}
               customValues={customValues.get(row.program.id)}
             />
@@ -311,14 +376,18 @@ function ProgramCard({
   row,
   detail,
   editable,
+  correctable,
   budgetEditable,
+  corrected,
   customFields,
   customValues,
 }: {
   row: ProgramRow;
   detail: AnnualPlanDetail;
   editable: boolean;
+  correctable: boolean;
   budgetEditable: boolean;
+  corrected: boolean;
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
 }) {
@@ -328,7 +397,10 @@ function ProgramCard({
       title={`${program.code} · ${program.name}`}
       description={`${row.siCode} · ${row.siName}`}
       actions={
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {corrected ? (
+            <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge>
+          ) : null}
           <Badge tone="info">{row.siCode}</Badge>
           <Link
             href={`/plan/programs/${program.id}`}
@@ -411,72 +483,13 @@ function ProgramCard({
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit program</summary>
-            <Form action={updateProgramAction} className="mt-4 grid gap-3 sm:grid-cols-2">
-              <HiddenField name="id" value={program.id} />
-              <TextField label="Code" name="code" defaultValue={program.code} required maxLength={40} />
-              <TextField label="Name" name="name" defaultValue={program.name} required maxLength={160} />
-              <SelectField
-                label="Strategic initiative"
-                name="siId"
-                required
-                options={detail.initiativeOptions}
-                defaultValue={program.siId}
-              />
-              <SelectField
-                label="Continues program"
-                name="prevProgramId"
-                placeholder="No continuation"
-                options={detail.continuationOptions}
-                defaultValue={program.prevProgramId ?? ''}
-              />
-              {budgetEditable ? (
-                <>
-                  <MoneyField
-                    label="Capex budget"
-                    name="capexBudget"
-                    defaultValue={program.capexBudget}
-                    required
-                  />
-                  <MoneyField
-                    label="Opex budget"
-                    name="opexBudget"
-                    defaultValue={program.opexBudget}
-                    required
-                  />
-                </>
-              ) : (
-                <>
-                  <HiddenField name="capexBudget" value={String(program.capexBudget)} />
-                  <HiddenField name="opexBudget" value={String(program.opexBudget)} />
-                  <p className="sm:col-span-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    Budgets are frozen while the plan is active. Name, notes and the strategic
-                    initiative stay editable; a budget change is{' '}
-                    <Link
-                      href={`/plan/annual/${detail.annualPlan.id}/revisions`}
-                      className="underline"
-                    >
-                      a posted revision
-                    </Link>
-                    .
-                  </p>
-                </>
-              )}
-              <p className="sm:col-span-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Carry-in received: capex <Money value={program.carryInCapex} /> · opex{' '}
-                <Money value={program.carryInOpex} /> — recorded in the carry-over ledger, not
-                edited here.
-              </p>
-              <div className="sm:col-span-2">
-                <TextAreaField label="Notes" name="notes" defaultValue={program.notes} rows={2} />
-              </div>
-              <CustomFieldInputs fields={customFields} values={customValues} />
-              <div className="sm:col-span-2">
-                <ReasonField />
-              </div>
-              <div className="sm:col-span-2">
-                <SubmitButton>Save changes</SubmitButton>
-              </div>
-            </Form>
+            <ProgramEditForm
+              program={program}
+              detail={detail}
+              budgetEditable={budgetEditable}
+              customFields={customFields}
+              customValues={customValues}
+            />
           </details>
 
           <div className="flex items-start">
@@ -492,7 +505,107 @@ function ProgramCard({
             </ConfirmDialog>
           </div>
         </div>
+      ) : correctable ? (
+        // A closed year keeps the read-only frame: the same form is revealed by
+        // the affordance, and no void control is rendered (ADR-0007 §1, §7).
+        <CorrectionDisclosure>
+          <ProgramEditForm
+            program={program}
+            detail={detail}
+            budgetEditable={budgetEditable}
+            customFields={customFields}
+            customValues={customValues}
+          />
+        </CorrectionDisclosure>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * The program edit form (W5b). The open-year page renders it inside its
+ * disclosure; a closed year renders the same element inside the correction
+ * affordance, so the correction can never become a different form (ADR-0007 §7).
+ */
+function ProgramEditForm({
+  program,
+  detail,
+  budgetEditable,
+  customFields,
+  customValues,
+}: {
+  program: ProgramRow['program'];
+  detail: AnnualPlanDetail;
+  budgetEditable: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
+}) {
+  return (
+    <Form action={updateProgramAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+      <HiddenField name="id" value={program.id} />
+      <TextField label="Code" name="code" defaultValue={program.code} required maxLength={40} />
+      <TextField label="Name" name="name" defaultValue={program.name} required maxLength={160} />
+      <SelectField
+        label="Strategic initiative"
+        name="siId"
+        required
+        options={detail.initiativeOptions}
+        defaultValue={program.siId}
+      />
+      <SelectField
+        label="Continues program"
+        name="prevProgramId"
+        placeholder="No continuation"
+        options={detail.continuationOptions}
+        defaultValue={program.prevProgramId ?? ''}
+      />
+      {budgetEditable ? (
+        <>
+          <MoneyField
+            label="Capex budget"
+            name="capexBudget"
+            defaultValue={program.capexBudget}
+            required
+          />
+          <MoneyField
+            label="Opex budget"
+            name="opexBudget"
+            defaultValue={program.opexBudget}
+            required
+          />
+        </>
+      ) : (
+        <>
+          <HiddenField name="capexBudget" value={String(program.capexBudget)} />
+          <HiddenField name="opexBudget" value={String(program.opexBudget)} />
+          <p className="sm:col-span-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Budgets are frozen while the plan is active. Name, notes and the strategic
+            initiative stay editable; a budget change is{' '}
+            <Link
+              href={`/plan/annual/${detail.annualPlan.id}/revisions`}
+              className="underline"
+            >
+              a posted revision
+            </Link>
+            .
+          </p>
+        </>
+      )}
+      <p className="sm:col-span-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Carry-in received: capex <Money value={program.carryInCapex} /> · opex{' '}
+        <Money value={program.carryInOpex} /> — recorded in the carry-over ledger, not
+        edited here.
+      </p>
+      <div className="sm:col-span-2">
+        <TextAreaField label="Notes" name="notes" defaultValue={program.notes} rows={2} />
+      </div>
+      <CustomFieldInputs fields={customFields} values={customValues} />
+      <div className="sm:col-span-2">
+        <ReasonField />
+      </div>
+      <div className="sm:col-span-2">
+        <SubmitButton>Save changes</SubmitButton>
+      </div>
+    </Form>
   );
 }

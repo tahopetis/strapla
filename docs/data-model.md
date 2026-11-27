@@ -49,7 +49,7 @@ New in-insight tables vs charter v0.1: `commitment_settlements` (E11), `audit_en
 | `carry_over_entity_type` | `program`, `allocation` (the receiving entity of a ledger receipt, or the source entity of a close snapshot) |
 | `carry_over_origin` | `close` (written by a year close), `opening` (the one-time opening-balance backfill) or `manual` (a reasoned grant) |
 
-Derived, never stored: effective program budget (initial + Σ posted revision deltas), effective allocation (initial + Σ posted de-allocation deltas), **carry-in (Σ ledger receipts per entity and component)**, commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags. The `carry_in_capex` / `carry_in_opex` columns on programs and allocations are a **guarded cache**, not an independent input: the ledger service is their only writer and keeps them equal to the receipt sum.
+Derived, never stored: effective program budget (initial + Σ posted revision deltas), effective allocation (initial + Σ posted de-allocation deltas), **carry-in for programs and allocations (Σ ledger receipts per entity and component)**, commitment lifecycle (`open` when settled = 0, `partially_settled` when 0 < settled < amount, `settled` when settled = amount; `voided` excludes it), remaining, unallocated budget, all flags. The `carry_in_capex` / `carry_in_opex` columns on programs and allocations are a **guarded cache**, not an independent input: the ledger service is their only writer and keeps them equal to the receipt sum. A recurring ops item's `carry_in_opex` is not part of that ledger: it is a typed in-place input (ADR-0006 §7), so it is corrected with the item in a closed year (ADR-0007 §2). **Corrected after close** is derived as well: it is the presence of a `correction` entry in `audit_entries` for that entity (ADR-0007 §6). A correction adds no column and no table — it is an in-place update of an existing plan record, audited under `correction` instead of `update`, and it never writes `close_snapshots`, `carry_over_entries` or the ledger-backed `carry_in_*` caches on programs and allocations.
 
 ## Tables
 
@@ -59,7 +59,7 @@ Derived, never stored: effective program budget (initial + Σ posted revision de
 | --- | --- | --- |
 | `users` | `id`, `email` (unique, lower-cased), `name`, `password_hash`, `is_active`, `created_by`, timestamps | Every user is an administrator ([ADR-0004](adr/0004-audit-and-roles.md)). Never deleted. |
 | `sessions` | `id`, `user_id`, `token_hash` (unique), `expires_at`, `last_seen_at`, `revoked_at`, `created_at` | Only the SHA-256 of the cookie token is stored. |
-| `audit_entries` | `id`, `actor_user_id`, `action`, `entity_type`, `entity_id`, `before` jsonb, `after` jsonb, `reason`, `created_at` | Append-only. Indexed by `(entity_type, entity_id, created_at)` and `(created_at)`. |
+| `audit_entries` | `id`, `actor_user_id`, `action`, `entity_type`, `entity_id`, `before` jsonb, `after` jsonb, `reason`, `created_at` | Append-only. Indexed by `(entity_type, entity_id, created_at)` and `(created_at)`. A closed-year in-place update is recorded with `action = 'correction'`, distinct from `update` (ADR-0007 §5); no other column records it. |
 | `spend_categories` | `id`, `name` (unique), `sort_order`, `is_active`, timestamps | Administrator-managed reference data; deactivated, never deleted. |
 
 ### Plan
@@ -80,7 +80,7 @@ Derived, never stored: effective program budget (initial + Σ posted revision de
 | `projects` | `id`, `originating_program_id`, `code` (unique, generated `PRJ-<FY>-<nnn>`), `external_reference`, `name`, `description`, `owner`, `start_fiscal_year`, `end_fiscal_year`, `status`, `cancelled_reason`, `allocated_budget_full_life`, `submitted_price`, `final_deal_price`, `opening_allocated`, `opening_committed`, `opening_spent`, void/timestamps | Created once, never duplicated per year (BR-5). `final_deal_price` is the contract value. Approved budget is derived from `ijin_prinsip_records`. |
 | `ijin_prinsip_records` | `id`, `project_id` (unique), `document_number`, `document_date`, `approved_amount`, `approver`, `document_url`, `notes`, timestamps | Exactly one active record per project (charter v0.2 §11 Q2). Edits are audited. `document_url` is the "document link" (no uploads). |
 | `project_year_allocations` | `id`, `project_id`, `annual_plan_id`, `annual_program_id`, `allocation_capex`, `allocation_opex`, `carry_in_capex`, `carry_in_opex`, `notes`, void/timestamps | Unique `(project_id, annual_plan_id)`; the annual slice (E6). Program's SI must equal the project's originating program's SI (BR-6, domain check). |
-| `recurring_ops_items` | `id`, `annual_plan_id`, `name`, `category_id`, `owner`, `opex_budget`, `carry_in_opex`, `notes`, void/timestamps | Opex-only, no SI, no projects (BR-12). Its budget is the ceiling; there is no contract value. |
+| `recurring_ops_items` | `id`, `annual_plan_id`, `name`, `category_id`, `owner`, `opex_budget`, `carry_in_opex`, `notes`, void/timestamps | Opex-only, no SI, no projects (BR-12). Its budget is the ceiling; there is no contract value. `carry_in_opex` is an in-place input, outside the carry-over ledger and the year close (ADR-0006 §7), and is correctable with the item after close (ADR-0007 §2). |
 
 ### Commitments, spend, settlement
 
@@ -147,15 +147,22 @@ Most migrations are additive; the financial-shape changes for ADR-0006 need a co
 - **`0014` — close-snapshot reason check and cache repair.** Enforces `not_carried = 0` or a
   non-empty `not_carried_reason`, then rewrites every program and allocation `carry_in_*` from the
   ledger sum so the guarded cache equals the ledger after deploy (both directions of drift).
-- **Carry-in is ledger-only.** No form writes `carry_in_*`; a year close, the migration backfill or a
-  reasoned manual receipt is the only path. A cache that disagrees with the ledger is a bug, not a
-  state to reconcile by hand: the ledger service recomputes it, the close runs
-  `assertCarryCacheMatches`, and the foundation e2e checks the columns against the ledger after the
-  FY2027 close.
-- Revisions apply only to `active` annual plans (drafts are edited directly, closed plans are
-  read-only). The first revision-enabled year is FY2027 and the baseline is the budget at rollout,
-  so a closed year's effective budget equals its initial budget and a draft plan's revisions list is
-  empty.
+- **Carry-in on programs and allocations is ledger-only.** No form writes their `carry_in_*`; a year
+  close, the migration backfill or a reasoned manual receipt is the only path. A cache that disagrees
+  with the ledger is a bug, not a state to reconcile by hand: the ledger service recomputes it, the
+  close runs `assertCarryCacheMatches`, and the foundation e2e checks the columns against the ledger
+  after the FY2027 close. A recurring ops item's `carry_in_opex` is outside the ledger: it is an
+  in-place typed field (ADR-0006 §7) and no ledger entry backs it.
+- Revisions apply only to `active` annual plans (drafts are edited directly; closed plans accept in-place
+  corrections only and never a revision). The first revision-enabled year is FY2027 and the baseline is
+  the budget at rollout, so a closed year's effective budget equals its corrected initial budget and a
+  draft plan's revisions list is empty.
+- **No migration for closed-year corrections (ADR-0007).** A correction is an in-place update of
+  existing plan records, audited under `correction`, and the *corrected after close* marker is derived
+  from `audit_entries.action = 'correction'` for the entity. There is no new column, no new table and
+  no schema migration, and the close snapshot, the carry-over ledger and the ledger-backed
+  `carry_in_*` caches on programs and allocations are untouched by it (a recurring ops item's carry-in
+  is an ordinary column and is corrected with the item).
 
 ## Custom fields (issue #46)
 
@@ -232,11 +239,11 @@ Domain functions in `src/domain` implement these; database constraints block the
 | INV-8 | SI envelope check = prior program budget consumed + Σ **effective** program budgets ≤ the component's envelope, **per component** (capex and opex never share headroom); exceeding is flagged, never blocked (BR-2, ADR-0006 §5). |
 | INV-9 | One annual plan per fiscal year; plans exist only within the strategic plan horizon (BR-1, BR-3). |
 | INV-10 | One project year allocation per project per active fiscal year; its program's SI must match the project's originating SI (BR-6). |
-| INV-11 | A fiscal year that is `closed` blocks mutations except audited administrator corrections and settlement lifecycle events. |
+| INV-11 | A fiscal year that is `closed` blocks mutations except audited administrator corrections and settlement lifecycle events. A correction is an in-place update of an existing plan record, audited as `correction` (ADR-0007); it never writes the close snapshot, the carry-over ledger or the ledger-backed `carry_in_*` caches on programs and allocations (a recurring ops item's `carry_in_opex` is an in-place input and is corrected with the item), and there is no reopen and no budget revision in a closed year. |
 | INV-12 | Financial records are never hard-deleted; void requires a reason and an audit entry. |
 | INV-13 | Every mutation writes exactly one audit entry in the same transaction. |
 | INV-14 | Carry-over amounts are per component (BR-13). A close receipt inherits the close's approval reference; an opening/manual receipt requires a reason instead (its origin is the audit reference). One approval reference is recorded on the annual plan for the close as a whole. |
-| INV-15 | `carry_over_entries` is append-only and the single source of carry-in: no update, no delete, no negative/reversal entry. The target's `carry_in_*` cache equals the receipt sum, and a cache that drifts is refused by the close. |
+| INV-15 | `carry_over_entries` is append-only and the single source of carry-in for programs and allocations: no update, no delete, no negative/reversal entry. The target's `carry_in_*` cache equals the receipt sum, and a cache that drifts is refused by the close. A recurring ops item's carry-in is an in-place field outside this ledger (ADR-0006 §7). |
 | INV-16 | Each closed year has one snapshot row per source entity and component with `available = carried + not_carried`; `carried` equals the sum of the receipts written for that entity/component in the close transaction. A close cannot be repeated (one snapshot per row/plan) and there is no reopen. |
 
 ## Report catalogue (figures come from `src/domain`)

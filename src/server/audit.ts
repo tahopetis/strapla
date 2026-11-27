@@ -29,7 +29,14 @@ export type AuditAction =
   | 'custom_field_reorder'
   | 'report_preference_save'
   | 'revision_post'
-  | 'revision_decision';
+  | 'revision_decision'
+  /**
+   * An in-place update of an existing plan record in a closed fiscal year
+   * (ADR-0007). Distinct from `update` so the record badge, the closed plan's
+   * correction banner, the report markers and the close receipt notice can all
+   * read it straight from the trail.
+   */
+  | 'correction';
 
 export interface AuditInput {
   actorUserId: string | null;

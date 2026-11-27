@@ -14,6 +14,8 @@ import {
   TextField,
 } from '@/components/form';
 import { Badge, Card, EmptyState, Money, labelClass } from '@/components/ui';
+import { CorrectionDisclosure } from '@/components/plan/correction-disclosure';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 import type { CommitmentRow, SettlementOption, SpendRow } from '@/server/plan/execution-queries';
@@ -265,6 +267,8 @@ export function CommitmentsSection({
   parentId,
   rows,
   editable,
+  correctable,
+  correctedRecords,
   allowCapex,
   today,
   customFields,
@@ -274,6 +278,13 @@ export function CommitmentsSection({
   parentId: string;
   rows: CommitmentRow[];
   editable: boolean;
+  /**
+   * A closed year: an existing commitment keeps its update form, behind the
+   * explicit correction affordance. Creates and voids stay closed (ADR-0007 §1,
+   * §7); a spend entry on the same page stays read-only.
+   */
+  correctable: boolean;
+  correctedRecords: ReadonlySet<string>;
   allowCapex: boolean;
   today: string;
   customFields: readonly CustomFieldDefinition[];
@@ -363,61 +374,24 @@ export function CommitmentsSection({
                         <Money value={row.openAmount} />
                       </td>
                       <td className="py-3 pr-4">
-                        <Badge tone={statusTone(row.status)}>{row.status.replace('_', ' ')}</Badge>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge tone={statusTone(row.status)}>{row.status.replace('_', ' ')}</Badge>
+                          {correctedRecords.has(row.commitment.id) ? (
+                            <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-3">
                         {editable ? (
                           <details>
                             <summary className={summaryClass}>Manage</summary>
                             <div className="mt-3 grid gap-4 lg:grid-cols-2">
-                              <Form action={updateCommitmentAction} className="grid gap-2">
-                                <HiddenField name="id" value={row.commitment.id} />
-                                <SelectField
-                                  label="Component"
-                                  name="component"
-                                  options={
-                                    allowCapex
-                                      ? [
-                                          { value: 'capex', label: 'Capex' },
-                                          { value: 'opex', label: 'Opex' },
-                                        ]
-                                      : [{ value: 'opex', label: 'Opex' }]
-                                  }
-                                  defaultValue={row.commitment.component}
-                                />
-                                <MoneyField
-                                  label="Amount"
-                                  name="amount"
-                                  defaultValue={row.commitment.amount}
-                                  required
-                                />
-                                <TextField
-                                  label="Commitment date"
-                                  name="commitmentDate"
-                                  type="date"
-                                  defaultValue={row.commitment.commitmentDate}
-                                  required
-                                />
-                                <TextField
-                                  label="Reference"
-                                  name="reference"
-                                  defaultValue={row.commitment.reference}
-                                />
-                                <TextAreaField
-                                  label="Description"
-                                  name="description"
-                                  defaultValue={row.commitment.description}
-                                  rows={2}
-                                />
-                                <CustomFieldInputs
-                                  fields={customFields}
-                                  values={customValues.get(row.commitment.id)}
-                                />
-                                <ReasonField />
-                                <div>
-                                  <SubmitButton>Save commitment</SubmitButton>
-                                </div>
-                              </Form>
+                              <CommitmentEditForm
+                                row={row}
+                                allowCapex={allowCapex}
+                                customFields={customFields}
+                                customFieldValues={customValues.get(row.commitment.id)}
+                              />
                               <div className="flex items-start">
                                 <ConfirmDialog
                                   action={voidCommitmentAction}
@@ -432,6 +406,18 @@ export function CommitmentsSection({
                               </div>
                             </div>
                           </details>
+                        ) : correctable ? (
+                          // A closed year keeps the read-only frame: the update
+                          // form is revealed by the affordance and the void
+                          // control stays hidden (ADR-0007 §1, §7).
+                          <CorrectionDisclosure className="mt-2">
+                            <CommitmentEditForm
+                              row={row}
+                              allowCapex={allowCapex}
+                              customFields={customFields}
+                              customFieldValues={customValues.get(row.commitment.id)}
+                            />
+                          </CorrectionDisclosure>
                         ) : (
                           <span className="text-xs text-slate-500">read-only</span>
                         )}
@@ -458,6 +444,67 @@ export function CommitmentsSection({
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * The commitment update form (W5b). Shared by the open-year Manage disclosure
+ * and the closed-year correction affordance, so a correction edits exactly the
+ * same fields (ADR-0007 §7).
+ */
+function CommitmentEditForm({
+  row,
+  allowCapex,
+  customFields,
+  customFieldValues,
+}: {
+  row: CommitmentRow;
+  allowCapex: boolean;
+  customFields: readonly CustomFieldDefinition[];
+  customFieldValues?: CustomFieldValues;
+}) {
+  return (
+    <Form action={updateCommitmentAction} className="grid gap-2">
+      <HiddenField name="id" value={row.commitment.id} />
+      <SelectField
+        label="Component"
+        name="component"
+        options={
+          allowCapex
+            ? [
+                { value: 'capex', label: 'Capex' },
+                { value: 'opex', label: 'Opex' },
+              ]
+            : [{ value: 'opex', label: 'Opex' }]
+        }
+        defaultValue={row.commitment.component}
+      />
+      <MoneyField
+        label="Amount"
+        name="amount"
+        defaultValue={row.commitment.amount}
+        required
+      />
+      <TextField
+        label="Commitment date"
+        name="commitmentDate"
+        type="date"
+        defaultValue={row.commitment.commitmentDate}
+        required
+      />
+      <TextField label="Reference" name="reference" defaultValue={row.commitment.reference} />
+      <TextAreaField
+        label="Description"
+        name="description"
+        defaultValue={row.commitment.description}
+        rows={2}
+      />
+      <CustomFieldInputs fields={customFields} values={customFieldValues} />
+      <ReasonField />
+      <div>
+        <SubmitButton>Save commitment</SubmitButton>
+      </div>
+    </Form>
   );
 }
 

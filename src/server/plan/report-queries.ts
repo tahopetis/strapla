@@ -20,12 +20,20 @@ import {
 } from '@/domain/funding';
 import { envelopeComponentCheck } from '@/domain/plan';
 import { NO_DELTAS, applyDeltas, type ComponentAmounts } from '@/domain/revisions';
+import { loadCorrectionMarkers } from './correction-queries';
 import { loadExecutionAggregates } from './execution-aggregates';
 import { getRevisionDeltasForEntities } from './revision-queries';
 
 /**
  * Report queries for M2 #15. Commitments and spend are zero until M3; the
  * report shapes already carry those columns so M3 only changes the queries.
+ *
+ * Each row also carries a `corrected` flag read from the audit trail
+ * (ADR-0007 §8): the row's figures rest on a record corrected after its fiscal
+ * year closed. It is a label, never money — the queries still sum the live
+ * corrected figures and a marker never changes a figure, a total or a row id.
+ * The markers are loaded once per report call, and a report of an uncorrected
+ * plan is byte-for-byte the report it was before.
  */
 
 // ---------------------------------------------------------------- SI five-year
@@ -53,6 +61,12 @@ export interface SiFiveYearRow {
   initiative: StrategicInitiative;
   capex: SiFiveYearComponent;
   opex: SiFiveYearComponent;
+  /**
+   * True when the row rests on a program or allocation corrected after its
+   * fiscal year closed (#108). A marker: the figures are the live corrected
+   * ones, and the portfolio totals sum them exactly as before.
+   */
+  corrected: boolean;
 }
 
 export interface SiFiveYearReport {
@@ -183,7 +197,10 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
     allocationsBySi.set(allocation.siId, current);
   }
 
-  const execution = await loadExecutionAggregates(planId);
+  const [execution, markers] = await Promise.all([
+    loadExecutionAggregates(planId),
+    loadCorrectionMarkers(planId),
+  ]);
 
   const rows: SiFiveYearRow[] = initiatives.map((initiative) => {
     const programs = programsBySi.get(initiative.id) ?? { capex: 0, opex: 0 };
@@ -207,6 +224,7 @@ export async function getSiFiveYearReport(planId: string): Promise<SiFiveYearRep
         commitment: executionTotals?.commitmentOpex ?? 0,
         spend: executionTotals?.spendOpex ?? 0,
       }),
+      corrected: markers.initiatives.has(initiative.id),
     };
   });
 
@@ -235,6 +253,11 @@ export interface AnnualPlanProgramRow {
   programName: string;
   siCode: string;
   siName: string;
+  /**
+   * True when the row rests on a program or allocation corrected after its
+   * fiscal year closed (#108). A marker only; every figure is the live one.
+   */
+  corrected: boolean;
   /** Initial budget as recorded on the program; the money rules use the effective figures. */
   capexBudget: number;
   opexBudget: number;
@@ -277,6 +300,8 @@ export interface AnnualPlanRecurringOpsRow {
   fiscalYear: number;
   name: string;
   categoryName: string | null;
+  /** True when the item was itself corrected after its fiscal year closed (#108). */
+  corrected: boolean;
   opexBudget: number;
   carryInOpex: number;
   available: number;
@@ -312,7 +337,12 @@ export interface AnnualPlanReport {
 
 export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanReport> {
   const db = getDb();
-  const execution = await loadExecutionAggregates(planId);
+  // One marker load for the whole report: both tables read the same sets, so
+  // neither the rows nor the totals pay for a second audit query.
+  const [execution, markers] = await Promise.all([
+    loadExecutionAggregates(planId),
+    loadCorrectionMarkers(planId),
+  ]);
 
   const programRows = await db
     .select({
@@ -385,6 +415,7 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       programName: row.programName,
       siCode: row.siCode,
       siName: row.siName,
+      corrected: markers.programs.has(row.programId),
       capexBudget: row.capexBudget,
       opexBudget: row.opexBudget,
       revisionCapex: revision.capex,
@@ -437,6 +468,7 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       fiscalYear: row.fiscalYear,
       name: row.name,
       categoryName: row.categoryName,
+      corrected: markers.corrected.has(row.itemId),
       opexBudget: row.opexBudget,
       carryInOpex: row.carryInOpex,
       available,
@@ -499,6 +531,11 @@ export interface ProjectRegisterReportRow {
   siCode: string;
   siName: string;
   programCode: string;
+  /**
+   * True when the row rests on a project, ijin prinsip record or allocation
+   * corrected after its fiscal year closed (#108). A marker only.
+   */
+  corrected: boolean;
   approvedAmount: number | null;
   submittedPrice: number | null;
   finalDealPrice: number | null;
@@ -543,7 +580,10 @@ export async function getProjectRegisterReport(
   planId: string,
 ): Promise<ProjectRegisterReport> {
   const db = getDb();
-  const execution = await loadExecutionAggregates(planId);
+  const [execution, markers] = await Promise.all([
+    loadExecutionAggregates(planId),
+    loadCorrectionMarkers(planId),
+  ]);
   const projectRows = await db
     .select({
       project: projects,
@@ -617,6 +657,7 @@ export async function getProjectRegisterReport(
       siCode: row.siCode,
       siName: row.siName,
       programCode: row.programCode,
+      corrected: markers.projects.has(row.project.id),
       approvedAmount: row.approvedAmount,
       submittedPrice: row.project.submittedPrice,
       finalDealPrice: row.project.finalDealPrice,
@@ -693,6 +734,12 @@ export interface BudgetVsActualRow {
   siName: string;
   programCode: string;
   programName: string;
+  /**
+   * True when the row rests on a program or allocation corrected after its
+   * fiscal year closed (#108). A marker only; the totals still sum the live
+   * corrected figures.
+   */
+  corrected: boolean;
   capexAvailable: number;
   opexAvailable: number;
   /** Carry-in included in the available figures, per component (ledger cache). */
@@ -745,6 +792,9 @@ export async function getBudgetVsActualReport(
   planId: string,
 ): Promise<BudgetVsActualReport> {
   const annual = await getAnnualPlanReport(planId);
+  // The annual-plan report loaded the markers once for this call, and its
+  // program flag is exactly `markers.programs.has(programId)`, so this view
+  // reuses it rather than running the audit query a second time.
   const rows: BudgetVsActualRow[] = annual.programs.map((row) => ({
     programId: row.programId,
     fiscalYear: row.fiscalYear,
@@ -752,6 +802,7 @@ export async function getBudgetVsActualReport(
     siName: row.siName,
     programCode: row.programCode,
     programName: row.programName,
+    corrected: row.corrected,
     capexAvailable: row.availableCapex,
     opexAvailable: row.availableOpex,
     carryInCapex: row.carryInCapex,

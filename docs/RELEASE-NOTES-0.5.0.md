@@ -132,7 +132,8 @@ build (version and commit) and the `migrations applied` line in the container lo
 - One strategic plan at a time, one annual plan per fiscal year, and one role: every account is an
   administrator. Closed years cannot be reopened or rolled back. In this beta closed-year plan
   figures are read-only — the charter's audited-correction path is not exposed; settlement lifecycle
-  events and post-close payments are the exception.
+  events and post-close payments are the exception. *(Updated after v0.5.0: closed-year audited
+  corrections now ship as ADR-0007 — see CHANGELOG.)*
 - No file uploads (documents are referenced by number and link), email notifications, external SSO,
   per-vendor quote records, or payment-status/payment-date tracking.
 - Spreadsheet import exists only for the opening balances; all other plan data is entered through the

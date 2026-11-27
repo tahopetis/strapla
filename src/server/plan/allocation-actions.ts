@@ -21,6 +21,11 @@ import {
   type AllocationCreateInput,
   type AllocationUpdateInput,
 } from '@/domain/inputs';
+import {
+  CORRECTION_WRITE,
+  updateAuditAction,
+} from '@/domain/corrections';
+import { requireCorrectionReason } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import { isComponentShift } from '@/domain/revisions';
 import type { FormState } from '@/lib/form-state';
@@ -136,16 +141,28 @@ function requireProjectEditable(project: Project, strategicPlanStatus: Strategic
   }
 }
 
-function requireAllocationEditable(context: AllocationContext): void {
-  requireProjectEditable(context.project, context.strategicPlan.status);
-}
-
 /**
  * Capex and opex never shift into each other (ADR-0006 §4), on every path: an
  * allocation edit that raises one component while lowering the other is a
  * component shift, not an allocation change. This is the only refusal an
  * allocation edit adds; the warning-only flags keep their old semantics.
  */
+/**
+ * The allocation's editability guard. `allowClosed` is the correction path
+ * (ADR-0007 §1): a closed fiscal year still accepts an in-place correction of an
+ * allocation that already exists, with a reason. Only the six in-place update
+ * operations pass it — a void keeps refusing, with its own wording.
+ */
+function requireAllocationEditable(
+  context: AllocationContext,
+  options: { allowClosed?: boolean } = {},
+): void {
+  requireProjectEditable(context.project, context.strategicPlan.status);
+  if (context.annualPlan.status === 'closed' && !options.allowClosed) {
+    throw new FormError('This fiscal year is closed and read-only.');
+  }
+}
+
 function requireNoComponentShift(
   current: { allocationCapex: number; allocationOpex: number },
   next: { allocationCapex: number; allocationOpex: number },
@@ -305,10 +322,11 @@ async function updateAllocation(
 ): Promise<AllocationSaveResult> {
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
-  requireAllocationEditable(context);
-  if (context.annualPlan.status === 'closed') {
-    throw new FormError('This fiscal year is closed; allocations cannot be updated.');
-  }
+  requireAllocationEditable(context, CORRECTION_WRITE);
+  // ADR-0007 §5: the governing plan's status at write time names the audit
+  // action, so a closed year records exactly one `correction` entry.
+  const auditAction = updateAuditAction(context.annualPlan);
+  requireCorrectionReason(context.annualPlan, input.reason);
   requireNoComponentShift(context.allocation, input);
   requireProjectActiveYear(context.project, context.annualPlan.fiscalYear);
 
@@ -337,7 +355,7 @@ async function updateAllocation(
     });
     await recordAudit(tx, {
       actorUserId: userId,
-      action: 'update',
+      action: auditAction,
       entityType: 'project_year_allocation',
       entityId: input.id,
       before: withCustomFields(snapshot(context.allocation), custom.fields, beforeValues),
@@ -352,10 +370,12 @@ async function updateAllocation(
 async function voidAllocation(userId: string, id: string, reason: string): Promise<AllocationSaveResult> {
   const context = await loadAllocationContext(id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is already voided.');
-  requireAllocationEditable(context);
+  // A void is not a correction (ADR-0007 §1): the closed-year refusal keeps its
+  // own wording, ahead of the guard's general lock.
   if (context.annualPlan.status === 'closed') {
     throw new FormError('This fiscal year is closed; allocations cannot be voided.');
   }
+  requireAllocationEditable(context);
 
   let updated: ProjectYearAllocation | undefined;
   await getDb().transaction(async (tx) => {

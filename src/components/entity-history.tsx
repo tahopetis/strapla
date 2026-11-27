@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Card } from '@/components/ui';
+import { auditActionLabel } from '@/domain/audit-labels';
 
 export interface HistoryEntry {
   entry: {
@@ -67,7 +68,9 @@ export function EntityHistory({ entries }: { entries: HistoryEntry[] }) {
                       <p className="text-xs text-slate-500">{history.actorEmail}</p>
                     ) : null}
                   </td>
-                  <td className="py-3 pr-4 whitespace-nowrap font-medium">{history.entry.action}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap font-medium">
+                    {auditActionLabel(history.entry.action)}
+                  </td>
                   <td className="py-3 pr-4 text-slate-600">{history.entry.reason ?? '—'}</td>
                   <td className="py-3">
                     <details>

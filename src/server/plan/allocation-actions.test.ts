@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Server-action tests for the closed-year guard on project-year allocation
- * updates (#96). The project page hides the edit form when the annual plan is
- * closed, so a browser can only pin the visible lock; the server refusal is
- * proven here, at the action boundary: a closed-year update comes back as form
- * state with the refusal message and never opens the write transaction.
+ * Server-action tests for the project-year allocation update path (#96).
+ *
+ * The closed-year refusal this file used to pin is superseded on that path by
+ * ADR-0007 (issue #108): a closed fiscal year accepts an in-place correction of
+ * an existing allocation, audited under the `correction` action with a reason.
+ * The closed-year case below proves the write now reaches the transaction with
+ * that action; the refusals that remain (a void, a voided record) and the full
+ * six-path correction proof live in correction-actions.test.ts.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -40,7 +43,6 @@ const ALLOCATION_ID = '33333333-3333-4333-8333-333333333333';
 const ANNUAL_PLAN_ID = '44444444-4444-4444-8444-444444444444';
 const SI_ID = '55555555-5555-4555-8555-555555555555';
 const FISCAL_YEAR = 2027;
-const REFUSAL = 'This fiscal year is closed; allocations cannot be updated.';
 
 /** The row shape `loadAllocationContext` selects, reduced to the fields the guards read. */
 function allocationContext(annualPlanStatus: 'active' | 'closed') {
@@ -162,23 +164,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('updateAllocationAction closed-year guard', () => {
-  it('refuses an update on a closed annual plan before any write', async () => {
+describe('updateAllocationAction closed-year correction', () => {
+  it('saves a closed-year update as a correction instead of refusing it', async () => {
     const db = database([allocationContext('closed')], [{ siId: SI_ID }]);
+    const write = updateChain([updatedAllocation()]);
+    const tx = { update: vi.fn().mockReturnValue(write) };
+    db.transaction.mockImplementation(
+      async (callback: (executor: typeof tx) => Promise<void>) => callback(tx),
+    );
     mocks.getDb.mockReturnValue(db);
 
-    const state = await updateAllocationAction(INITIAL, updateForm());
+    await expect(updateAllocationAction(INITIAL, updateForm())).rejects.toThrow('NEXT_REDIRECT');
 
-    expect(state.status).toBe('error');
-    expect(state.message).toBe(REFUSAL);
-    // The refused submission keeps what the user entered.
-    expect(state.values?.reason).toBe('Board revision');
-    expect(state.values?.allocationCapex).toBe('600000000');
-    // No mutation, no audit entry, no redirect.
-    expect(db.transaction).not.toHaveBeenCalled();
-    expect(mocks.saveCustomFieldValues).not.toHaveBeenCalled();
-    expect(mocks.recordAudit).not.toHaveBeenCalled();
-    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(write.set).toHaveBeenCalledWith(
+      expect.objectContaining({ allocationCapex: 600_000_000, notes: 'Board revision' }),
+    );
+    // ADR-0007 §5: the closed year names the write a correction, not an update.
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        action: 'correction',
+        entityType: 'project_year_allocation',
+        entityId: ALLOCATION_ID,
+        reason: 'Board revision',
+        before: expect.objectContaining({ allocationCapex: 500_000_000 }),
+        after: expect.objectContaining({ allocationCapex: 600_000_000 }),
+      }),
+    );
   });
 
   it('lets an update on an open annual plan reach the transaction', async () => {

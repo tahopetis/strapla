@@ -200,8 +200,8 @@ Unallocated program budget = effective budget + carry-in
             </li>
             <li>
               Submit: the close writes one ledger receipt per carried amount, the receiving programs and
-              allocations show the carry-in, and the year becomes read-only with a permanent close snapshot.
-              There is no reopen.
+              allocations show the carry-in, and the year closes with a permanent close snapshot. There is
+              no reopen, but a wrong figure can still be corrected afterwards with a reason.
             </li>
           </ol>
           <p className="mt-3 text-sm text-slate-600">
@@ -211,9 +211,10 @@ Unallocated program budget = effective budget + carry-in
             (source, target, origin, reason). The approval reference on the page jumps to the receipts.
           </p>
           <p className="mt-2 text-sm text-slate-600">
-            Open commitments are not carried. Closed years are read-only; settlement lifecycle events
-            (paying existing commitments) remain possible, and a payment recorded in the open year can
-            settle a closed-year commitment. A post-close payment&apos;s treatment decides whether its
+            Open commitments are not carried. A closed year refuses new records, voids and status changes,
+            while settlement lifecycle events (paying existing commitments) remain possible, and a payment
+            recorded in the open year can settle a closed-year commitment. A wrong figure in the closed year
+            is corrected in place with a reason and audited as a correction after close. A post-close payment&apos;s treatment decides whether its
             closed-year portion counts in the current year or is reserved in the closed year; the close
             snapshot and carry-over never change.
           </p>
@@ -300,11 +301,12 @@ Unallocated program budget = effective budget + carry-in
                 password and there is no other administrator, use the deployment&apos;s restore/recovery procedure.
               </p>
             </FaqItem>
-            <FaqItem question="Why can I not edit anything in a fiscal year?">
+            <FaqItem question="Why can I not add or void a record in a fiscal year?">
               <p>
-                The year is closed. Closed years are read-only; settlement lifecycle events can still be
-                recorded (editing or voiding an existing spend, and paying a closed-year commitment from an
-                open year).
+                The year is closed, so creates, voids and status changes are refused. An existing plan record
+                can still be corrected with a reason — audited as a correction after close — and settlement
+                lifecycle events can still be recorded (editing or voiding an existing spend, and paying a
+                closed-year commitment from an open year).
               </p>
             </FaqItem>
             <FaqItem question="Why can I not create an annual allocation?">
@@ -353,7 +355,7 @@ Unallocated program budget = effective budget + carry-in
                 The annual plan is active, so its program budgets are frozen. Post a <strong>budget
                 revision</strong> instead: it is numbered, immutable and audited, and its deltas build the
                 effective budget used by every screen and report. A draft year is still edited in place; a
-                closed year is read-only.
+                closed year accepts in-place corrections only, never a revision.
               </p>
             </FaqItem>
             <FaqItem question="Where does carry-in come from, and why can I not type it?">

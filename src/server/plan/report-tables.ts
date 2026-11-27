@@ -1,3 +1,4 @@
+import { CORRECTED_AFTER_CLOSE_LABEL, CORRECTION_FOOTNOTE } from '@/domain/corrections';
 import type { ExportColumn, ExportDocument, ExportTable } from '@/lib/report-export';
 import type { ReportCustomFieldGroup } from './report-custom-fields';
 import {
@@ -21,11 +22,81 @@ export const REPORT_TITLES: Record<ReportKey, string> = {
   'budget-vs-actual': 'Budget versus actual',
 };
 
-const EXECUTION_NOTE =
+export const EXECUTION_NOTE =
   'Program budgets and project year allocations are effective: the initial figure plus every posted revision delta (a de-allocation is a revision line). Carry-in is a separate input. Commitments and actual spend come from the execution module. Prior-year settlements are spend paying earlier-year commitments (excluded from the current year); prior-year opening payments settle pre-app commitments. Post-close adjustments are closed-year settlements kept as a reserve; they never enter the locked close snapshot or the carry-over figures.';
+
+/**
+ * The fixed footnote a report carries when one of its rows is marked corrected
+ * after close (ADR-0007 §8, issue #108). Re-exported from the domain so the
+ * screen and the export cannot disagree about the sentence.
+ */
+export const REPORT_CORRECTION_NOTE = CORRECTION_FOOTNOTE;
+
+/** The export column key of the corrected-after-close marker. */
+const CORRECTION_COLUMN_KEY = 'corrected';
 
 function table(name: string, columns: ExportColumn[]): ExportTable {
   return { name, columns, rows: [] };
+}
+
+/**
+ * The record ids of the rows a report flagged as corrected after close, so a
+ * table can be marked by the same record id it already carries.
+ */
+function correctedRowIds<T extends { corrected: boolean }>(
+  rows: readonly T[],
+  id: (row: T) => string,
+): ReadonlySet<string> {
+  return new Set(rows.filter((row) => row.corrected).map(id));
+}
+
+/**
+ * Adds the corrected-after-close marker column to one export table (ADR-0007
+ * §8, issue #108).
+ *
+ * The column appears **only** when at least one row of that table is marked: a
+ * marked row carries `yes`, every other row carries an empty cell, and the
+ * table's name, its existing columns and every figure and row id are copied
+ * unchanged. A marker is a label, never money. A table with no marked row is
+ * returned as-is, so an uncorrected report exports exactly as it did before.
+ *
+ * Totals tables are never passed here: a total has no single record to mark,
+ * and a marker may not change it.
+ */
+export function applyCorrectionMarkers(
+  exportTable: ExportTable,
+  markedIds: ReadonlySet<string>,
+): ExportTable {
+  const isMarked = (row: ExportTable['rows'][number]): boolean => {
+    const id = row.id;
+    return id !== null && id !== undefined && markedIds.has(String(id));
+  };
+  if (!exportTable.rows.some(isMarked)) return exportTable;
+
+  return {
+    ...exportTable,
+    columns: [
+      ...exportTable.columns,
+      { key: CORRECTION_COLUMN_KEY, header: CORRECTED_AFTER_CLOSE_LABEL },
+    ],
+    rows: exportTable.rows.map((row) => ({
+      ...row,
+      [CORRECTION_COLUMN_KEY]: isMarked(row) ? 'yes' : '',
+    })),
+  };
+}
+
+/**
+ * The note a report document carries: the standing execution note, plus the
+ * correction footnote only when one of the document's tables actually carries
+ * the marker column — the note never claims a correction the report does not
+ * show.
+ */
+export function documentNote(tables: readonly ExportTable[]): string {
+  const marked = tables.some((candidate) =>
+    candidate.columns.some((column) => column.key === CORRECTION_COLUMN_KEY),
+  );
+  return marked ? `${EXECUTION_NOTE} ${REPORT_CORRECTION_NOTE}` : EXECUTION_NOTE;
 }
 
 /** Export column key for a custom field, namespaced so it cannot clash with a report column. */
@@ -138,6 +209,12 @@ export function siFiveYearExportTables(data: SiFiveYearReport): ExportTable[] {
     ...siComponentCells('capex', row.capex),
     ...siComponentCells('opex', row.opex),
   }));
+  // A corrected initiative row is marked; the portfolio total below is not and
+  // never gains the column, because a marker may not move a total.
+  const marked = applyCorrectionMarkers(
+    main,
+    correctedRowIds(data.rows, (row) => row.initiative.id),
+  );
 
   const total = table('Totals', [
     { key: 'label', header: 'Total' },
@@ -152,7 +229,7 @@ export function siFiveYearExportTables(data: SiFiveYearReport): ExportTable[] {
     },
   ];
 
-  return [main, total];
+  return [marked, total];
 }
 
 function siComponentColumns(component: 'Capex' | 'Opex'): ExportColumn[] {
@@ -195,16 +272,16 @@ export async function buildReportDocument(
   groups: readonly ReportCustomFieldGroup[] = [],
 ): Promise<ExportDocument> {
   const generatedAt = new Date();
-  const note = EXECUTION_NOTE;
 
   if (report === 'si-five-year') {
     const data = await getSiFiveYearReport(planId);
+    const tables = applyCustomFieldGroups(siFiveYearExportTables(data), groups);
     return {
       title: REPORT_TITLES[report],
       subtitle: planName,
       generatedAt,
-      note,
-      tables: applyCustomFieldGroups(siFiveYearExportTables(data), groups),
+      note: documentNote(tables),
+      tables,
     };
   }
 
@@ -288,12 +365,27 @@ export async function buildReportDocument(
       priorOpeningOpex: row.priorOpeningOpex,
       remainingOpex: row.remainingOpex,
     }));
+    // Each row table is marked only when one of its own rows is corrected; the
+    // export keeps a single footnote for the document as a whole.
+    const tables = applyCustomFieldGroups(
+      [
+        applyCorrectionMarkers(
+          programs,
+          correctedRowIds(data.programs, (row) => row.programId),
+        ),
+        applyCorrectionMarkers(
+          recurring,
+          correctedRowIds(data.recurringOps, (row) => row.itemId),
+        ),
+      ],
+      groups,
+    );
     return {
       title: REPORT_TITLES[report],
       subtitle: planName,
       generatedAt,
-      note,
-      tables: applyCustomFieldGroups([programs, recurring], groups),
+      note: documentNote(tables),
+      tables,
     };
   }
 
@@ -370,12 +462,21 @@ export async function buildReportDocument(
         priorOpening: data.totals.priorOpeningSettlements,
       },
     ];
+    // The register is marked; the totals table below is not, so a marker can
+    // never move the portfolio's figures.
+    const tables = applyCustomFieldGroups(
+      [
+        applyCorrectionMarkers(register, correctedRowIds(data.rows, (row) => row.project.id)),
+        total,
+      ],
+      groups,
+    );
     return {
       title: REPORT_TITLES[report],
       subtitle: planName,
       generatedAt,
-      note,
-      tables: applyCustomFieldGroups([register, total], groups),
+      note: documentNote(tables),
+      tables,
     };
   }
 
@@ -425,13 +526,21 @@ export async function buildReportDocument(
     unallocatedOpex: row.unallocatedOpex,
     status: row.overCapex || row.overOpex ? 'over-allocated' : 'within budget',
   }));
+  // The closed year's adjustment is a separate labelled table so no existing
+  // column or export changes shape (#98); it is derived from the same rows, so
+  // a corrected program's marker stays on the main table only.
+  const tables = [
+    ...applyCustomFieldGroups(
+      [applyCorrectionMarkers(main, correctedRowIds(data.rows, (row) => row.programId))],
+      groups,
+    ),
+    postCloseAdjustmentTable(data.rows),
+  ];
   return {
     title: REPORT_TITLES[report],
     subtitle: planName,
     generatedAt,
-    note,
-    // The closed year's adjustment is a separate labelled table so no existing
-    // column or export changes shape (#98).
-    tables: [...applyCustomFieldGroups([main], groups), postCloseAdjustmentTable(data.rows)],
+    note: documentNote(tables),
+    tables,
   };
 }

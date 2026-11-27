@@ -13,7 +13,7 @@ everything described here is available to every signed-in user.
 | --- | --- |
 | Product | Strapla — IT portfolio management |
 | Version | **v0.5.0 (beta)** |
-| Guide last updated | 2026-11-22 |
+| Guide last updated | 2026-11-27 |
 | Audience | Finance and portfolio administrators |
 | App scope | Plan, funding and execution, year close, reports, dashboard, administration, help |
 | In-app help | **Help** in the main navigation |
@@ -109,8 +109,9 @@ There is no self-service sign-up or password reset; if the only administrator lo
 - **Dates** use the browser's date picker and display as `DD/MM/YYYY`. Timestamps (audit trail,
   dashboard) display as `DD/MM/YYYY HH:mm` in 24-hour time on the **Asia/Jakarta** clock; storage is
   in UTC.
-- **Closed years block ordinary writes.** Forms disappear or refuse with a closed-year message once an
-  annual plan is closed (see [6.3 After the close](#63-after-the-close)).
+- **Closed years block ordinary writes.** Once an annual plan is closed, creates, voids and status
+  changes refuse with a closed-year message; an existing record can still be fixed through **Correct
+  record**, which requires a reason and is audited (see [6.3 After the close](#63-after-the-close)).
 
 ## 2. Core concepts
 
@@ -167,7 +168,7 @@ Since ADR-0006, an **active** year's program budgets are frozen: a change is a n
 | Record | Statuses | What changes it |
 | --- | --- | --- |
 | Strategic plan | `draft`, `active`, `archived` | **Activate plan** / **Archive plan** in the page header (reason required). Archived is final and read-only. |
-| Annual plan | `draft`, `active`, `closed` | **Activate annual plan** in the page header; **Close fiscal year** workflow. Closed is read-only (see §6). |
+| Annual plan | `draft`, `active`, `closed` | **Activate annual plan** in the page header; **Close fiscal year** workflow. Closed accepts reasoned corrections of existing records only; no reopen (see §6.3). |
 | Project | `active`, `cancelled` | **Cancel project** (reason required). Cancelled is read-only. |
 | Commitment | `open`, `partially settled`, `settled` | Settlements: open = amount − settled. A commitment can be voided only while it has no settlements. |
 | Spend entry | current-year or prior-year opening classification; voided or not | Void with a reason; the settlement classification is fixed once settlements exist. |
@@ -185,7 +186,7 @@ Since ADR-0006, an **active** year's program budgets are frozen: a change is a n
 | **Available program budget** | `effective budget + carry-in`. The two inputs stay visible separately. |
 | **Unallocated program budget** | `available − allocations`. Always visible; allocating above it is flagged, not blocked. |
 | **Budget revision** | A numbered (`REV-<FY>-<nnn>`), immutable document with one signed line per program/component (and de-allocation lines). It may be posted before its formal decision exists; the register then shows *awaiting decision reference*. |
-| **Carry-in** | Money received into a program or project-year allocation from the carry-over **ledger** (year close, opening balance, or reasoned manual grant). It adds to available money but is not part of this year's initial budget. The `carry_in_*` columns are a guarded cache; the ledger is the source of truth. |
+| **Carry-in** | Money received into a program or project-year allocation from the carry-over **ledger** (year close, opening balance, or reasoned manual grant). It adds to available money but is not part of this year's initial budget. The `carry_in_*` columns on programs and allocations are a guarded cache; the ledger is the source of truth. A recurring ops item's carry-in is outside the ledger and is a plain typed field. |
 | **Carry-over** | The year-close decision that moves remaining budget into the next year. The close records a snapshot (available / carried / not carried + reason) and writes one receipt per carried amount. |
 | **Allocation** | The project's slice of a program's available budget for one fiscal year. |
 | **Commitment** | Money promised (PO / contract milestone) but not necessarily paid yet. |
@@ -213,9 +214,11 @@ Unallocated program budget  = effective budget + carry-in − allocations
 ```
 
 - Revisions exist only while the annual plan is **active**: a draft is edited directly and a closed
-  plan is read-only, so a closed year's effective budget equals its initial budget.
-- Carry-in is **ledger-only**. The program and allocation forms no longer accept it; a manual grant
-  needs a reason and is audited, and the program page lists the receipts behind each amount.
+  year accepts reasoned corrections only, so a closed year's effective budget equals its corrected
+  initial budget — no revision is ever posted to a closed year.
+- Carry-in is **ledger-only** for programs and allocations. Their forms no longer accept it; a manual
+  grant needs a reason and is audited, and the program page lists the receipts behind each amount. A
+  recurring ops item is outside the ledger and keeps its own typed carry-in (§3.5).
 
 - Open commitments are **not** carry-over. Committed-but-unpaid money stays a commitment until it is
   settled; only remaining budget can be carried at year close.
@@ -296,8 +299,8 @@ Open an annual plan and use **Add annual program**:
 | Capex budget / Opex budget | The program's **initial** budget for the year, per component. A draft plan edits these in place; an active plan creates the program at zero and funds it by revision. |
 | Notes | Free text. |
 
-Carry-in is not a field: the carry-over ledger delivers it (a year close, the opening import, or a
-reasoned manual receipt on the annual plan page).
+Program carry-in is not a field: the carry-over ledger delivers it (a year close, the opening import,
+or a reasoned manual receipt on the annual plan page).
 
 Rules:
 
@@ -354,7 +357,10 @@ On the project page:
 On an annual plan page, use **Add recurring ops item** for running costs such as leased lines,
 existing maintenance and subscriptions:
 
-- Fields: **Name**, **Category**, **Owner**, **Opex budget**, **Opex carry-in**, **Notes**.
+- Fields: **Name**, **Category**, **Owner**, **Opex budget**, **Opex carry-in**, **Notes**. The
+  carry-in is typed on the item — recurring operations are outside the carry-over ledger and outside
+  the year close — so it is edited in place with the budget, and a closed-year correction can include
+  it (§6.3).
 - Recurring ops items have **no SI link and no projects**, and are **opex only** (BR-12). The opex
   budget is the item's annual budget.
 - Commitments and spend are recorded on the item's own **Open commitments & spend** page.
@@ -438,7 +444,9 @@ Rules and behaviour:
   The carry-in is read from the ledger, not from the guarded cache.
 - **Open commitments & spend** opens the execution page for that year (§4).
 - The year-close workflow writes carry-in into the next year's allocation, creating the allocation
-  automatically when the project spans into the target year. A closed year's allocation is read-only.
+  automatically when the project spans into the target year. A closed year's allocation accepts a
+  reasoned correction of its figures (§6.3) but keeps no spend form; record new spend in the open
+  year (§4.4).
 
 ### 3.8 Budget revisions (active years)
 
@@ -605,6 +613,13 @@ What happens to the numbers:
 
 Reports are read-only; all data comes from the plan, funding and execution records. Without a strategic plan each report asks you to create one first.
 
+A row whose figures rest on a record corrected after the close carries a **Corrected after close**
+badge, and the report's CSV/XLSX export gains a `Corrected after close` column (`yes` for a marked row,
+blank otherwise) once at least one row is marked. A report with a marked row also carries a footnote
+saying the figures shown are the live corrected figures while the close snapshot remains the historical
+record. The marker is a label, not money: every total is the live corrected figure, and a totals row is
+never marked.
+
 ### 5.2 CSV, XLSX and print
 
 - **CSV** and **XLSX** download the report tables. The XLSX workbook has an **About** sheet, one sheet
@@ -632,7 +647,8 @@ Reports are read-only; all data comes from the plan, funding and execution recor
 ## 6. Year close and carry-over
 
 Closing a fiscal year is a manual, audited, **irreversible** workflow. There is no reopen, no rollback
-and no version restore.
+and no version restore. A close freezes the history, not the ability to fix a mistake in it: existing
+records can still be corrected in place with a reason (§6.3).
 
 ### 6.1 Before you close
 
@@ -673,24 +689,101 @@ and no version restore.
    **close snapshot** per entity and component (available / carried / not carried / reason, with a
    link from each carried amount to its target), and the **carry-over receipts** (source entity,
    amount, target, origin, reason, who recorded it). The receipt stays reachable from the closed
-   annual plan through **Close receipt**.
+   annual plan through **Close receipt**. If a record of that year is corrected later, the receipt
+   gains a **Corrections after close** notice below the frozen snapshot listing the corrected records
+   with their links; the snapshot itself never changes (§6.3).
 
 ### 6.3 After the close
 
-- **Read-only plan data.** Creating, editing and voiding plan records in a closed year is blocked:
-  programs, allocations and recurring ops items in the closed year refuse with a closed-year message,
-  a project (and its ijin prinsip) refuses when the fiscal year of its originating program is closed,
-  and the closed allocation has no spend form. This release has no in-app reopen, rollback or
-  correction screen for closed-year plan figures.
-- **Settlement lifecycle continues.** Existing spend entries can still be edited or voided (audited,
-  with a reason); voiding releases their settlements. To pay a closed-year commitment, record a new
-  spend in the **open** year and settle the closed-year commitment there (§4.4). The locked close
-  snapshot and carry-over figures never change.
-- The **Fiscal year closed** card shows the approval reference, closed date, and the carried amounts
-  per entity and component. The locked snapshot figures for the closed year stay frozen. The **Close
-  receipt** page shows the snapshot and the ledger receipts; the approval reference links to them.
-  Carry-in in the receiving year is read from the ledger, so a receipt list always explains the
-  amount, including an opening balance or a manual grant.
+A closed year cannot be reopened, rolled back or restored from a version, and it accepts no new records.
+It does accept **corrections**: an existing record can be updated in place, with a reason, and the change
+is audited. The close decided which money moved and that decision is frozen; correcting a live figure
+does not re-open it (ADR-0007).
+
+**What can be corrected.** Six record types accept a correction after the close:
+
+| Record | What you can change |
+| --- | --- |
+| Annual program | Capex and opex budget, name, notes, strategic initiative, continuation link |
+| Project year allocation | Capex and opex allocation, notes |
+| Project | Full-life allocated budget, submitted price, final deal price, the project's opening figures (allocated, committed, spent) and its metadata |
+| Ijin prinsip | Document number, date, approved amount, approver, document link, notes |
+| Recurring ops item | Opex budget and its own in-place carry-in, name, category, owner, notes |
+| Commitment entry | Component, amount, commitment date, reference, description |
+
+Any custom fields on those records are corrected with them; they remain metadata and never enter a money
+rule.
+
+**How to correct a record.** Where it happens: open the record — the annual plan page for a program or a
+recurring ops item, the project page for the project or its ijin prinsip, the allocation page for a
+project year allocation or a commitment, or the recurring ops item page for its commitments. On a closed
+year the edit form is not shown; press **Correct record** instead. The form appears under a banner:
+
+> This fiscal year is closed. Saving is recorded as a correction after close, and the close snapshot
+> does not change.
+
+Change the figures, give the **Reason for change** and save. The form is the same one an open year
+shows, so a closed year gets no different fields and no weaker validation. In a draft or active year the
+usual edit form is shown directly under the ordinary rules, and the **Correct record** button does not
+appear. If you open the form by mistake, **Cancel** hides it again without saving anything.
+
+- **The reason is mandatory and is the whole ceremony.** There is no typed confirmation and no second
+  prompt; the reason is what the history and the audit trail show. A blank reason is refused — the
+  reason field is required, and the server also rejects a correction without a usable reason (*Give a
+  reason for a correction after close.*).
+- **The record is marked.** It shows a **Corrected after close** badge. The project page's **Change
+  history** records the action as *Corrected after close* with the reason and the before/after figures;
+  a correction to any other record is found in the audit trail by filtering **Action** on *Corrected
+  after close* (§8.2).
+- **The closed annual plan lists its corrections.** The page opens with a notice that the fiscal year is
+  closed, that figures can still be corrected with a reason, and that every correction is audited and
+  the close snapshot stays frozen. Below it, a **Corrections after close** card shows the count and one
+  row per correction — record link, record type, reason, who corrected it and when. The card appears
+  only when the year has at least one correction.
+- **The close receipt shows the same list.** Directly below the frozen **Fiscal year closed** snapshot, a
+  **Corrections after close** section lists the corrected records with their links, type, reason, who
+  corrected it and when, and says: *The close snapshot above is frozen. These records were corrected
+  after the close and are shown at their live figures.* The snapshot and the receipt figures themselves
+  never change.
+- **Reports keep the live figures and mark the row.** The figures are the corrected ones, exactly as an
+  open-year edit would move them. A row resting on a corrected record carries a **Corrected after close**
+  badge, the export gains a `Corrected after close` column once a row is marked, and the report footnote
+  explains that the figures are the live corrected figures while the close snapshot remains the
+  historical record (§5.1). Totals are the live corrected figures; no marker changes a total.
+
+**What a correction is not.** It is an update of a record that already exists, and nothing else:
+
+- **No new records in a closed year** — no program, allocation, recurring ops item, project, commitment
+  or spend created there. No voids or cancellations either, and no status changes.
+- **No reopen, rollback, undo, version restore or hard delete**, and no second close. The plan stays
+  `closed` with its original closed date.
+- **No budget revision in a closed year.** Revisions are posted only to an **active** plan (§3.8). A
+  corrected program budget changes the program in place, and the closed year's effective budget is its
+  corrected initial budget.
+- **No carry-in correction on a program or an allocation.** Their carry-in is derived from the
+  carry-over ledger, not typed on the record, and the ledger is immutable. A wrong receipt is adjusted
+  in the year that received it, as a budget revision. A recurring ops item is outside the ledger, so
+  its single carry-in is an ordinary field and is corrected with its budget.
+- **No correction of the close itself.** The close snapshot, the carry-over receipts and the
+  ledger-backed carry-in caches on programs and allocations are never written by a correction: what
+  was carried at the close stays carried, and the not-carried reason stays as recorded. If the close
+  decided the wrong amount, the fix belongs to the receiving year (§3.8).
+- **No settlement-link changes.** A closed allocation still has no spend form; a payment is recorded in
+  the open year and may settle the closed-year commitment there (§4.4).
+- **An archived strategic plan, a cancelled project, a voided record and a closed year itself stay fully
+  read-only.** No **Correct record** affordance appears for them.
+
+**Settlement lifecycle continues.** Existing spend entries can still be edited or voided (audited,
+with a reason); voiding releases their settlements. To pay a closed-year commitment, record a new
+spend in the **open** year and settle the closed-year commitment there (§4.4). That is not a
+correction: it changes no closed-year plan figure, and the locked close snapshot and carry-over
+figures never change.
+
+The **Fiscal year closed** card shows the approval reference, closed date, and the carried amounts
+per entity and component. The locked snapshot figures for the closed year stay frozen. The **Close
+receipt** page shows the snapshot and the ledger receipts; the approval reference links to them.
+Carry-in in the receiving year is read from the ledger, so a receipt list always explains the
+amount, including an opening balance or a manual grant.
 
 ### 6.4 Program threads
 
@@ -764,6 +857,9 @@ detailed, exportable sources.
   actions and the entity are shown in readable words (*Custom field created / updated / removed /
   restored / reordered*, entity *Custom field*); a report column-selection save appears as *Report
   column selection saved*. The filter keeps machine tokens as its values.
+- A closed-year save is shown as *Corrected after close* rather than the ordinary `update` token, and
+  the **Action** filter offers it by name, so you can list every correction in the plan. The reason
+  typed on the correction form is on the entry, with the before/after figures.
 - The project page also has a **Change history** card with the last 10 entries for that project.
 
 ### 8.3 Custom fields
@@ -799,15 +895,25 @@ detailed, exportable sources.
 
 ### 8.4 Corrections policy
 
-- Nothing is hard-deleted. Wrong data is corrected with an audited edit (reason required), or the
-  record is voided/cancelled with a reason.
-- Closed years are read-only. The only writes that touch a closed year are settlement lifecycle
-  events: editing or voiding an existing spend (audited with a reason), and a payment recorded in an
-  open year that settles a closed-year commitment (§4.4). New plan records belong to open years.
-  There is no reopen, rollback, undo or version restore.
-- Closed-year plan figures (program budgets, allocations, project figures) cannot be changed from the
-  app in this release. Document the correction and raise it with the engineering lead or as a GitHub
-  issue; do not attempt a database edit.
+- Nothing is hard-deleted. Wrong data in an open year is corrected with an audited edit (reason
+  required), or the record is voided/cancelled with a reason. A program budget in an **active** year
+  changes through a budget revision, not an in-place edit (§3.8).
+- A closed year accepts **audited corrections**: in-place updates of existing records of the six
+  correctable types, each with a reason, recorded in the audit trail under *Corrected after close*
+  rather than as an ordinary edit (§6.3). The server derives "this is a correction" from the annual
+  plan's status when it saves, so there is no override switch a client could set, and a correction
+  never writes the close snapshot, the carry-over ledger or the ledger-backed carry-in caches on
+  programs and allocations (a recurring ops item's carry-in is an ordinary field and is corrected
+  with it). The live figures move and the close snapshot stays the historical record.
+- Everything else still refuses in a closed year: no creates, no voids or cancellations, no status
+  changes, no budget revision (revisions stay active-only), no reopen, rollback, undo or version
+  restore, and no edits to settlement links. Settlement lifecycle events remain available: editing or
+  voiding an existing spend (audited with a reason), and a payment recorded in an open year that
+  settles a closed-year commitment (§4.4). New plan records belong to open years.
+- If a figure is wrong in a way a correction does not cover — for instance the close itself recorded
+  the wrong amount — do not attempt a database edit. The receiving year is corrected with a budget
+  revision (§3.8); otherwise document the problem and raise it with the engineering lead or as a
+  GitHub issue.
 
 ## 9. The annual cycle: checklist
 
@@ -835,6 +941,10 @@ detailed, exportable sources.
 - [ ] Reconcile the program threads' carry-in against the close snapshot.
 - [ ] Confirm that open commitments remain open and are not expected as carry-over.
 
+**After the year**
+
+- [ ] Fix a wrong closed-year figure with **Correct record** (reason required). Check the record's **Corrected after close** badge, the **Corrections after close** notice on the close receipt and the marker on the affected reports; the close snapshot and the carry-over receipts must stay unchanged.
+
 ## 10. Reference
 
 ### 10.1 Field reference
@@ -857,7 +967,7 @@ detailed, exportable sources.
 
 ```
 Strategic plan:   draft ──activate──▶ active ──archive──▶ archived (read-only, final)
-Annual plan:      draft ──activate──▶ active ──close────▶ closed (read-only, no reopen)
+Annual plan:      draft ──activate──▶ active ──close────▶ closed (corrections only, no reopen)
 Project:          active ──cancel───▶ cancelled (read-only)
 Commitment:       open ──settle──▶ partially settled ──settle──▶ settled   (or void)
 Spend:            recorded ──void──▶ voided (releases its settlements)
@@ -875,7 +985,8 @@ Member account:   active ──deactivate──▶ deactivated ──activate─
 | `Password must be at least 12 characters.` | Setup, member creation or password reset. | Use a password of at least 12 (and at most 200) characters. |
 | `Activate the strategic plan before creating annual plans.` / `... before creating projects.` | The strategic plan is not active. | Activate the plan in its page header. |
 | `A strategic plan already exists. This deployment supports one plan…` | One plan per deployment. | Edit the existing plan under Plan → Strategic plan & SIs; a second plan cannot be created in this release. |
-| `This fiscal year is closed and read-only.` / `That fiscal year is closed and read-only.` / `The originating fiscal year is closed and read-only.` | The annual plan behind the record (or the project's originating year) is closed. | Use an open year; closed years accept only settlement lifecycle writes (§6.3). |
+| `This fiscal year is closed and read-only.` / `That fiscal year is closed and read-only.` / `The originating fiscal year is closed and read-only.` | The annual plan behind the record (or the project's originating year) is closed, and this action is not allowed in a closed year. | Creates, voids and status changes need an open year. A closed year accepts reasoned corrections of existing records (§6.3) and settlement lifecycle writes. |
+| `Give a reason for a correction after close.` | A correction was submitted without a usable reason. | Enter the reason for the correction; it is stored on the audit entry and shown in the record's history. |
 | `This commitment has settlements. Void the settling spend entries first.` | A settled commitment cannot be voided. | Void the spend entries that settled it. |
 | `The commitment cannot be reduced below the already settled amount (Rp …).` | Edit target is below settled money. | Raise the amount or reverse settlements by voiding the spend. |
 | `The spend amount cannot be reduced below the settled amount.` | Edit target is below settled money. | Keep the amount at or above the settled total, or void and re-enter. |
@@ -905,13 +1016,17 @@ account is created in Administration → Members.
 **Why can I not edit a program budget any more?**
 The annual plan is **active**, so its program budgets are frozen. Post a **budget revision** instead
 (§3.8): it is numbered, immutable and audited, and its deltas build the effective budget that every
-screen and report uses. A draft year is still edited in place; a closed year is read-only.
+screen and report uses. A draft year is still edited in place; a closed year accepts reasoned
+corrections only (§6.3).
 
 **Where does carry-in come from, and why can I not type it?**
-Carry-in is a receipt in the append-only carry-over ledger — written by a year close, by the opening
-balance load, or by a reasoned manual grant on the annual plan page. The program/allocation
-`carry_in_*` fields are only a cache that the ledger service keeps equal to the receipts; no form
-writes them. The program page lists the receipts, so every carry-in amount has provenance.
+For a program or allocation, carry-in is a receipt in the append-only carry-over ledger — written by a
+year close, by the opening balance load, or by a reasoned manual grant on the annual plan page. The
+program/allocation `carry_in_*` fields are only a cache that the ledger service keeps equal to the
+receipts; no form writes them. The program page lists the receipts, so every carry-in amount has
+provenance. A recurring ops item is outside the ledger and outside the year close: its single **Opex
+carry-in** is an ordinary field you type, edited with the item like its budget (and correctable after
+close, §6.3).
 
 **What does "awaiting decision reference" mean on a revision?**
 The revision was posted before its formal budget decision existed. The lines and totals are already
@@ -919,15 +1034,25 @@ frozen; **Record the decision reference** on the register attaches the reference
 and is audited. It is not an approval step and it cannot change the amounts.
 
 **Who can do what?**
-Every signed-in account is an administrator: all accounts can manage members, edit open-year data and
-use every screen. There are no editor or viewer roles in this release, and no self-service sign-up.
+Every signed-in account is an administrator: all accounts can manage members, edit open-year data,
+correct a closed-year record with a reason, and use every screen. There are no editor or viewer roles in
+this release, and no self-service sign-up.
 
 **Can I delete accounts, projects or records?**
 No. Accounts are deactivated; plan records are voided or cancelled with a reason and stay in history
 and in the audit trail.
 
 **Can I reopen a closed year or roll back?**
-No. Closing is irreversible and there is no version restore. See §6.3 for what still works after close.
+No. Closing is irreversible and there is no version restore. Existing records can still be corrected
+with a reason (§6.3), and settlement lifecycle events continue.
+
+**How do I fix a wrong figure in a closed year?**
+Open the record — the annual plan page, the project page, the allocation page or the recurring ops item
+page — and press **Correct record**. The edit form appears under a banner saying the year is closed;
+change the figure, give the **Reason for change** and save. The save is audited as *Corrected after
+close*, the record shows the badge, the annual plan's **Corrections after close** card and the close
+receipt's notice list it, and the reports show the live corrected figure with the same marker. The close
+snapshot and the carry-over figures do not change. There is no typed confirmation.
 
 **Can I import a spreadsheet?**
 Only the opening balances: **Plan → Opening balances → Opening import** takes CSV/XLSX files for
@@ -960,16 +1085,24 @@ carry-over never change either way.
 No. The treatment is frozen once the spend has settlements. Void the spend and record it again with
 the other choice.
 
-**Why can I not edit anything in a closed year?**
-The year is closed and its figures are frozen. Plan records are read-only; only the settlement lifecycle
-on existing spend entries remains available, and new payments are recorded in the open year.
+**What can I not fix in a closed year?**
+You cannot create, void or change the status of a record, post a budget revision, edit settlement links,
+repeat the close, or change the close snapshot, the carry-over receipts or the carry-in on a program or
+allocation. A program's or allocation's carry-in is ledger-derived and immutable; a wrong receipt is
+fixed in the receiving year with a budget revision. A recurring ops item's own carry-in is an ordinary
+field, not ledger money, so it is corrected with the item's budget. An archived strategic plan, a
+cancelled project and a voided record stay fully read-only. There is no reopen, rollback, undo or
+version restore.
 
 ## 12. Known limitations
 
 - One strategic plan per deployment; one annual plan per fiscal year; plan horizon 1–10 years.
-- No reopen, rollback, undo or version restore. Closed-year plan figures cannot be edited in the app
-  in this beta (the charter's audited-correction path is not exposed); closed-year spend entries can
-  only be edited or voided as settlement lifecycle events.
+- No reopen, rollback, undo or version restore. A closed year accepts reasoned, audited corrections of
+  existing plan records (annual programs, project year allocations, projects and their ijin prinsip and
+  opening figures, recurring ops items and commitment entries), but no creates, voids, status changes or
+  budget revisions, and the close snapshot, the carry-over receipts and the ledger-backed carry-in
+  caches on programs and allocations never change (a recurring ops item's typed carry-in is corrected
+  with the item). Closed-year spend entries can only be edited or voided as settlement lifecycle events.
 - One role: every account is an administrator. No editor/viewer roles, SSO, self-service sign-up or
   email notifications (including password resets).
 - No file uploads except the opening-balance CSV/XLSX import (maximum 10 MB), and no CSV/XLSX import

@@ -3,7 +3,15 @@ import type { StrategicInitiative } from '@/db/schema';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { ExportTable } from '@/lib/report-export';
 import type { ReportCustomFieldGroup } from './report-custom-fields';
-import { applyCustomFieldGroup, postCloseAdjustmentTable, siFiveYearExportTables } from './report-tables';
+import {
+  EXECUTION_NOTE,
+  REPORT_CORRECTION_NOTE,
+  applyCorrectionMarkers,
+  applyCustomFieldGroup,
+  documentNote,
+  postCloseAdjustmentTable,
+  siFiveYearExportTables,
+} from './report-tables';
 import type {
   BudgetVsActualRow,
   SiFiveYearComponent,
@@ -11,12 +19,15 @@ import type {
 } from './report-queries';
 
 /**
- * Unit tests for the custom-field column attachment (issue #46).
+ * Unit tests for the export tables: custom-field column attachment (#46), the
+ * post-close adjustment table (#98) and the corrected-after-close marker
+ * (#108).
  *
  * These are pure table-level tests: no database, no report query. They pin the
- * two promises the export layer makes — selected fields append after the report
- * columns and fill in by record id, and the existing money columns and figures
- * are never touched.
+ * promises the export layer makes — selected fields append after the report
+ * columns and fill in by record id, the correction marker appears only on a
+ * marked row and never on a totals table, and the existing money columns,
+ * figures and row ids are never touched.
  */
 
 const location = field({ id: 'cf-location', name: 'Location', type: 'text' });
@@ -153,6 +164,7 @@ describe('postCloseAdjustmentTable (#98)', () => {
       siName: 'Digital Workplace',
       programCode: 'POST-CLOSE-PRG-27',
       programName: 'Post-close programme',
+      corrected: false,
       capexAvailable: 100_000_000,
       opexAvailable: 0,
       carryInCapex: 0,
@@ -209,6 +221,15 @@ describe('postCloseAdjustmentTable (#98)', () => {
 
   it('has no rows when nothing was reserved', () => {
     expect(postCloseAdjustmentTable([budgetRow({})]).rows).toEqual([]);
+  });
+
+  it('never carries the corrected-after-close marker column (#108)', () => {
+    const result = postCloseAdjustmentTable([
+      budgetRow({ postCloseReserveCapex: 10_000_000, corrected: true }),
+    ]);
+
+    expect(result.columns.some((column) => column.key === 'corrected')).toBe(false);
+    expect(result.rows[0]).not.toHaveProperty('corrected');
   });
 });
 
@@ -286,11 +307,13 @@ describe('siFiveYearExportTables (ADR-0006 §5)', () => {
             consumed: 450_000_000,
             headroom: 550_000_000,
           }),
+          corrected: false,
         },
         {
           initiative: initiative({ id: 'si-2', code: 'SI-02', name: 'Resilient network' }),
           capex: overrunCapex,
           opex: component({}),
+          corrected: false,
         },
       ],
       totals: {
@@ -400,5 +423,105 @@ describe('siFiveYearExportTables (ADR-0006 §5)', () => {
       opexEnvelope: 1_000_000_000,
       'custom:cf-location': 'Jakarta',
     });
+  });
+
+  it('marks a corrected initiative row but leaves the totals table and every figure alone (#108)', () => {
+    const plain = siFiveYearExportTables(report());
+    const data = report();
+    data.rows[0]!.corrected = true;
+    const marked = siFiveYearExportTables(data);
+
+    const plainMain = plain[0]!;
+    const plainTotals = plain[1]!;
+    const main = marked[0]!;
+    const totals = marked[1]!;
+
+    expect(main.columns.at(-1)).toEqual({ key: 'corrected', header: 'Corrected after close' });
+    expect(main.columns.slice(0, -1)).toEqual(plainMain.columns);
+    for (const [index, row] of main.rows.entries()) {
+      const { corrected, ...figures } = row;
+      expect(corrected).toBe(index === 0 ? 'yes' : '');
+      // Every money value and every row id is exactly the unmarked build's.
+      expect(figures).toEqual(plainMain.rows[index]);
+    }
+    // A marker can never move a total, and a totals table never gains it.
+    expect(totals).toEqual(plainTotals);
+    expect(totals.columns.some((column) => column.key === 'corrected')).toBe(false);
+  });
+
+  it('adds no marker column to any table when nothing was corrected (#108)', () => {
+    const tables = siFiveYearExportTables(report());
+    for (const candidate of tables) {
+      expect(candidate.columns.some((column) => column.key === 'corrected')).toBe(false);
+      for (const row of candidate.rows) {
+        expect(row).not.toHaveProperty('corrected');
+      }
+    }
+  });
+});
+
+describe('applyCorrectionMarkers (#108)', () => {
+  it('returns a table untouched when none of its rows is marked', () => {
+    const source = table();
+    expect(applyCorrectionMarkers(source, new Set())).toBe(source);
+    // An id from another report's table marks nothing here.
+    expect(applyCorrectionMarkers(source, new Set(['program-99']))).toBe(source);
+  });
+
+  it('appends one marker column, yes for a marked row and an empty cell otherwise', () => {
+    const source = table();
+    const result = applyCorrectionMarkers(source, new Set(['program-2']));
+
+    expect(result.name).toBe(source.name);
+    expect(result.columns).toEqual([
+      ...source.columns,
+      { key: 'corrected', header: 'Corrected after close' },
+    ]);
+    expect(result.rows.map((row) => row.corrected)).toEqual(['', 'yes', '']);
+    expect(result.rows.map((row) => row.id)).toEqual(['program-1', 'program-2', 'program-3']);
+  });
+
+  it('keeps every money value and every row id unchanged', () => {
+    const source = table();
+    const result = applyCorrectionMarkers(source, new Set(['program-1', 'program-3']));
+
+    expect(moneySum(result, 'capexBudget')).toBe(moneySum(source, 'capexBudget'));
+    expect(moneySum(result, 'spendCapex')).toBe(moneySum(source, 'spendCapex'));
+    for (const [index, row] of result.rows.entries()) {
+      expect(row).toMatchObject(source.rows[index]!);
+    }
+  });
+
+  it('keeps the custom-field columns after the marker column (#46)', () => {
+    const marked = applyCorrectionMarkers(table(), new Set(['program-2']));
+    const result = applyCustomFieldGroup(
+      marked,
+      group([location], new Map([['program-2', { 'cf-location': 'Bandung' }]])),
+    );
+
+    expect(result.columns.map((column) => column.key)).toEqual([
+      'programCode',
+      'capexBudget',
+      'spendCapex',
+      'corrected',
+      'custom:cf-location',
+    ]);
+    expect(result.rows[1]).toMatchObject({ corrected: 'yes', 'custom:cf-location': 'Bandung' });
+  });
+});
+
+describe('documentNote (#108)', () => {
+  it('appends the correction footnote only when a table carries a marked row', () => {
+    expect(documentNote([])).toBe(EXECUTION_NOTE);
+    expect(documentNote([table()])).toBe(EXECUTION_NOTE);
+
+    const marked = applyCorrectionMarkers(table(), new Set(['program-2']));
+    expect(documentNote([table(), marked])).toBe(`${EXECUTION_NOTE} ${REPORT_CORRECTION_NOTE}`);
+  });
+
+  it('keeps the fixed footnote copy', () => {
+    expect(REPORT_CORRECTION_NOTE).toBe(
+      'Rows marked corrected after close rest on a record corrected after the year closed. The figures shown are the live corrected figures; the close snapshot remains the historical record.',
+    );
   });
 });

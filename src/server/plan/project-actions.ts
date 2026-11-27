@@ -23,6 +23,12 @@ import {
   type ProjectCreateInput,
   type ProjectUpdateInput,
 } from '@/domain/inputs';
+import {
+  CORRECTION_WRITE,
+  isCorrectionAfterClose,
+  updateAuditAction,
+} from '@/domain/corrections';
+import { requireCorrectionReason } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import { formatEntityCode, validateProjectYears } from '@/domain/plan';
 import type { FormState } from '@/lib/form-state';
@@ -113,6 +119,31 @@ async function loadProjectContext(projectId: string): Promise<ProjectContext> {
   return row;
 }
 
+/**
+ * Saving an ijin prinsip record doubles as its create form. A closed year only
+ * corrects records that already exist (ADR-0007 §1), so the create branch keeps
+ * refusing — it does not inherit the correction allowance.
+ */
+function requireIjinCreateContext(context: {
+  annualPlan: AnnualPlan;
+  strategicPlan: StrategicPlan;
+}): void {
+  if (context.strategicPlan.status === 'archived') {
+    throw new FormError('The strategic plan is archived and read-only.');
+  }
+  if (context.annualPlan.status === 'closed') {
+    throw new FormError(
+      'The fiscal year is closed; the ijin prinsip record cannot be created after the close.',
+    );
+  }
+}
+
+/**
+ * The project-side editability guard. `allowClosed` is the correction path
+ * (ADR-0007 §1): a closed fiscal year still accepts an in-place correction of a
+ * project that already exists, with a reason. Creates, voids and cancellation
+ * keep refusing.
+ */
 function requireEditableContext(
   context: { annualPlan: AnnualPlan; strategicPlan: StrategicPlan },
   options: { allowClosed?: boolean } = {},
@@ -238,7 +269,11 @@ async function updateProject(
   if (context.project.status === 'cancelled') {
     throw new FormError('This project is cancelled and read-only.');
   }
-  requireEditableContext(context);
+  requireEditableContext(context, CORRECTION_WRITE);
+  // ADR-0007 §5: the originating plan's status at write time names the audit
+  // action, so a closed year records exactly one `correction` entry.
+  const auditAction = updateAuditAction(context.annualPlan);
+  requireCorrectionReason(context.annualPlan, input.reason);
   checkProjectYears({
     startFiscalYear: input.startFiscalYear,
     endFiscalYear: input.endFiscalYear,
@@ -288,7 +323,7 @@ async function updateProject(
     });
     await recordAudit(tx, {
       actorUserId: userId,
-      action: 'update',
+      action: auditAction,
       entityType: 'project',
       entityId: input.id,
       before: withCustomFields(projectSnapshot(context.project), custom.fields, beforeValues),
@@ -343,7 +378,6 @@ async function saveIjinPrinsip(
   if (context.project.status === 'cancelled') {
     throw new FormError('This project is cancelled and read-only.');
   }
-  requireEditableContext(context);
 
   const existingRows = await getDb()
     .select()
@@ -352,9 +386,26 @@ async function saveIjinPrinsip(
     .limit(1);
   const existing = existingRows[0] ?? null;
 
-  if (existing && (!input.reason || input.reason.trim().length < 3)) {
-    throw new FormError('Give a reason for changing the ijin prinsip record.');
+  // A correction corrects a record that already exists (ADR-0007 §1), so the
+  // create fallback keeps refusing in a closed year while the rewrite is the
+  // correction path.
+  if (existing) {
+    requireEditableContext(context, CORRECTION_WRITE);
+    requireCorrectionReason(context.annualPlan, input.reason);
+    // An open year keeps its own ijin wording; the correction rule above already
+    // refused a closed-year rewrite without a reason.
+    if (
+      !isCorrectionAfterClose(context.annualPlan) &&
+      (!input.reason || input.reason.trim().length < 3)
+    ) {
+      throw new FormError('Give a reason for changing the ijin prinsip record.');
+    }
+  } else {
+    requireIjinCreateContext(context);
   }
+  // ADR-0007 §5: the governing plan's status at write time names the audit
+  // action of the rewrite; only the create branch keeps the plain `create`.
+  const updateAction = updateAuditAction(context.annualPlan);
 
   await getDb().transaction(async (tx) => {
     const values = {
@@ -385,7 +436,7 @@ async function saveIjinPrinsip(
       });
       await recordAudit(tx, {
         actorUserId: userId,
-        action: 'update',
+        action: updateAction,
         entityType: 'ijin_prinsip',
         entityId: updated.id,
         before: withCustomFields(ijinSnapshot(existing), custom.fields, beforeValues),

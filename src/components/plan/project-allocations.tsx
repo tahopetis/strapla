@@ -10,7 +10,9 @@ import {
   SubmitButton,
   TextAreaField,
 } from '@/components/form';
+import { CorrectionDisclosure } from '@/components/plan/correction-disclosure';
 import { AnnualPlanBadge, Badge, Card, EmptyState, Money } from '@/components/ui';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type {
   AllocationProgramOptions,
@@ -29,6 +31,8 @@ export function ProjectAllocationsSection({
   rows,
   options,
   editable,
+  correctable,
+  correctedRecords,
   customFields,
   customValues,
 }: {
@@ -36,6 +40,9 @@ export function ProjectAllocationsSection({
   rows: ProjectAllocationRow[];
   options: AllocationProgramOptions;
   editable: boolean;
+  /** A closed originating year: each existing allocation is correctable (ADR-0007 §7). */
+  correctable: boolean;
+  correctedRecords: ReadonlySet<string>;
   customFields: readonly CustomFieldDefinition[];
   customValues: Map<string, CustomFieldValues>;
 }) {
@@ -98,6 +105,8 @@ export function ProjectAllocationsSection({
               key={row.allocation.id}
               row={row}
               editable={editable}
+              correctable={correctable}
+              corrected={correctedRecords.has(row.allocation.id)}
               projectId={projectId}
               customFields={customFields}
               customValues={customValues.get(row.allocation.id)}
@@ -112,12 +121,16 @@ export function ProjectAllocationsSection({
 function AllocationCard({
   row,
   editable,
+  correctable,
+  corrected,
   projectId,
   customFields,
   customValues,
 }: {
   row: ProjectAllocationRow;
   editable: boolean;
+  correctable: boolean;
+  corrected: boolean;
   projectId: string;
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
@@ -125,12 +138,16 @@ function AllocationCard({
   const { allocation, annualPlan, program, position, effectiveCapex, effectiveOpex } = row;
   const revised =
     effectiveCapex !== allocation.allocationCapex || effectiveOpex !== allocation.allocationOpex;
+  // Each allocation belongs to its own fiscal year: a closed row is corrected,
+  // an open row keeps the ordinary edit (ADR-0007 §2, §7).
+  const rowClosed = annualPlan.status === 'closed';
   return (
     <Card
       title={`FY${annualPlan.fiscalYear} · ${program.code} · ${program.name}`}
       description={`Allocation status: ${annualPlan.status}${revised ? ' · includes posted revisions' : ''}`}
       actions={
         <div className="flex flex-wrap gap-1">
+          {corrected ? <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge> : null}
           <AnnualPlanBadge annualPlanId={annualPlan.id} tone="info">
             FY{annualPlan.fiscalYear}
           </AnnualPlanBadge>
@@ -191,40 +208,25 @@ function AllocationCard({
 
       <CustomFieldsPanel fields={customFields} values={customValues} />
 
-      {editable ? (
+      {rowClosed && correctable ? (
+        // A closed year keeps the read-only frame: one affordance reveals the
+        // existing form, and the void control stays hidden (ADR-0007 §1, §7).
+        <CorrectionDisclosure>
+          <AllocationEditForm
+            row={row}
+            customFields={customFields}
+            customValues={customValues}
+          />
+        </CorrectionDisclosure>
+      ) : editable ? (
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit allocation</summary>
-            <Form action={updateAllocationAction} className="mt-4 grid gap-3 sm:grid-cols-2">
-              <HiddenField name="id" value={allocation.id} />
-              <MoneyField
-                label="Capex allocation"
-                name="allocationCapex"
-                defaultValue={allocation.allocationCapex}
-                required
-              />
-              <MoneyField
-                label="Opex allocation"
-                name="allocationOpex"
-                defaultValue={allocation.allocationOpex}
-                required
-              />
-              <p className="sm:col-span-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Carry-in received: capex <Money value={allocation.carryInCapex} /> · opex{' '}
-                <Money value={allocation.carryInOpex} /> — recorded in the carry-over ledger, not
-                edited here.
-              </p>
-              <div className="sm:col-span-2">
-                <TextAreaField label="Notes" name="notes" defaultValue={allocation.notes} rows={2} />
-              </div>
-              <CustomFieldInputs fields={customFields} values={customValues} />
-              <div className="sm:col-span-2">
-                <ReasonField />
-              </div>
-              <div className="sm:col-span-2">
-                <SubmitButton>Save changes</SubmitButton>
-              </div>
-            </Form>
+            <AllocationEditForm
+              row={row}
+              customFields={customFields}
+              customValues={customValues}
+            />
           </details>
 
           <div className="flex items-start">
@@ -242,5 +244,53 @@ function AllocationCard({
         </div>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * The allocation edit form (W5b). Shared by the open-year disclosure and the
+ * closed-year correction, so both always edit the same fields (ADR-0007 §7).
+ */
+function AllocationEditForm({
+  row,
+  customFields,
+  customValues,
+}: {
+  row: ProjectAllocationRow;
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
+}) {
+  const { allocation } = row;
+  return (
+    <Form action={updateAllocationAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+      <HiddenField name="id" value={allocation.id} />
+      <MoneyField
+        label="Capex allocation"
+        name="allocationCapex"
+        defaultValue={allocation.allocationCapex}
+        required
+      />
+      <MoneyField
+        label="Opex allocation"
+        name="allocationOpex"
+        defaultValue={allocation.allocationOpex}
+        required
+      />
+      <p className="sm:col-span-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Carry-in received: capex <Money value={allocation.carryInCapex} /> · opex{' '}
+        <Money value={allocation.carryInOpex} /> — recorded in the carry-over ledger, not
+        edited here.
+      </p>
+      <div className="sm:col-span-2">
+        <TextAreaField label="Notes" name="notes" defaultValue={allocation.notes} rows={2} />
+      </div>
+      <CustomFieldInputs fields={customFields} values={customValues} />
+      <div className="sm:col-span-2">
+        <ReasonField />
+      </div>
+      <div className="sm:col-span-2">
+        <SubmitButton>Save changes</SubmitButton>
+      </div>
+    </Form>
   );
 }

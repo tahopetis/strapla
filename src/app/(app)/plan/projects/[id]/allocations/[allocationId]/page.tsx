@@ -14,6 +14,7 @@ import {
   getAllocationFunding,
   listSpendCategoryOptions,
 } from '@/server/plan/execution-queries';
+import { loadCorrectionMarkers } from '@/server/plan/correction-queries';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Allocation execution' };
@@ -36,6 +37,20 @@ export default async function AllocationFundingPage({
     funding.strategicPlan.status !== 'archived' &&
     funding.annualPlan.status !== 'closed' &&
     funding.project.status !== 'cancelled';
+  // A closed year accepts in-place corrections of existing records only: the
+  // commitment update is the single correctable entry form on this page, while
+  // creates, voids, spend edits and settlement-link changes stay closed
+  // (ADR-0007 §1, §7). A voided allocation or a cancelled project offers nothing.
+  const correctable =
+    funding.strategicPlan.status !== 'archived' &&
+    funding.annualPlan.status === 'closed' &&
+    funding.project.status !== 'cancelled' &&
+    funding.allocation.voidedAt === null;
+  const correctionMarkers =
+    funding.annualPlan.status === 'closed'
+      ? await loadCorrectionMarkers(funding.strategicPlan.id)
+      : null;
+  const correctedRecords = correctionMarkers?.corrected ?? new Set<string>();
   const today = toDateInputValue(new Date());
 
   return (
@@ -51,6 +66,14 @@ export default async function AllocationFundingPage({
       />
       <PlanNav />
       <Flash error={error} message={message} />
+
+      {funding.annualPlan.status === 'closed' ? (
+        <p className="mb-5 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {correctable
+            ? 'This fiscal year is closed. New commitments and spend entries cannot be added; an existing commitment can still be corrected with a reason.'
+            : 'This fiscal year is closed. New commitments and spend entries cannot be added.'}
+        </p>
+      ) : null}
 
       <div className="space-y-6">
         <FundingSummaryCard
@@ -69,6 +92,8 @@ export default async function AllocationFundingPage({
           parentId={funding.allocation.id}
           rows={funding.commitments}
           editable={editable}
+          correctable={correctable}
+          correctedRecords={correctedRecords}
           allowCapex
           today={today}
           customFields={funding.customFields.commitmentFields}

@@ -14,6 +14,7 @@ import {
   readRememberedReportColumns,
 } from '@/server/plan/report-custom-fields';
 import { getSiFiveYearReport } from '@/server/plan/report-queries';
+import { CorrectionBadge, CorrectionNote } from '../correction-marker';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'SI five-year view' };
@@ -134,6 +135,11 @@ export default async function SiFiveYearPage({
                   <td className="py-3 pr-3">
                     <p className="font-medium">{row.initiative.code}</p>
                     <p className="text-slate-600">{row.initiative.name}</p>
+                    {row.corrected ? (
+                      <div className="mt-1">
+                        <CorrectionBadge />
+                      </div>
+                    ) : null}
                   </td>
                   {(
                     [
@@ -237,6 +243,7 @@ export default async function SiFiveYearPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
+        {rows.some((row) => row.corrected) ? <CorrectionNote /> : null}
       </Card>
     </ReportShell>
   );
