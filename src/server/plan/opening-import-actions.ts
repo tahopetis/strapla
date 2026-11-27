@@ -26,7 +26,7 @@ import {
   type CustomFieldExecutor,
 } from '@/server/custom-fields/data';
 import { listOpeningRegistryFields } from './opening-import-fields';
-import { getOpeningLoadScene } from './opening-queries';
+import { FIRST_PLAN_ONLY_WRITE_REFUSAL, getOpeningLoadScene } from './opening-queries';
 import { getCurrentStrategicPlan, isFirstStrategicPlan } from './queries';
 import {
   planOpeningLoad,
@@ -316,7 +316,7 @@ export async function openingImportAction(
   // Opening balances are recorded once, for the first plan (#109, ADR-0008 §7):
   // a successor plan starts without them.
   if (!(await isFirstStrategicPlan(plan))) {
-    return errorState('Opening balances are recorded once, for the first plan.');
+    return errorState(FIRST_PLAN_ONLY_WRITE_REFUSAL);
   }
 
   const scene = await getOpeningLoadScene(plan);

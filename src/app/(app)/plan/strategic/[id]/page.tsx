@@ -6,6 +6,8 @@ import { Badge, Card, EmptyState, Money, PageHeader, StatusBadge } from '@/compo
 import { formatDate } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import { listAnnualPlans } from '@/server/plan/annual-queries';
+import { listProgramThreads } from '@/server/plan/program-queries';
+import { listProjects } from '@/server/plan/project-queries';
 import {
   getPlanArchiveInfo,
   getStrategicPlan,
@@ -34,12 +36,15 @@ export default async function ArchivedStrategicPlanPage({
   const plan = await getStrategicPlan(id);
   if (!plan || plan.status !== 'archived') notFound();
 
-  const [archiveInfo, rows, annualPlans, firstPlan] = await Promise.all([
+  const [archiveInfo, rows, annualPlans, programs, projects, firstPlan] = await Promise.all([
     getPlanArchiveInfo(plan.id),
     listInitiativeEnvelopeRows(plan.id),
     listAnnualPlans(plan.id),
+    listProgramThreads(plan.id),
+    listProjects(plan.id),
     isFirstStrategicPlan(plan),
   ]);
+  const programEntries = programs.flatMap((thread) => thread.entries);
 
   return (
     <div>
@@ -192,6 +197,59 @@ export default async function ArchivedStrategicPlanPage({
                 </li>
               ))}
             </ul>
+          )}
+        </Card>
+
+        <Card
+          title="Programs and projects"
+          description="The records that carried the plan's delivery. Each opens its existing read-only page, and a project opens its allocations."
+          actions={<Badge>{programEntries.length + projects.length}</Badge>}
+        >
+          {programEntries.length === 0 && projects.length === 0 ? (
+            <EmptyState>No annual programs or projects under this plan.</EmptyState>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Annual programs
+                </h3>
+                {programEntries.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-600">No annual programs.</p>
+                ) : (
+                  <ul className="mt-2 divide-y divide-slate-100 text-sm">
+                    {programEntries.map((entry) => (
+                      <li key={entry.programId} className="py-2">
+                        <Link href={`/plan/programs/${entry.programId}`} className={linkClass}>
+                          {entry.code} · {entry.name}
+                        </Link>
+                        <span className="ml-2 text-xs text-slate-500">
+                          FY{entry.fiscalYear} · {entry.siCode}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Projects</h3>
+                {projects.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-600">No projects.</p>
+                ) : (
+                  <ul className="mt-2 divide-y divide-slate-100 text-sm">
+                    {projects.map((row) => (
+                      <li key={row.project.id} className="py-2">
+                        <Link href={`/plan/projects/${row.project.id}`} className={linkClass}>
+                          {row.project.code} · {row.project.name}
+                        </Link>
+                        <span className="ml-2 text-xs text-slate-500">
+                          FY{row.project.startFiscalYear}–FY{row.project.endFiscalYear} · {row.programCode}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
           )}
         </Card>
 

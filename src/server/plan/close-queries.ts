@@ -15,7 +15,12 @@ import {
   type StrategicPlan,
 } from '@/db/schema';
 import { revisedProgramBudgetPosition } from '@/domain/funding';
-import { carryOverCandidate, nextFiscalYear, type CarryOverTotalsByEntity } from '@/domain/close';
+import {
+  carryOverCandidate,
+  isFinalCloseYear,
+  nextFiscalYear,
+  type CarryOverTotalsByEntity,
+} from '@/domain/close';
 import { NO_DELTAS } from '@/domain/revisions';
 import { getAllocationFunding } from './execution-queries';
 import { listCloseSnapshots, type CloseSnapshotRow } from './carry-queries';
@@ -100,8 +105,10 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
 
   // The end year of the strategic plan is closed as a final close (#109, ADR-0008 §3): it has
   // no next year to carry into, so the target plan below stays optional for it.
-  const isFinalClose =
-    loaded.plan.fiscalYear >= loaded.strategicPlan.endFiscalYear;
+  const isFinalClose = isFinalCloseYear(
+    loaded.plan.fiscalYear,
+    loaded.strategicPlan.endFiscalYear,
+  );
 
   // The close candidates use effective budgets and allocations (ADR-0006 §4).
   const deltaMaps = await getRevisionDeltasForPlan(planId);

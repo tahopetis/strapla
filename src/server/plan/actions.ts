@@ -5,6 +5,7 @@ import { getDb } from '@/db/client';
 import {
   annualPlans,
   annualPrograms,
+  openingBalanceReconciliations,
   projects,
   strategicInitiatives,
   strategicPlans,
@@ -152,8 +153,11 @@ async function updatePlan(userId: string, input: PlanUpdateInput): Promise<Strat
   await getDb().transaction(async (tx) => {
     // A horizon must keep every annual plan and every project's full-life years
     // inside it (#109, ADR-0008 §6): an early end is an explicit final close,
-    // never an orphaned annual plan or project.
-    const [annualRows, projectRows] = await Promise.all([
+    // never an orphaned annual plan or project. The edit may also not move the
+    // plan's start back over an archived plan's horizon (horizons never overlap,
+    // §3) nor move the start year the opening-balance bridge was signed off
+    // against (§7): the prior year is derived from it.
+    const [annualRows, projectRows, otherPlans, reconciliations] = await Promise.all([
       tx
         .select({ fiscalYear: annualPlans.fiscalYear })
         .from(annualPlans)
@@ -168,6 +172,20 @@ async function updatePlan(userId: string, input: PlanUpdateInput): Promise<Strat
         .innerJoin(annualPrograms, eq(projects.originatingProgramId, annualPrograms.id))
         .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
         .where(eq(annualPlans.planId, input.id)),
+      tx
+        .select({
+          name: strategicPlans.name,
+          startFiscalYear: strategicPlans.startFiscalYear,
+          endFiscalYear: strategicPlans.endFiscalYear,
+          status: strategicPlans.status,
+        })
+        .from(strategicPlans)
+        .where(ne(strategicPlans.id, input.id)),
+      tx
+        .select({ signedOffAt: openingBalanceReconciliations.signedOffAt })
+        .from(openingBalanceReconciliations)
+        .where(eq(openingBalanceReconciliations.planId, input.id))
+        .limit(1),
     ]);
     const containmentError = horizonContainmentError(
       { startFiscalYear: input.startFiscalYear, endFiscalYear: input.endFiscalYear },
@@ -175,6 +193,13 @@ async function updatePlan(userId: string, input: PlanUpdateInput): Promise<Strat
       projectRows,
     );
     if (containmentError) throw new FormError(containmentError);
+    const overlapError = successorStartYearError(input.startFiscalYear, otherPlans);
+    if (overlapError) throw new FormError(overlapError);
+    if (input.startFiscalYear !== current.startFiscalYear && reconciliations[0]?.signedOffAt) {
+      throw new FormError(
+        `The opening balances for FY${current.startFiscalYear} are signed off, so the start fiscal year cannot move. Shrink the plan horizon from the end year instead.`,
+      );
+    }
 
     [updated] = await tx
       .update(strategicPlans)

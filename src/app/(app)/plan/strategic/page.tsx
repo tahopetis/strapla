@@ -14,6 +14,7 @@ import {
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/ui';
 import type { StrategicPlan } from '@/db/schema';
+import { latestPlanEndYear } from '@/domain/plan';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { InitiativeEnvelopeRow } from '@/server/plan/queries';
 import {
@@ -51,10 +52,9 @@ export default async function StrategicPlanPage({
   // the create card for its successor (#109). The default horizon starts after
   // the most recent archived plan.
   const archivedPlans = plan?.status === 'archived' ? await listArchivedPlans() : [];
+  const archivedEnd = latestPlanEndYear(archivedPlans.map((row) => row.plan));
   const successorStartYear =
-    plan?.status === 'archived'
-      ? (archivedPlans[0]?.plan.endFiscalYear ?? plan.endFiscalYear) + 1
-      : null;
+    plan?.status === 'archived' ? (archivedEnd ?? plan.endFiscalYear) + 1 : null;
   const [initiativeFields, initiativeValues] = await Promise.all([
     listCustomFieldDefinitions('strategic_initiative'),
     readCustomFieldValuesMap(
