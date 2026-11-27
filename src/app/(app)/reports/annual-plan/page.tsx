@@ -13,6 +13,7 @@ import {
   readRememberedReportColumns,
 } from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
+import { CorrectionBadge, CorrectionNote } from '../correction-marker';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Annual plan report' };
@@ -134,6 +135,11 @@ export default async function AnnualPlanReportPage({
                       {row.siCode} · {row.programCode}
                     </p>
                     <p className="text-slate-600">{row.programName}</p>
+                    {row.corrected ? (
+                      <div className="mt-1">
+                        <CorrectionBadge />
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.effectiveCapexBudget} />
@@ -240,6 +246,7 @@ export default async function AnnualPlanReportPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
+        {programRows.some((row) => row.corrected) ? <CorrectionNote /> : null}
       </Card>
 
       <Card title="Recurring operations" description="Opex-only annual budget items, not linked to an SI.">
@@ -267,7 +274,14 @@ export default async function AnnualPlanReportPage({
                 {recurringRows.map((row) => (
                   <tr key={`${row.fiscalYear}-${row.name}`}>
                     <td className="py-3 pr-4 whitespace-nowrap">{row.fiscalYear}</td>
-                    <td className="py-3 pr-4 font-medium">{row.name}</td>
+                    <td className="py-3 pr-4 font-medium">
+                      {row.name}
+                      {row.corrected ? (
+                        <div className="mt-1">
+                          <CorrectionBadge />
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="py-3 pr-4 text-slate-600">{row.categoryName ?? '—'}</td>
                     <td className="py-3 pr-4 whitespace-nowrap">
                       <Money value={row.opexBudget} />
@@ -337,6 +351,7 @@ export default async function AnnualPlanReportPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
+        {recurringRows.some((row) => row.corrected) ? <CorrectionNote /> : null}
       </Card>
     </ReportShell>
   );

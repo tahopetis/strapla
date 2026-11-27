@@ -14,14 +14,17 @@ import {
 } from '@/components/form';
 import { EntityHistory } from '@/components/entity-history';
 import { PlanNav } from '@/components/plan-nav';
+import { CorrectionDisclosure } from '@/components/plan/correction-disclosure';
 import { ProjectAllocationsSection } from '@/components/plan/project-allocations';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import { formatDate } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import type { ProjectDetail } from '@/server/plan/project-queries';
 import { getProjectDetail } from '@/server/plan/project-queries';
 import { listAllocationProgramOptions, listProjectAllocations } from '@/server/plan/allocation-queries';
+import { loadCorrectionMarkers } from '@/server/plan/correction-queries';
 import { listEntityHistory } from '@/server/admin/queries';
 import { listCustomFieldDefinitions, readCustomFieldValues, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
@@ -52,6 +55,22 @@ export default async function ProjectPage({
     detail.project.status !== 'cancelled' &&
     detail.strategicPlan.status !== 'archived' &&
     detail.annualPlan.status !== 'closed';
+  // Correction mode (ADR-0007 §7): the project and its recorded ijin prinsip are
+  // correctable when the originating fiscal year is closed, unless the project
+  // was cancelled or the strategic plan archived. Allocations decide per row:
+  // each one belongs to its own annual plan.
+  const correctable =
+    detail.strategicPlan.status !== 'archived' &&
+    detail.project.status !== 'cancelled' &&
+    detail.annualPlan.status === 'closed';
+  const allocationsCorrectable =
+    detail.strategicPlan.status !== 'archived' && detail.project.status !== 'cancelled';
+
+  const correctionMarkers =
+    detail.annualPlan.status === 'closed'
+      ? await loadCorrectionMarkers(detail.strategicPlan.id)
+      : null;
+  const correctedRecords = correctionMarkers?.corrected ?? new Set<string>();
 
   const [allocations, allocationOptions, history, projectFields, projectValues, ijinFields, ijinValues] = await Promise.all([
     listProjectAllocations(detail.project.id),
@@ -88,7 +107,21 @@ export default async function ProjectPage({
       <Flash error={error} message={message} />
 
       <div className="space-y-6">
-        <Card title="Project" actions={detail.project.status === 'cancelled' ? <Badge tone="danger">cancelled</Badge> : <Badge tone="success">active</Badge>}>
+        <Card
+          title="Project"
+          actions={
+            <div className="flex flex-wrap gap-2">
+              {correctedRecords.has(detail.project.id) ? (
+                <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge>
+              ) : null}
+              {detail.project.status === 'cancelled' ? (
+                <Badge tone="danger">cancelled</Badge>
+              ) : (
+                <Badge tone="success">active</Badge>
+              )}
+            </div>
+          }
+        >
           <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="text-slate-500">Originating program</dt>
@@ -135,12 +168,16 @@ export default async function ProjectPage({
         <PricingCard
           detail={detail}
           editable={editable}
+          correctable={correctable}
+          corrected={correctedRecords.has(detail.project.id)}
           customFields={projectFields}
           customValues={projectValues}
         />
         <IjinPrinsipCard
           detail={detail}
           editable={editable}
+          correctable={correctable}
+          corrected={detail.ijin ? correctedRecords.has(detail.ijin.id) : false}
           customFields={ijinFields}
           customValues={ijinValues}
         />
@@ -150,6 +187,8 @@ export default async function ProjectPage({
           rows={allocations}
           options={allocationOptions}
           editable={editable}
+          correctable={allocationsCorrectable}
+          correctedRecords={correctedRecords}
           customFields={allocationFields}
           customValues={allocationValues}
         />
@@ -178,11 +217,15 @@ export default async function ProjectPage({
 function PricingCard({
   detail,
   editable,
+  correctable,
+  corrected,
   customFields,
   customValues,
 }: {
   detail: ProjectDetail;
   editable: boolean;
+  correctable: boolean;
+  corrected: boolean;
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
 }) {
@@ -194,6 +237,7 @@ function PricingCard({
       description="Allocated budget, approved budget (ijin prinsip), submitted price and final deal price — the contract value."
       actions={
         <div className="flex flex-wrap gap-1">
+          {corrected ? <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge> : null}
           {detail.fundingFlags.map((flag) => (
             <Badge key={flag.code} tone={flagTone(flag.code)}>
               {flagLabel(flag.code)}
@@ -274,73 +318,109 @@ function PricingCard({
       {editable ? (
         <details className="mt-5 border-t border-slate-100 pt-4">
           <summary className={summaryClass}>Edit project</summary>
-          <Form action={updateProjectAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <HiddenField name="id" value={project.id} />
-            <TextField label="Code" name="code" defaultValue={project.code} required maxLength={40} />
-            <TextField label="Name" name="name" defaultValue={project.name} required maxLength={160} />
-            <TextField label="Owner" name="owner" defaultValue={project.owner} maxLength={160} />
-            <TextField
-              label="External reference"
-              name="externalReference"
-              defaultValue={project.externalReference}
-              maxLength={120}
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <TextField
-                label="Start fiscal year"
-                name="startFiscalYear"
-                defaultValue={String(project.startFiscalYear)}
-                required
-                maxLength={4}
-              />
-              <TextField
-                label="End fiscal year"
-                name="endFiscalYear"
-                defaultValue={String(project.endFiscalYear)}
-                required
-                maxLength={4}
-              />
-            </div>
-            <MoneyField
-              label="Full-life allocated budget"
-              name="allocatedBudgetFullLife"
-              defaultValue={project.allocatedBudgetFullLife}
-              required
-            />
-            <MoneyField label="Submitted price" name="submittedPrice" defaultValue={project.submittedPrice} />
-            <MoneyField label="Final deal price" name="finalDealPrice" defaultValue={project.finalDealPrice} />
-            <MoneyField label="Opening allocated" name="openingAllocated" defaultValue={project.openingAllocated} />
-            <MoneyField
-              label="Opening open commitments"
-              name="openingCommitted"
-              defaultValue={project.openingCommitted}
-            />
-            <MoneyField label="Opening actual spend" name="openingSpent" defaultValue={project.openingSpent} />
-            <div className="sm:col-span-2 lg:col-span-3">
-              <TextAreaField label="Description" name="description" defaultValue={project.description} rows={2} />
-            </div>
-            <CustomFieldInputs fields={customFields} values={customValues} />
-            <div className="sm:col-span-2 lg:col-span-3">
-              <ReasonField />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-3">
-              <SubmitButton>Save changes</SubmitButton>
-            </div>
-          </Form>
+          <ProjectEditForm
+            project={project}
+            customFields={customFields}
+            customValues={customValues}
+          />
         </details>
+      ) : correctable ? (
+        // A closed year keeps the read-only frame: the same form is revealed by
+        // the affordance, and no cancel control is rendered (ADR-0007 §1, §7).
+        <CorrectionDisclosure>
+          <ProjectEditForm
+            project={project}
+            customFields={customFields}
+            customValues={customValues}
+          />
+        </CorrectionDisclosure>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * The project edit form (W5b). Shared by the open-year disclosure and the
+ * closed-year correction, so both always edit the same fields (ADR-0007 §7).
+ */
+function ProjectEditForm({
+  project,
+  customFields,
+  customValues,
+}: {
+  project: ProjectDetail['project'];
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
+}) {
+  return (
+    <Form action={updateProjectAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <HiddenField name="id" value={project.id} />
+      <TextField label="Code" name="code" defaultValue={project.code} required maxLength={40} />
+      <TextField label="Name" name="name" defaultValue={project.name} required maxLength={160} />
+      <TextField label="Owner" name="owner" defaultValue={project.owner} maxLength={160} />
+      <TextField
+        label="External reference"
+        name="externalReference"
+        defaultValue={project.externalReference}
+        maxLength={120}
+      />
+      <div className="grid grid-cols-2 gap-4">
+        <TextField
+          label="Start fiscal year"
+          name="startFiscalYear"
+          defaultValue={String(project.startFiscalYear)}
+          required
+          maxLength={4}
+        />
+        <TextField
+          label="End fiscal year"
+          name="endFiscalYear"
+          defaultValue={String(project.endFiscalYear)}
+          required
+          maxLength={4}
+        />
+      </div>
+      <MoneyField
+        label="Full-life allocated budget"
+        name="allocatedBudgetFullLife"
+        defaultValue={project.allocatedBudgetFullLife}
+        required
+      />
+      <MoneyField label="Submitted price" name="submittedPrice" defaultValue={project.submittedPrice} />
+      <MoneyField label="Final deal price" name="finalDealPrice" defaultValue={project.finalDealPrice} />
+      <MoneyField label="Opening allocated" name="openingAllocated" defaultValue={project.openingAllocated} />
+      <MoneyField
+        label="Opening open commitments"
+        name="openingCommitted"
+        defaultValue={project.openingCommitted}
+      />
+      <MoneyField label="Opening actual spend" name="openingSpent" defaultValue={project.openingSpent} />
+      <div className="sm:col-span-2 lg:col-span-3">
+        <TextAreaField label="Description" name="description" defaultValue={project.description} rows={2} />
+      </div>
+      <CustomFieldInputs fields={customFields} values={customValues} />
+      <div className="sm:col-span-2 lg:col-span-3">
+        <ReasonField />
+      </div>
+      <div className="sm:col-span-2 lg:col-span-3">
+        <SubmitButton>Save changes</SubmitButton>
+      </div>
+    </Form>
   );
 }
 
 function IjinPrinsipCard({
   detail,
   editable,
+  correctable,
+  corrected,
   customFields,
   customValues,
 }: {
   detail: ProjectDetail;
   editable: boolean;
+  correctable: boolean;
+  corrected: boolean;
   customFields: readonly CustomFieldDefinition[];
   customValues: CustomFieldValues;
 }) {
@@ -349,7 +429,12 @@ function IjinPrinsipCard({
     <Card
       title="Ijin prinsip"
       description="The directors' in-principle approval: one record per project, full-life approved amount, with a link to the document."
-      actions={ijin ? <Badge tone="success">recorded</Badge> : <Badge tone="warning">not recorded</Badge>}
+      actions={
+        <div className="flex flex-wrap gap-1">
+          {corrected ? <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge> : null}
+          {ijin ? <Badge tone="success">recorded</Badge> : <Badge tone="warning">not recorded</Badge>}
+        </div>
+      }
     >
       {ijin ? (
         <dl className="mb-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -388,45 +473,89 @@ function IjinPrinsipCard({
 
       <CustomFieldsPanel fields={customFields} values={customValues} />
 
-      {editable ? (
+      {ijin && correctable ? (
+        // A recorded ijin prinsip is correctable after the close; the same form
+        // the open year uses, behind the explicit affordance (ADR-0007 §7).
+        <CorrectionDisclosure>
+          <IjinPrinsipForm
+            projectId={detail.project.id}
+            ijin={ijin}
+            customFields={customFields}
+            customValues={customValues}
+          />
+        </CorrectionDisclosure>
+      ) : editable ? (
         <details open={!ijin}>
           <summary className={summaryClass}>{ijin ? 'Update ijin prinsip' : 'Record ijin prinsip'}</summary>
-          <Form action={saveIjinPrinsipAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <HiddenField name="projectId" value={detail.project.id} />
-            <TextField
-              label="Document number"
-              name="documentNumber"
-              defaultValue={ijin?.documentNumber}
-              maxLength={120}
-            />
-            <TextField label="Document date" name="documentDate" type="date" defaultValue={ijin?.documentDate} />
-            <MoneyField label="Approved amount" name="approvedAmount" defaultValue={ijin?.approvedAmount ?? 0} required />
-            <TextField label="Approver" name="approver" defaultValue={ijin?.approver} maxLength={160} />
-            <div className="sm:col-span-2">
-              <TextField
-                label="Document link"
-                name="documentUrl"
-                type="url"
-                defaultValue={ijin?.documentUrl}
-                placeholder="https://…"
-              />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-3">
-              <TextAreaField label="Notes" name="notes" defaultValue={ijin?.notes} rows={2} />
-            </div>
-            <CustomFieldInputs fields={customFields} values={customValues} />
-            {ijin ? (
-              <div className="sm:col-span-2 lg:col-span-3">
-                <ReasonField />
-              </div>
-            ) : null}
-            <div className="sm:col-span-2 lg:col-span-3">
-              <SubmitButton>{ijin ? 'Update ijin prinsip' : 'Record ijin prinsip'}</SubmitButton>
-            </div>
-          </Form>
+          <IjinPrinsipForm
+            projectId={detail.project.id}
+            ijin={ijin}
+            customFields={customFields}
+            customValues={customValues}
+          />
         </details>
+      ) : !ijin && correctable ? (
+        // A record that never existed is not a typo: the closed year offers no
+        // way to create one (ADR-0007 §1), so a truthful notice replaces the form.
+        <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          This fiscal year is closed. An ijin prinsip record cannot be added after the close, and
+          this project has none.
+        </p>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * The ijin prinsip form (W5b). Shared by the open-year disclosure and the
+ * closed-year correction, so both always edit the same fields (ADR-0007 §7).
+ * The reason field is present only for an existing record, exactly as before.
+ */
+function IjinPrinsipForm({
+  projectId,
+  ijin,
+  customFields,
+  customValues,
+}: {
+  projectId: string;
+  ijin: ProjectDetail['ijin'];
+  customFields: readonly CustomFieldDefinition[];
+  customValues: CustomFieldValues;
+}) {
+  return (
+    <Form action={saveIjinPrinsipAction} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <HiddenField name="projectId" value={projectId} />
+      <TextField
+        label="Document number"
+        name="documentNumber"
+        defaultValue={ijin?.documentNumber}
+        maxLength={120}
+      />
+      <TextField label="Document date" name="documentDate" type="date" defaultValue={ijin?.documentDate} />
+      <MoneyField label="Approved amount" name="approvedAmount" defaultValue={ijin?.approvedAmount ?? 0} required />
+      <TextField label="Approver" name="approver" defaultValue={ijin?.approver} maxLength={160} />
+      <div className="sm:col-span-2">
+        <TextField
+          label="Document link"
+          name="documentUrl"
+          type="url"
+          defaultValue={ijin?.documentUrl}
+          placeholder="https://…"
+        />
+      </div>
+      <div className="sm:col-span-2 lg:col-span-3">
+        <TextAreaField label="Notes" name="notes" defaultValue={ijin?.notes} rows={2} />
+      </div>
+      <CustomFieldInputs fields={customFields} values={customValues} />
+      {ijin ? (
+        <div className="sm:col-span-2 lg:col-span-3">
+          <ReasonField />
+        </div>
+      ) : null}
+      <div className="sm:col-span-2 lg:col-span-3">
+        <SubmitButton>{ijin ? 'Update ijin prinsip' : 'Record ijin prinsip'}</SubmitButton>
+      </div>
+    </Form>
   );
 }
 

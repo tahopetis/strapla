@@ -8,6 +8,7 @@ import { formatDate } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import { getCloseState } from '@/server/plan/close-queries';
 import { listCarryRegister, type CarryRegisterRow } from '@/server/plan/carry-queries';
+import { listPlanCorrections, type PlanCorrection } from '@/server/plan/correction-queries';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Close fiscal year' };
@@ -31,6 +32,11 @@ export default async function CloseYearPage({
   // available / carried / not-carried per entity and component.
   const receipts =
     state.plan.status === 'closed' ? await listCarryRegister({ sourceAnnualPlanId: id }) : [];
+  // Corrections recorded after the close (ADR-0007 §7, §8). They are listed
+  // beside the frozen snapshot, never folded into it: the receipt shows what the
+  // close decided, and the notice says which live records moved since.
+  const corrections: PlanCorrection[] =
+    state.plan.status === 'closed' ? await listPlanCorrections(id) : [];
   const receiptsBySource = new Map<string, CarryRegisterRow[]>();
   for (const row of receipts) {
     const key = `${row.entry.entityType}:${row.entry.sourceEntityId ?? ''}:${row.entry.component}`;
@@ -61,7 +67,7 @@ export default async function CloseYearPage({
         <div className="space-y-6">
           <Card
             title="Fiscal year closed"
-            description="Closed years are read-only; carry-over is a one-time audited snapshot and there is no reopen."
+            description="The snapshot below is the historical record of the close. Corrections after the close are audited and never rewrite it; carry-over is a one-time audited snapshot and there is no reopen."
             actions={<Badge tone="success">closed</Badge>}
           >
             <dl className="grid gap-4 text-sm sm:grid-cols-3">
@@ -183,6 +189,37 @@ export default async function CloseYearPage({
               )}
             </Card>
           </div>
+
+          {corrections.length > 0 ? (
+            <div id="corrections-after-close" className="scroll-mt-24">
+              <Card
+                title="Corrections after close"
+                description="The close snapshot above is frozen. These records were corrected after the close and are shown at their live figures."
+                actions={<Badge tone="warning">{corrections.length}</Badge>}
+              >
+                <ul className="divide-y divide-slate-100">
+                  {corrections.map((correction) => (
+                    <li key={`${correction.entityType}:${correction.entityId}`} className="py-2 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={correction.href}
+                          className="underline decoration-slate-300 underline-offset-2 hover:text-slate-900"
+                        >
+                          {correction.label}
+                        </Link>
+                        <span className="text-xs text-slate-500">{correction.entityTypeLabel}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {correction.reason ?? 'No reason recorded'} ·{' '}
+                        {correction.actorName ?? correction.actorEmail ?? 'system'} ·{' '}
+                        {formatDate(correction.correctedAt)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          ) : null}
 
           <div id="carry-receipts" className="scroll-mt-24">
             <Card

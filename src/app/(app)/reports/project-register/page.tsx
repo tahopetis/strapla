@@ -13,6 +13,7 @@ import {
   readRememberedReportColumns,
 } from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
+import { CorrectionBadge, CorrectionNote } from '../correction-marker';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Project register report' };
@@ -105,6 +106,11 @@ export default async function ProjectRegisterReportPage({
                   <td className="py-3 pr-4">
                     <p className="font-medium">{row.project.code}</p>
                     <p className="text-slate-600">{row.project.name}</p>
+                    {row.corrected ? (
+                      <div className="mt-1">
+                        <CorrectionBadge />
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-3 pr-4">
                     <p>
@@ -211,6 +217,7 @@ export default async function ProjectRegisterReportPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
+        {rows.some((row) => row.corrected) ? <CorrectionNote /> : null}
         <p className="mt-3 text-xs text-slate-500">
           Allocated is the effective allocation (initial slice plus posted de-allocations); carry-in is
           shown separately because it adds to the project year&apos;s available money. Open commitments:{' '}

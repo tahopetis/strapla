@@ -13,6 +13,7 @@ import {
   readRememberedReportColumns,
 } from '@/server/plan/report-custom-fields';
 import { getCurrentStrategicPlan } from '@/server/plan/queries';
+import { CorrectionBadge, CorrectionNote } from '../correction-marker';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Budget versus actual' };
@@ -120,6 +121,11 @@ export default async function BudgetVsActualPage({
                       {row.siCode} · {row.programCode}
                     </p>
                     <p className="text-slate-600">{row.programName}</p>
+                    {row.corrected ? (
+                      <div className="mt-1">
+                        <CorrectionBadge />
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <Money value={row.capexAvailable} />
@@ -226,6 +232,7 @@ export default async function BudgetVsActualPage({
             Totals cover the whole report, not only the filtered rows.
           </p>
         ) : null}
+        {rows.some((row) => row.corrected) ? <CorrectionNote /> : null}
       </Card>
 
       <Card

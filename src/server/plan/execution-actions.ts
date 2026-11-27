@@ -19,6 +19,11 @@ import {
   type SpendEntry,
   type StrategicPlan,
 } from '@/db/schema';
+import {
+  CORRECTION_WRITE,
+  updateAuditAction,
+} from '@/domain/corrections';
+import { requireCorrectionReason } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import {
   commitmentCreateSchema,
@@ -125,11 +130,17 @@ async function loadParent(input: {
   };
 }
 
-function requireEditable(context: ParentContext): void {
+/**
+ * The execution editability guard. `allowClosed` is the correction path
+ * (ADR-0007 §1): a closed fiscal year still accepts an in-place correction of a
+ * commitment that already exists, with a reason. Creates, voids and settlement
+ * lifecycle writes keep their own paths — this guard is not passed for them.
+ */
+function requireEditable(context: ParentContext, options: { allowClosed?: boolean } = {}): void {
   if (context.strategicPlan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
   }
-  if (context.annualPlan.status === 'closed') {
+  if (context.annualPlan.status === 'closed' && !options.allowClosed) {
     throw new FormError('That fiscal year is closed and read-only.');
   }
   if (context.project?.status === 'cancelled') {
@@ -273,7 +284,11 @@ async function updateCommitment(
   custom: CustomFieldPayload,
 ): Promise<CommitmentEntry> {
   if (commitment.voidedAt) throw new FormError('This commitment is voided and read-only.');
-  requireEditable(context);
+  requireEditable(context, CORRECTION_WRITE);
+  // ADR-0007 §5: the governing plan's status at write time names the audit
+  // action, so a closed year records exactly one `correction` entry.
+  const auditAction = updateAuditAction(context.annualPlan);
+  requireCorrectionReason(context.annualPlan, input.reason);
   requireComponentAllowed(context, input.component);
   const settled = await settledAmount(commitment.id);
   if (input.amount < settled) {
@@ -308,7 +323,7 @@ async function updateCommitment(
     });
     await recordAudit(tx, {
       actorUserId: actorId,
-      action: 'update',
+      action: auditAction,
       entityType: 'commitment_entry',
       entityId: commitment.id,
       before: withCustomFields(commitmentSnapshot(commitment), custom.fields, beforeValues),

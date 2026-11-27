@@ -11,7 +11,9 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/form';
+import { CorrectionDisclosure } from '@/components/plan/correction-disclosure';
 import { Badge, Card, EmptyState, Money } from '@/components/ui';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { AnnualPlanDetail, RecurringOpsRow } from '@/server/plan/annual-queries';
 import {
@@ -25,11 +27,16 @@ const summaryClass = 'cursor-pointer text-sm font-medium text-slate-700';
 export function RecurringOpsSection({
   detail,
   editable,
+  correctable,
+  correctedRecords,
   customFields,
   customValues,
 }: {
   detail: AnnualPlanDetail;
   editable: boolean;
+  /** A closed year: show the correction affordance on existing items (ADR-0007 §7). */
+  correctable: boolean;
+  correctedRecords: ReadonlySet<string>;
   customFields: readonly CustomFieldDefinition[];
   customValues: Map<string, CustomFieldValues>;
 }) {
@@ -82,6 +89,8 @@ export function RecurringOpsSection({
               row={row}
               detail={detail}
               editable={editable}
+              correctable={correctable}
+              corrected={correctedRecords.has(row.item.id)}
               customFields={customFields}
               customValues={customValues.get(row.item.id)}
             />
@@ -96,12 +105,16 @@ function RecurringOpsCard({
   row,
   detail,
   editable,
+  correctable,
+  corrected,
   customFields,
   customValues,
 }: {
   row: RecurringOpsRow;
   detail: AnnualPlanDetail;
   editable: boolean;
+  correctable: boolean;
+  corrected: boolean;
   customFields: readonly CustomFieldDefinition[];
   customValues?: CustomFieldValues;
 }) {
@@ -110,7 +123,12 @@ function RecurringOpsCard({
     <Card
       title={item.name}
       description={row.categoryName ? `Category: ${row.categoryName}` : undefined}
-      actions={<Badge tone="info">Opex only</Badge>}
+      actions={
+        <div className="flex flex-wrap items-center gap-1">
+          {corrected ? <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge> : null}
+          <Badge tone="info">Opex only</Badge>
+        </div>
+      }
     >
       <dl className="grid gap-4 text-sm sm:grid-cols-3">
         <div>
@@ -151,30 +169,12 @@ function RecurringOpsCard({
         <div className="mt-5 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
           <details>
             <summary className={summaryClass}>Edit item</summary>
-            <Form action={updateRecurringOpsAction} className="mt-4 grid gap-3 sm:grid-cols-2">
-              <HiddenField name="id" value={item.id} />
-              <TextField label="Name" name="name" defaultValue={item.name} required maxLength={160} />
-              <SelectField
-                label="Category"
-                name="categoryId"
-                placeholder="No category"
-                options={detail.categoryOptions}
-                defaultValue={item.categoryId ?? ''}
-              />
-              <TextField label="Owner" name="owner" defaultValue={item.owner} maxLength={160} />
-              <MoneyField label="Opex budget" name="opexBudget" defaultValue={item.opexBudget} required />
-              <MoneyField label="Opex carry-in" name="carryInOpex" defaultValue={item.carryInOpex} />
-              <div className="sm:col-span-2">
-                <TextAreaField label="Notes" name="notes" defaultValue={item.notes} rows={2} />
-              </div>
-              <CustomFieldInputs fields={customFields} values={customValues} />
-              <div className="sm:col-span-2">
-                <ReasonField />
-              </div>
-              <div className="sm:col-span-2">
-                <SubmitButton>Save changes</SubmitButton>
-              </div>
-            </Form>
+            <RecurringOpsEditForm
+              detail={detail}
+              item={item}
+              customFields={customFields}
+              customValues={customValues}
+            />
           </details>
 
           <div className="flex items-start">
@@ -190,7 +190,61 @@ function RecurringOpsCard({
             </ConfirmDialog>
           </div>
         </div>
+      ) : correctable ? (
+        // A closed year: the same form behind one explicit affordance, and no
+        // void control (ADR-0007 §1, §7).
+        <CorrectionDisclosure>
+          <RecurringOpsEditForm
+            detail={detail}
+            item={item}
+            customFields={customFields}
+            customValues={customValues}
+          />
+        </CorrectionDisclosure>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * The recurring ops edit form (W5b). Shared by the open-year disclosure and the
+ * closed-year correction, so both always edit the same fields (ADR-0007 §7).
+ */
+function RecurringOpsEditForm({
+  detail,
+  item,
+  customFields,
+  customValues,
+}: {
+  detail: AnnualPlanDetail;
+  item: RecurringOpsRow['item'];
+  customFields: readonly CustomFieldDefinition[];
+  customValues?: CustomFieldValues;
+}) {
+  return (
+    <Form action={updateRecurringOpsAction} className="mt-4 grid gap-3 sm:grid-cols-2">
+      <HiddenField name="id" value={item.id} />
+      <TextField label="Name" name="name" defaultValue={item.name} required maxLength={160} />
+      <SelectField
+        label="Category"
+        name="categoryId"
+        placeholder="No category"
+        options={detail.categoryOptions}
+        defaultValue={item.categoryId ?? ''}
+      />
+      <TextField label="Owner" name="owner" defaultValue={item.owner} maxLength={160} />
+      <MoneyField label="Opex budget" name="opexBudget" defaultValue={item.opexBudget} required />
+      <MoneyField label="Opex carry-in" name="carryInOpex" defaultValue={item.carryInOpex} />
+      <div className="sm:col-span-2">
+        <TextAreaField label="Notes" name="notes" defaultValue={item.notes} rows={2} />
+      </div>
+      <CustomFieldInputs fields={customFields} values={customValues} />
+      <div className="sm:col-span-2">
+        <ReasonField />
+      </div>
+      <div className="sm:col-span-2">
+        <SubmitButton>Save changes</SubmitButton>
+      </div>
+    </Form>
   );
 }

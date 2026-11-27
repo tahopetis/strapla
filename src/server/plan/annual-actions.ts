@@ -25,6 +25,11 @@ import {
   type ProgramCreateInput,
   type ProgramUpdateInput,
 } from '@/domain/inputs';
+import {
+  CORRECTION_WRITE,
+  updateAuditAction,
+} from '@/domain/corrections';
+import { requireCorrectionReason } from './correction-guards';
 import { formatRupiah } from '@/domain/money';
 import { withCustomFields } from '@/domain/custom-fields';
 import { isComponentShift } from '@/domain/revisions';
@@ -115,7 +120,10 @@ function requireBudgetFrozen(
     }
     throw new FormError(BUDGET_FROZEN_MESSAGE);
   }
-  // A draft plan is still edited in place, but the components never shift.
+  // A draft plan is still edited in place, but the components never shift. A
+  // closed year reaches the same rule (ADR-0007 §3): a correction may change a
+  // budget in place — it never posts a revision — but the components still
+  // never move into each other.
   if (
     isComponentShift(
       { capex: loaded.program.capexBudget, opex: loaded.program.opexBudget },
@@ -135,6 +143,12 @@ function requireZeroStartingBudget(
   throw new FormError(PROGRAM_BUDGET_FROZEN_MESSAGE);
 }
 
+/**
+ * The annual plan's editability guard. `allowClosed` is the correction path
+ * (ADR-0007 §1): a closed fiscal year still accepts an in-place correction of a
+ * program that already exists, with a reason. Only the six in-place update
+ * operations pass it — creates, voids and status changes keep refusing.
+ */
 async function requireEditableAnnualPlan(
   id: string,
   options: { allowClosed?: boolean } = {},
@@ -390,7 +404,11 @@ async function updateProgram(
 ): Promise<AnnualProgram> {
   const loaded = await loadProgram(input.id);
   if (loaded.program.voidedAt) throw new FormError('This program is voided and read-only.');
-  await requireEditableAnnualPlan(loaded.annualPlan.id);
+  await requireEditableAnnualPlan(loaded.annualPlan.id, CORRECTION_WRITE);
+  // ADR-0007 §5: the governing plan's status at write time names the audit
+  // action, so a closed year records exactly one `correction` entry.
+  const auditAction = updateAuditAction(loaded.annualPlan);
+  requireCorrectionReason(loaded.annualPlan, input.reason);
   requireBudgetFrozen(loaded, input);
   await validateInitiative(input.siId, loaded.strategicPlan.id);
   await validateContinuation({
@@ -429,7 +447,7 @@ async function updateProgram(
     });
     await recordAudit(tx, {
       actorUserId: userId,
-      action: 'update',
+      action: auditAction,
       entityType: 'annual_program',
       entityId: input.id,
       before: withCustomFields(programSnapshot(loaded.program), custom.fields, beforeValues),

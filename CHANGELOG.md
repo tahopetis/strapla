@@ -14,7 +14,36 @@ kept for it.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+**Closed-year audited corrections** (#108)
+
+- A closed fiscal year accepts reasoned, audited in-place corrections of existing plan records: annual
+  programs, project year allocations, projects (including their ijin prinsip and opening figures),
+  recurring ops items and commitment entries. Each save is recorded in the audit trail under the
+  `correction` action rather than `update`, and the record, its history, the closed annual plan's
+  **Corrections after close** card and the close receipt's corrections notice all show it.
+- The **Correct record** affordance reveals the existing edit form under a banner on a closed page;
+  before the click the form is not rendered. Draft and active years keep the plain edit form, and the
+  save rules are unchanged.
+- The four reports and their CSV/XLSX exports read the live corrected figures and mark a row resting
+  on a corrected record with a **Corrected after close** badge and export column, plus a footnote
+  saying the close snapshot remains the historical record. A marker never changes a total.
+- A correction never writes the close snapshot, the carry-over ledger or the ledger-backed
+  `carry_in_*` caches on programs and allocations; there is no reopen, rollback or version restore, no
+  create, void or status change in a closed year, and no budget revision (revisions stay active-only).
+  A program's or allocation's carry-in is not correctable: it is derived from the ledger, and a wrong
+  receipt is fixed in the receiving year (ADR-0007). A recurring ops item is outside the ledger and
+  outside the year close, so its single carry-in is an ordinary in-place field and is corrected with
+  its budget.
+- No schema change and no migration: whether a record was corrected after close is derived from
+  `audit_entries.action = 'correction'` for that entity.
+
+### Documentation
+
+- `docs/USER-GUIDE.md` §6.3 and §8.4 describe the correction workflow and what is still not
+  correctable; `GLOSSARY.md`, `docs/data-model.md` and `docs/REGRESSION.md` are updated to match
+  (ADR-0007, #108).
 
 ## [0.5.0] - 2026-11-22
 

@@ -2,22 +2,27 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { rp } from './support/money';
 
 /**
- * Closed year (tier T2): FY2027 was closed by the foundation, so every write
- * path against it must refuse or be hidden. This file pins the read-only
- * notices, the absence of write forms on the annual plan, the project, the
- * project year allocation and the recurring ops item, the one server refusal a
- * browser can still reach (a project created under a closed-year program), and
- * the closed-year summary on the close page so the year cannot be closed twice.
+ * Closed year (tier T2): FY2027 was closed by the foundation, so its write
+ * surface stays closed except for the one door ADR-0007 (#108) opens — an
+ * audited correction of an existing record, behind the record's own `Correct
+ * record` affordance. This file pins that boundary: no create, void, cancel or
+ * status control is rendered, the form is not in the DOM until the affordance
+ * is pressed, the one server refusal a browser can still reach (a project
+ * created under a closed-year program), and the closed-year summary on the
+ * close page so the year cannot be closed twice. The full correction journey
+ * (saving, badge, history, reports, receipt) is corrections.spec.ts.
  *
  * Post-close settlement (#98) is implemented: a closed allocation stays
- * read-only, while an open-year payment settles a commitment from the closed
- * year. This file pins that write-surface split; the full treatment proof is
- * in execution.spec.ts.
+ * read-only for entries, while an open-year payment settles a commitment from
+ * the closed year. This file pins that write-surface split; the full treatment
+ * proof is in execution.spec.ts.
  * The #96 (allocation update) and #97 (recurring-ops void) closed-year guards are
  * proven by action-level tests in
  *   src/server/plan/allocation-actions.test.ts
  *   src/server/plan/recurring-actions.test.ts
- * so their browser cases below pin only the visible lock.
+ * #108 changed what those guards do on the update path: the closed-year allocation
+ * update is now a correction (corrections.spec.ts), so #96's browser case pins the
+ * remaining invariant — the plain open-year edit form never returns.
  *
  * Prerequisite: the foundation journey has run (FY2027 closed by "E2E-CLOSE-FY2027",
  * FY2028 active).
@@ -26,37 +31,69 @@ import { rp } from './support/money';
 const CLOSED_YEAR = 2027;
 const CLOSE_REFERENCE = 'E2E-CLOSE-FY2027';
 
+/** The fixed copy the closed pages render for a correction (#108 contract). */
+const CORRECTION_BANNER =
+  'This fiscal year is closed. Saving is recorded as a correction after close, and the close snapshot does not change.';
+const CLOSED_PLAN_NOTICE =
+  'This fiscal year is closed. Figures can still be corrected with a reason; every correction is audited and the close snapshot stays frozen.';
+
 const openAnnualPlan = async (page: Page, year: number): Promise<void> => {
   await page.goto('/plan/annual');
   await page.locator('tbody tr', { hasText: `FY${year}` }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: `FY${year} annual plan` })).toBeVisible();
 };
 
+/** The `<section>` a Card renders, found by its heading. */
+const cardByHeading = (page: Page, name: string): Locator =>
+  page.locator('section').filter({ has: page.getByRole('heading', { name, exact: true }) });
+
 /** The dd that follows one dt, inside one already-scoped section. */
 const valueIn = (section: Locator, dtLabel: string) =>
   section.locator('dl > div').filter({ hasText: dtLabel }).locator('dd');
 
-test('the closed FY2027 annual plan is read-only @t2', async ({ page }) => {
+test('the closed FY2027 annual plan keeps its write surface hidden until a correction is asked for @t2', async ({
+  page,
+}) => {
   await page.goto('/plan/annual');
   await expect(page.locator('tbody tr', { hasText: `FY${CLOSED_YEAR}` }).getByText('closed')).toBeVisible();
 
   await page.locator('tbody tr', { hasText: `FY${CLOSED_YEAR}` }).getByRole('link', { name: 'Open' }).click();
   await expect(page.getByRole('heading', { name: `FY${CLOSED_YEAR} annual plan` })).toBeVisible();
-  // the page says it and offers nothing to write with
-  await expect(page.getByText('This fiscal year is closed and read-only.')).toBeVisible();
+  // the page says a correction is possible, and offers nothing to write with
+  // until one is asked for
+  await expect(page.getByText(CLOSED_PLAN_NOTICE)).toBeVisible();
   await expect(page.locator('main form')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add program' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add recurring ops item' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Void program' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Void item' })).toHaveCount(0);
+  // the open-year disclosure is gone: the form lives behind the affordance now
   await expect(page.getByText('Edit program')).toHaveCount(0);
   await expect(page.getByText('Edit item')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Activate annual plan' })).toHaveCount(0);
-  // the close link is only rendered for an active plan
+  // a closed year is read back through its receipt, never closed a second time
   await expect(page.getByRole('link', { name: 'Close fiscal year' })).toHaveCount(0);
-  // the closed year still lists what it contains
+  await expect(page.getByRole('link', { name: 'Close receipt' })).toBeVisible();
+  // the closed year still lists what it contains, each record with one affordance
   await expect(page.getByText('PRG-2027-001 · Workplace Modernisation 2027')).toBeVisible();
   await expect(page.getByText('Leased lines 2027')).toBeVisible();
+  const programCard = cardByHeading(page, 'PRG-2027-001 · Workplace Modernisation 2027');
+  const itemCard = cardByHeading(page, 'Leased lines 2027');
+  await expect(programCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  await expect(itemCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+
+  // the form is not in the DOM until the affordance is pressed ...
+  await programCard.getByRole('button', { name: 'Correct record' }).click();
+  await expect(programCard.getByText(CORRECTION_BANNER)).toBeVisible();
+  await expect(page.locator('main form')).toHaveCount(1);
+  const form = programCard.locator('form');
+  // ... and it is the existing edit form: same fields, budget included, one
+  // open record at a time (the item's form is still absent)
+  await expect(form.locator('input[name="capexBudget"]')).toBeVisible();
+  await expect(form.locator('input[name="opexBudget"]')).toBeVisible();
+  await expect(form.locator('textarea[name="reason"]')).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Save changes' })).toBeVisible();
+  await expect(itemCard.locator('form')).toHaveCount(0);
 
   // the close page reports the closed year and has no close form, so it cannot
   // be closed twice: close-actions.ts answers "This fiscal year is already
@@ -76,7 +113,9 @@ test('the closed FY2027 annual plan is read-only @t2', async ({ page }) => {
   await expect(page.locator('main form')).toHaveCount(0);
 });
 
-test('the closed FY2027 project and its allocation are read-only @t2', async ({ page }) => {
+test('the closed FY2027 project and its allocation stay locked until a correction is asked for @t2', async ({
+  page,
+}) => {
   await page.goto('/plan/projects');
   await page
     .locator('tbody tr', { hasText: 'Device Refresh 2027' })
@@ -93,7 +132,23 @@ test('the closed FY2027 project and its allocation are read-only @t2', async ({ 
   await expect(page.getByRole('button', { name: 'Void allocation' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Cancel project' })).toHaveCount(0);
 
-  // the allocation execution page shows the figures but no entry forms
+  // each correctable record of the closed project has its own affordance
+  const pricingCard = cardByHeading(page, 'Full-life figures and pricing chain');
+  const ijinCard = cardByHeading(page, 'Ijin prinsip');
+  const allocationCard = cardByHeading(page, 'FY2027 · PRG-2027-001 · Workplace Modernisation 2027');
+  await expect(pricingCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  await expect(ijinCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  await expect(allocationCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  await expect(page.locator('main form')).toHaveCount(0);
+
+  await allocationCard.getByRole('button', { name: 'Correct record' }).click();
+  await expect(allocationCard.getByText(CORRECTION_BANNER)).toBeVisible();
+  await expect(page.locator('main form')).toHaveCount(1);
+  await expect(allocationCard.locator('input[name="allocationCapex"]')).toBeVisible();
+  await expect(allocationCard.locator('textarea[name="reason"]')).toBeVisible();
+
+  // the allocation execution page keeps the same split: no entry forms, and the
+  // commitment update is the one write reachable through an affordance
   await page.getByRole('link', { name: 'Open commitments & spend' }).first().click();
   await expect(
     page.getByRole('heading', { name: `FY${CLOSED_YEAR} allocation · PRG-2027-001` }),
@@ -104,7 +159,11 @@ test('the closed FY2027 project and its allocation are read-only @t2', async ({ 
   await expect(page.getByRole('button', { name: 'Void commitment' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Void spend' })).toHaveCount(0);
   await expect(page.getByText('Manage', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('read-only', { exact: true }).first()).toBeVisible();
+  const commitmentsSection = cardByHeading(page, 'Commitment entries');
+  await expect(commitmentsSection.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  // spend entries are not a correctable record type: no affordance there
+  const spendSection = cardByHeading(page, 'Spend entries');
+  await expect(spendSection.getByRole('button', { name: 'Correct record' })).toHaveCount(0);
 
   const summary = (label: string) =>
     page
@@ -120,10 +179,16 @@ test('the closed FY2027 project and its allocation are read-only @t2', async ({ 
   await expect(summary('Capex remaining')).toHaveText(rp(400000000));
 });
 
-test('the closed FY2027 recurring ops item is read-only @t2', async ({ page }) => {
+test('the closed FY2027 recurring ops item is correctable while its execution stays closed @t2', async ({
+  page,
+}) => {
   await openAnnualPlan(page, CLOSED_YEAR);
-  const card = page.locator('section').filter({ hasText: 'Leased lines 2027' });
-  await card.getByRole('link', { name: 'Open commitments & spend' }).click();
+  await expect(page.getByText(CLOSED_PLAN_NOTICE)).toBeVisible();
+  const itemCard = cardByHeading(page, 'Leased lines 2027');
+  await expect(itemCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  await expect(itemCard.locator('form')).toHaveCount(0);
+
+  await itemCard.getByRole('link', { name: 'Open commitments & spend' }).click();
   await expect(page.getByRole('heading', { name: `FY${CLOSED_YEAR} · Leased lines 2027` })).toBeVisible();
 
   await expect(page.locator('main form')).toHaveCount(0);
@@ -134,7 +199,7 @@ test('the closed FY2027 recurring ops item is read-only @t2', async ({ page }) =
   // the item has no execution rows, so the sections are empty rather than read-only
   await expect(page.getByText('No commitments recorded yet.')).toBeVisible();
   await expect(page.getByText('No spend entries recorded yet.')).toBeVisible();
-  const budgetCard = page.locator('section').filter({ hasText: 'Budget and execution' });
+  const budgetCard = cardByHeading(page, 'Budget and execution');
   await expect(valueIn(budgetCard, 'Opex allocation + carry-in')).toHaveText(rp(240000000));
 });
 
@@ -159,12 +224,12 @@ test('refuses a project created under a closed-year program @t2', async ({ page 
   await expect(page.locator('tbody tr', { hasText: 'Closed year project attempt' })).toHaveCount(0);
 });
 
-// #96 (https://github.com/tahopetis/strapla/issues/96): the allocation UPDATE
-// action now refuses a closed annual plan on the server (proven in
-// src/server/plan/allocation-actions.test.ts). The project page hides the edit
-// form because the project's originating year is closed, so this browser case
-// pins the visible lock only.
-test('refuses an allocation update in a closed year on the server (#96) @t2', async ({
+// #96 (https://github.com/tahopetis/strapla/issues/96): the closed-year
+// allocation update used to be refused outright. #108 (ADR-0007) makes it an
+// in-place correction behind the record's own affordance — proven end to end in
+// corrections.spec.ts. This browser case pins what did not change: the plain
+// open-year edit disclosure never comes back, and no form is in the DOM.
+test('offers a closed-year allocation only the correction affordance, never the plain edit form (#96) @t2', async ({
   page,
 }) => {
   await page.goto('/plan/projects');
@@ -173,22 +238,25 @@ test('refuses an allocation update in a closed year on the server (#96) @t2', as
     .getByRole('link', { name: 'Open' })
     .click();
   await expect(page.getByRole('heading', { name: 'PRJ-2027-001 · Device Refresh 2027' })).toBeVisible();
-  // the visible lock: there is no allocation edit form to submit
+  const allocationCard = cardByHeading(page, 'FY2027 · PRG-2027-001 · Workplace Modernisation 2027');
   await expect(page.getByText('Edit allocation')).toHaveCount(0);
   await expect(page.locator('main form')).toHaveCount(0);
+  await expect(allocationCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
 });
 
 // #97 (https://github.com/tahopetis/strapla/issues/97): the recurring-ops void
 // no longer passes `allowClosed` to the editability guard, so a closed year is
 // refused on the server (proven in src/server/plan/recurring-actions.test.ts).
-// The annual plan page hides the void trigger when the year is closed, so this
-// browser case pins the visible lock only.
+// The annual plan page hides the void trigger when the year is closed, and only
+// the correction affordance remains, so this browser case pins the visible lock.
 test('refuses a recurring-ops void in a closed year on the server (#97) @t2', async ({
   page,
 }) => {
   await openAnnualPlan(page, CLOSED_YEAR);
-  await expect(page.getByText('This fiscal year is closed and read-only.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Void item' })).toHaveCount(0);
+  await expect(page.getByText(CLOSED_PLAN_NOTICE)).toBeVisible();
+  const itemCard = cardByHeading(page, 'Leased lines 2027');
+  await expect(itemCard.getByRole('button', { name: 'Correct record' })).toBeVisible();
+  await expect(itemCard.getByRole('button', { name: 'Void item' })).toHaveCount(0);
   await expect(page.locator('main form')).toHaveCount(0);
 });
 
