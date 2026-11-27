@@ -15,6 +15,11 @@ name: regression
 # a dependency, because every later spec builds on the portfolio it creates.
 # `grep` is an advanced filter: it applies to the foundation too, so narrowing it
 # away starves the later tiers of data. Prefer `tier`.
+#
+# The tiers run in order: t1 (foundation), t2 (mutations and rules), t3
+# (read-only sweep) and finally t4 (succession). t4 must stay last: it archives
+# the shared foundation plan and replaces it with the successor, so any suite
+# after it would have no active plan to work on.
 on:
   workflow_dispatch:
     inputs:
@@ -26,6 +31,7 @@ on:
           - t1
           - t2
           - t3
+          - t4
         default: all
       grep:
         description: Optional Playwright --grep filter (advanced; also filters the foundation)
@@ -85,6 +91,7 @@ jobs:
             t1) args+=(--project=foundation) ;;
             t2) args+=(--project=t2) ;;
             t3) args+=(--project=t3) ;;
+            t4) args+=(--project=succession) ;;
             *) echo "Unknown tier: $TIER" >&2; exit 2 ;;
           esac
           if [ -n "${GREP:-}" ]; then

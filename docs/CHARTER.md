@@ -205,6 +205,8 @@ Rules:
 - **Program-level carry-over:** unallocated program budget (budget not yet allocated to projects) carries into the continuation program in the next year.
 - **Open commitments are not carry-over.** Committed but unpaid amounts remain commitments; they are not re-labelled as carried budget.
 - **Year close is manual.** Closing a fiscal year locks its records, snapshots the carry-over figures, and prevents edits except audited administrator corrections. Settlement lifecycle events may still occur after close and are audited.
+- **Final close at the plan boundary.** Closing the annual plan in the strategic plan's end year needs no next-year annual plan: every available amount is recorded as not carried with a reason and no carry-over entry is written, while the snapshot invariants (`available = carried + not carried`; `carried` = ledger sum) still hold. Every other year keeps the ordinary close and its next-year target.
+- **No carry across a plan boundary.** Budget, carry-in and carry-over never cross from one strategic plan to its successor. A plan is archived only after every annual plan under it is closed, a successor's horizon starts after every archived plan's end year, a project must end inside its plan (continuing work is a new project under the successor), and opening balances are recorded once for the first plan.
 - The first in-app year close is **FY2027** (executed January 2028). FY2026 was closed manually before go-live; its carry-in is part of the opening balances.
 - There is no reopen of a closed year, no rollback, and no version restore.
 
@@ -212,7 +214,7 @@ Rules:
 
 | ID | Rule |
 | --- | --- |
-| BR-1 | Only one strategic plan is active at a time. Annual plans can only exist inside the plan horizon. |
+| BR-1 | Only one strategic plan is active at a time; a plan is archived before its successor is created, and horizons never overlap. Annual plans can only exist inside the plan horizon. |
 | BR-2 | An SI has one five-year envelope. Prior program budget consumed plus cumulative program budgets across all years may not exceed it; exceeding is flagged. Envelope revisions are audited. |
 | BR-3 | There is exactly one annual plan per fiscal year, with statuses draft, active, and closed. |
 | BR-4 | An annual program belongs to exactly one annual plan and exactly one SI. It has a capex budget, an opex budget, and carry-in per component. |
@@ -320,7 +322,7 @@ Milestone order is deliberate: the funding model comes before execution, and mul
 
 ### Assumptions
 
-- A1. One active five-year plan at a time; the horizon is configurable.
+- A1. One active five-year plan at a time; a successor plan continues the portfolio after the archived plan, with a horizon that starts after the archived plan's end year. The horizon is configurable.
 - A2. An SI envelope is a total, not pre-split by year.
 - A3. Recurring operations have no SI link and are opex only.
 - A4. Ijin prinsip approval happens outside the app; the app stores its metadata and approved amount.

@@ -202,3 +202,92 @@ export function validateProjectYears(input: {
   }
   return null;
 }
+
+/**
+ * Strategic plan succession (#109, ADR-0008). A deployment runs one plan at a
+ * time: a successor may only be created once the previous plan is archived, and
+ * its horizon must start after every archived horizon ends, so no fiscal year is
+ * ever owned by two plans.
+ */
+
+/** A plan as the succession rules need it: name, horizon and lifecycle status. */
+export interface PlanBoundaryRow {
+  name: string;
+  startFiscalYear: number;
+  endFiscalYear: number;
+  status: 'draft' | 'active' | 'archived';
+}
+
+/** The end year of the latest horizon, or null when there is no plan at all. */
+export function latestPlanEndYear(plans: readonly { endFiscalYear: number }[]): number | null {
+  let latest: number | null = null;
+  for (const plan of plans) {
+    if (latest === null || plan.endFiscalYear > latest) latest = plan.endFiscalYear;
+  }
+  return latest;
+}
+
+/**
+ * A successor plan must start after every archived plan's end year. Returns the
+ * refusal message (naming the binding archived plan) or null when the start year
+ * is acceptable.
+ */
+export function successorStartYearError(
+  startFiscalYear: number,
+  existing: readonly PlanBoundaryRow[],
+): string | null {
+  const archived = existing.filter((plan) => plan.status === 'archived');
+  if (archived.length === 0) return null;
+  let latest = archived[0]!;
+  for (const plan of archived) {
+    if (plan.endFiscalYear > latest.endFiscalYear) latest = plan;
+  }
+  if (startFiscalYear > latest.endFiscalYear) return null;
+  return `The successor plan must start after FY${latest.endFiscalYear}, the end of “${latest.name}”.`;
+}
+
+/**
+ * A strategic plan can only be archived once every annual plan under it is
+ * closed (#109): an open annual plan would otherwise freeze uncloseable, with no
+ * carry decision ever recorded. Returns the refusal message naming the first open
+ * year, or null when archiving is allowed.
+ */
+export function archivePreconditionError(
+  annualPlans: readonly { fiscalYear: number; status: 'draft' | 'active' | 'closed' }[],
+): string | null {
+  const open = annualPlans
+    .filter((plan) => plan.status !== 'closed')
+    .sort((a, b) => a.fiscalYear - b.fiscalYear);
+  const first = open[0];
+  if (!first) return null;
+  return `Every annual plan must be closed before the strategic plan is archived: FY${first.fiscalYear} is still ${first.status}.`;
+}
+
+/**
+ * A plan horizon edit must contain every annual plan year and every project's
+ * full-life years (BR-1/BR-5). Shrinking a horizon that would orphan either is
+ * refused and the offending record is named, so ending a plan early is an
+ * explicit final close, not an orphaning (#109, ADR-0008).
+ */
+export function horizonContainmentError(
+  horizon: { startFiscalYear: number; endFiscalYear: number },
+  annualPlanYears: readonly number[],
+  projects: readonly { code: string; startFiscalYear: number; endFiscalYear: number }[],
+): string | null {
+  const outsideYears = [...new Set(annualPlanYears)]
+    .filter((year) => year < horizon.startFiscalYear || year > horizon.endFiscalYear)
+    .sort((a, b) => a - b);
+  const firstYear = outsideYears[0];
+  if (firstYear !== undefined) {
+    return `The new horizon excludes the FY${firstYear} annual plan. An annual plan must stay inside the plan horizon.`;
+  }
+  const outsideProject = projects.find(
+    (project) =>
+      project.startFiscalYear < horizon.startFiscalYear ||
+      project.endFiscalYear > horizon.endFiscalYear,
+  );
+  if (outsideProject) {
+    return `The new horizon excludes project ${outsideProject.code} (FY${outsideProject.startFiscalYear}–FY${outsideProject.endFiscalYear}). A project's full-life years must stay inside the plan horizon.`;
+  }
+  return null;
+}

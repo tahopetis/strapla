@@ -59,7 +59,17 @@ export default async function ProjectsPage({
       <PlanNav />
       <Flash error={error} message={message} />
 
-      {plan.status !== 'active' ? (
+      {plan.status === 'archived' ? (
+        <Card title="The strategic plan is archived" className="mb-6">
+          <p className="text-sm text-slate-700">
+            This plan is archived and read-only. Its projects stay readable below.{' '}
+            <Link href="/plan/strategic" className={linkClass}>
+              Open the strategic plan
+            </Link>{' '}
+            to create a successor plan.
+          </p>
+        </Card>
+      ) : plan.status !== 'active' ? (
         <Card title="The strategic plan is not active yet" className="mb-6">
           <p className="text-sm text-slate-700">
             Projects can only be created once the strategic plan is active.{' '}

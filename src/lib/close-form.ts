@@ -24,6 +24,15 @@ export type CarryOverComponent = 'capex' | 'opex';
 
 const COMPONENTS: readonly CarryOverComponent[] = ['capex', 'opex'];
 
+/**
+ * The fixed reason recorded on every snapshot row of a final close (#109, ADR-0008 §3): the
+ * strategic plan's last year carries nothing across the plan boundary, so every
+ * remaining amount is deliberately left behind rather than moved.
+ */
+export function finalCloseReason(fiscalYear: number): string {
+  return `Final close: FY${fiscalYear} is the last year of the strategic plan. No carry-over crosses the plan boundary.`;
+}
+
 export function carryOverFieldName(
   entityType: CarryOverEntityType,
   entityId: string,
@@ -97,6 +106,12 @@ export interface ClosePlanInput {
   defaultEntryReason: string;
   programs: readonly ClosePlanProgram[];
   allocations: readonly ClosePlanAllocation[];
+  /**
+   * Final-close mode (#109, ADR-0008 §3): the strategic plan's end year has no next year, so
+   * every available amount is recorded as not carried with this reason and no
+   * carry form field is read.
+   */
+  finalClose?: { reason: string };
 }
 
 export interface ClosePlanSnapshotRow {
@@ -179,12 +194,68 @@ function resolveProgramTarget(program: ClosePlanProgram, formData: FormData): st
 }
 
 /**
+ * A final close (#109, ADR-0008 §3) records one snapshot row per entity and component with
+ * the whole available amount not carried: the strategic plan's end year has no
+ * next year, so no ledger entry and no program target exists. The submitted carry
+ * fields are ignored rather than read as zero — there is no carry decision to
+ * make — but the snapshot still balances (available = 0 carried + available not
+ * carried) and the action's ledger invariant still runs.
+ */
+function buildFinalClosePlan(
+  input: ClosePlanInput,
+  finalClose: { reason: string },
+): ClosePlan {
+  const reason = finalClose.reason;
+  if (reason.trim().length === 0) {
+    throw new CloseError('A final close needs a reason for the not-carried amounts.');
+  }
+  const snapshots: ClosePlanSnapshotRow[] = [];
+  const addRows = (
+    entityType: CarryOverEntityType,
+    entityId: string,
+    available: { capex: number; opex: number },
+  ): void => {
+    for (const component of COMPONENTS) {
+      const amount = carryOverCandidate(available[component]);
+      snapshots.push({
+        entityType,
+        entityId,
+        component,
+        available: amount,
+        carried: 0,
+        notCarried: amount,
+        notCarriedReason: reason,
+      });
+    }
+  };
+  for (const program of input.programs) {
+    addRows('program', program.id, {
+      capex: program.availableCapex,
+      opex: program.availableOpex,
+    });
+  }
+  for (const allocation of input.allocations) {
+    addRows('allocation', allocation.id, {
+      capex: allocation.availableCapex,
+      opex: allocation.availableOpex,
+    });
+  }
+  return {
+    entries: [],
+    snapshots,
+    programTargets: new Map(),
+    totals: carryOverTotals([]),
+  };
+}
+
+/**
  * Builds the close decision from the submitted form: the ledger entries (only
  * the positive carry amounts) and the snapshot rows (one per entity and
  * component, zero carry included). Throws `CloseError` with a readable message
  * when a rule blocks the close, so the action can return form state.
  */
 export function buildClosePlan(input: ClosePlanInput, formData: FormData): ClosePlan {
+  if (input.finalClose) return buildFinalClosePlan(input, input.finalClose);
   const entries: ClosePlanEntry[] = [];
   const snapshots: ClosePlanSnapshotRow[] = [];
   const programTargets = new Map<string, string>();

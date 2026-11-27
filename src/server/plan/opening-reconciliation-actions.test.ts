@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   getOpeningReconciliation: vi.fn(),
   getStrategicPlan: vi.fn(),
+  isFirstStrategicPlan: vi.fn(),
   recordAudit: vi.fn(),
 }));
 
@@ -21,7 +22,10 @@ vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
 vi.mock('@/server/auth/session', () => ({ requireUser: mocks.requireUser }));
 vi.mock('@/db/client', () => ({ getDb: mocks.getDb }));
 vi.mock('./opening-queries', () => ({ getOpeningReconciliation: mocks.getOpeningReconciliation }));
-vi.mock('./queries', () => ({ getStrategicPlan: mocks.getStrategicPlan }));
+vi.mock('./queries', () => ({
+  getStrategicPlan: mocks.getStrategicPlan,
+  isFirstStrategicPlan: mocks.isFirstStrategicPlan,
+}));
 vi.mock('@/server/audit', () => ({ recordAudit: mocks.recordAudit }));
 
 import type { FormState } from '@/lib/form-state';
@@ -118,6 +122,7 @@ beforeEach(() => {
     endFiscalYear: 2030,
     status: 'active',
   });
+  mocks.isFirstStrategicPlan.mockResolvedValue(true);
   mocks.recordAudit.mockResolvedValue(undefined);
   mocks.redirect.mockImplementation(() => {
     throw new Error('NEXT_REDIRECT');
@@ -228,6 +233,22 @@ describe('saveOpeningReconciliationAction — split control totals', () => {
     expect(state.fieldErrors?.controlPriorProgramBudgetUsedOpex).toContain(
       'Prior program budget consumed (opex) is required (use 0 for none).',
     );
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveOpeningReconciliationAction — first-plan gate', () => {
+  it('refuses a successor plan before any database work', async () => {
+    mocks.isFirstStrategicPlan.mockResolvedValue(false);
+    const db = database([savedRow()]);
+    mocks.getDb.mockReturnValue(db);
+
+    const state = await saveOpeningReconciliationAction(INITIAL, controlForm());
+
+    expect(state.status).toBe('error');
+    expect(state.message).toBe('Opening balances are recorded once, for the first plan.');
+    expect(state.values?.controlEnvelopeCapex).toBe('9.000.000.000');
+    expect(mocks.getOpeningReconciliation).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
   });
 });

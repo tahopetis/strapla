@@ -1,9 +1,11 @@
 'use server';
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, ne } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import {
+  annualPlans,
   annualPrograms,
+  projects,
   strategicInitiatives,
   strategicPlans,
   type StrategicInitiative,
@@ -22,7 +24,12 @@ import {
   type PlanUpdateInput,
 } from '@/domain/inputs';
 import { withCustomFields } from '@/domain/custom-fields';
-import { validatePlanYears } from '@/domain/plan';
+import {
+  archivePreconditionError,
+  horizonContainmentError,
+  successorStartYearError,
+  validatePlanYears,
+} from '@/domain/plan';
 import type { FormState } from '@/lib/form-state';
 import {
   FormError,
@@ -95,12 +102,24 @@ async function createPlan(userId: string, input: PlanCreateInput): Promise<Strat
 
   let created: StrategicPlan | undefined;
   await getDb().transaction(async (tx) => {
-    const existing = await tx.select({ id: strategicPlans.id }).from(strategicPlans).limit(1);
-    if (existing.length > 0) {
+    // Succession rules (#109, ADR-0008): one plan at a time while it is active
+    // or draft, and a successor horizon starts after every archived horizon.
+    const existing = await tx
+      .select({
+        name: strategicPlans.name,
+        startFiscalYear: strategicPlans.startFiscalYear,
+        endFiscalYear: strategicPlans.endFiscalYear,
+        status: strategicPlans.status,
+      })
+      .from(strategicPlans);
+    const open = existing.find((plan) => plan.status !== 'archived');
+    if (open) {
       throw new FormError(
-        'A strategic plan already exists. This deployment supports one plan; edit the existing plan instead.',
+        `The strategic plan “${open.name}” is still ${open.status}. Archive it before creating a successor plan.`,
       );
     }
+    const successorError = successorStartYearError(input.startFiscalYear, existing);
+    if (successorError) throw new FormError(successorError);
     [created] = await tx
       .insert(strategicPlans)
       .values({
@@ -131,6 +150,32 @@ async function updatePlan(userId: string, input: PlanUpdateInput): Promise<Strat
 
   let updated: StrategicPlan | undefined;
   await getDb().transaction(async (tx) => {
+    // A horizon must keep every annual plan and every project's full-life years
+    // inside it (#109, ADR-0008 §6): an early end is an explicit final close,
+    // never an orphaned annual plan or project.
+    const [annualRows, projectRows] = await Promise.all([
+      tx
+        .select({ fiscalYear: annualPlans.fiscalYear })
+        .from(annualPlans)
+        .where(eq(annualPlans.planId, input.id)),
+      tx
+        .select({
+          code: projects.code,
+          startFiscalYear: projects.startFiscalYear,
+          endFiscalYear: projects.endFiscalYear,
+        })
+        .from(projects)
+        .innerJoin(annualPrograms, eq(projects.originatingProgramId, annualPrograms.id))
+        .innerJoin(annualPlans, eq(annualPrograms.annualPlanId, annualPlans.id))
+        .where(eq(annualPlans.planId, input.id)),
+    ]);
+    const containmentError = horizonContainmentError(
+      { startFiscalYear: input.startFiscalYear, endFiscalYear: input.endFiscalYear },
+      annualRows.map((row) => row.fiscalYear),
+      projectRows,
+    );
+    if (containmentError) throw new FormError(containmentError);
+
     [updated] = await tx
       .update(strategicPlans)
       .set({
@@ -164,13 +209,36 @@ async function setPlanStatus(
   status: 'active' | 'archived',
 ): Promise<StrategicPlan> {
   const current = await requireEditablePlan(id);
-  if (status === 'archived' && current.status === 'draft') {
-    throw new FormError('Activate the plan before archiving it.');
-  }
   if (current.status === status) throw new FormError(`The plan is already ${status}.`);
 
   let updated: StrategicPlan | undefined;
   await getDb().transaction(async (tx) => {
+    if (status === 'archived') {
+      // Archive is final, so it may not freeze an open annual plan with no
+      // close and no carry decision (#109, ADR-0008 §2). A draft plan has no
+      // annual plans and may be archived, which keeps a mistaken plan from
+      // becoming a dead end.
+      const annualRows = await tx
+        .select({ fiscalYear: annualPlans.fiscalYear, status: annualPlans.status })
+        .from(annualPlans)
+        .where(eq(annualPlans.planId, id));
+      const archiveError = archivePreconditionError(annualRows);
+      if (archiveError) throw new FormError(archiveError);
+    } else {
+      // Exactly one plan is active at a time (BR-1). The database index is the
+      // last line of defence; this check gives the owner a readable refusal.
+      const active = await tx
+        .select({ id: strategicPlans.id })
+        .from(strategicPlans)
+        .where(and(eq(strategicPlans.status, 'active'), ne(strategicPlans.id, id)))
+        .limit(1);
+      if (active.length > 0) {
+        throw new FormError(
+          'Another strategic plan is active. Archive it before activating this one.',
+        );
+      }
+    }
+
     [updated] = await tx
       .update(strategicPlans)
       .set({ status, updatedBy: userId, updatedAt: new Date() })

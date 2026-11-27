@@ -39,11 +39,38 @@ kept for it.
 - No schema change and no migration: whether a record was corrected after close is derived from
   `audit_entries.action = 'correction'` for that entity.
 
+**Strategic plan succession** (#109)
+
+- One strategic plan is active or draft at a time; a plan is archived only when every annual plan
+  under it is closed (a draft plan, which has none, may be archived directly), and archived plans are
+  final and read-only. A new plan is refused while one is active or draft.
+- The annual plan in the strategic plan's end year closes as a **final close**: no next-year annual
+  plan is required, every available amount is recorded as not carried with a reason and no carry-over
+  entries are written, while the snapshot invariants (available = carried + not carried, carried =
+  ledger sum) still hold. Every other year keeps the ordinary close and its next-year target.
+- A successor plan can be created once no plan is active or draft; its start year must be after every
+  archived plan's end year and defaults to the year after the most recent archived plan. It starts
+  empty and as a draft. Nothing carries across the boundary — no budget, carry-in, initiative, program
+  or project — and opening balances stay first-plan-only.
+- Horizon edits are refused when the new range would exclude an existing annual plan or a project's
+  full-life years, and the message names the record. Ending a plan early is: shrink the horizon,
+  final-close it, archive it.
+- A read-only **Archived plans** list and per-plan read-only pages show each plan's name, horizon,
+  archived date and reason from the status-change audit entry, its initiatives with envelope figures
+  and its annual plans, linking into the existing read-only annual plan, program, project and
+  allocation pages. With a successor present every surface uses the non-archived plan; until then the
+  archived plan stays visible with a prompt to create the successor.
+
 ### Documentation
 
 - `docs/USER-GUIDE.md` §6.3 and §8.4 describe the correction workflow and what is still not
   correctable; `GLOSSARY.md`, `docs/data-model.md` and `docs/REGRESSION.md` are updated to match
   (ADR-0007, #108).
+- `docs/adr/0008-plan-succession-and-final-close.md` records the decision; `docs/USER-GUIDE.md` §3.1,
+  §3.2, §3.4, §3.6 and §6.5–6.6 describe the final close, the successor workflow, the archived plans
+  list, first-plan-only opening balances and the project boundary; `GLOSSARY.md`, `docs/CHARTER.md`
+  (BR-1, A1 and §6.7), `docs/data-model.md` and `docs/REGRESSION.md` (T4 `succession` tier) are
+  updated (#109).
 
 ## [0.5.0] - 2026-11-22
 

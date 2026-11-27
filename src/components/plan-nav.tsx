@@ -3,6 +3,7 @@ import Link from 'next/link';
 const links = [
   { href: '/plan', label: 'Overview' },
   { href: '/plan/strategic', label: 'Strategic plan & SIs' },
+  { href: '/plan/strategic/archived', label: 'Archived plans' },
   { href: '/plan/annual', label: 'Annual plans' },
   { href: '/plan/projects', label: 'Projects' },
   { href: '/plan/opening-balances', label: 'Opening balances' },

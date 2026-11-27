@@ -27,7 +27,7 @@ import {
 } from '@/server/custom-fields/data';
 import { listOpeningRegistryFields } from './opening-import-fields';
 import { getOpeningLoadScene } from './opening-queries';
-import { getCurrentStrategicPlan } from './queries';
+import { getCurrentStrategicPlan, isFirstStrategicPlan } from './queries';
 import {
   planOpeningLoad,
   type OpeningCustomField,
@@ -313,6 +313,11 @@ export async function openingImportAction(
   const plan = await getCurrentStrategicPlan();
   if (!plan) return errorState('Create the strategic plan before importing.');
   if (plan.status === 'archived') return errorState('The strategic plan is archived and read-only.');
+  // Opening balances are recorded once, for the first plan (#109, ADR-0008 §7):
+  // a successor plan starts without them.
+  if (!(await isFirstStrategicPlan(plan))) {
+    return errorState('Opening balances are recorded once, for the first plan.');
+  }
 
   const scene = await getOpeningLoadScene(plan);
   if (!scene.annualPlan) {

@@ -39,6 +39,7 @@ import {
   projectYearAllocations,
 } from '@/db/schema';
 import type { FormState } from '@/lib/form-state';
+import { finalCloseReason } from '@/lib/close-form';
 import type { CloseState } from './close-queries';
 import { closeFiscalYearAction } from './close-actions';
 
@@ -522,5 +523,106 @@ describe('closeFiscalYearAction close writes', () => {
     expect(state.message).toMatch(/could not be recorded/i);
     expect(state.message).toMatch(/capex/);
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('closeFiscalYearAction final close', () => {
+  // The end year of the strategic plan: no next-year target exists, and the
+  // close must not need one (#109).
+  const FINAL_STATE = {
+    isFinalClose: true,
+    targetPlan: null,
+    strategicPlan: { status: 'active', endFiscalYear: 2027 },
+  };
+
+  it('closes the end year without a target plan, writing zero carry and the fixed reason', async () => {
+    mocks.getCloseState.mockResolvedValue(closeState(FINAL_STATE));
+    const { inserts, updates } = postableDatabase();
+
+    await expect(runAction(closeForm(BASE_FORM))).rejects.toThrow('NEXT_REDIRECT');
+
+    // Nothing crosses the plan boundary: no ledger receipt and no target allocation.
+    expect(inserts.filter((row) => row.table === carryOverEntries)).toHaveLength(0);
+    expect(inserts.filter((row) => row.table === projectYearAllocations)).toHaveLength(0);
+
+    // One snapshot row per source program/allocation and component.
+    const snapshots = inserts.filter((row) => row.table === closeSnapshots);
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.map((row) => row.values)).toEqual([
+      expect.objectContaining({
+        annualPlanId: PLAN_ID,
+        entityType: 'program',
+        entityId: PROGRAM_ID,
+        component: 'capex',
+        available: 700,
+        carried: 0,
+        notCarried: 700,
+        notCarriedReason: finalCloseReason(2027),
+      }),
+      expect.objectContaining({
+        annualPlanId: PLAN_ID,
+        entityType: 'program',
+        entityId: PROGRAM_ID,
+        component: 'opex',
+        available: 300,
+        carried: 0,
+        notCarried: 300,
+        notCarriedReason: finalCloseReason(2027),
+      }),
+    ]);
+
+    // No target entity was touched, so no carry cache is recomputed for one.
+    expect(updates.some((row) => row.table === annualPrograms)).toBe(false);
+
+    const closeUpdate = updates.find((row) => row.table === annualPlans);
+    expect(closeUpdate?.set).toEqual(
+      expect.objectContaining({ status: 'closed', closeReference: 'Board memo 12/2027' }),
+    );
+
+    expect(mocks.recordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: 'close',
+        entityType: 'annual_plan',
+        entityId: PLAN_ID,
+        after: expect.objectContaining({
+          status: 'closed',
+          finalClose: true,
+          targetAnnualPlanId: null,
+          carryOverEntries: 0,
+          closeSnapshots: 2,
+        }),
+      }),
+    );
+
+    const redirectUrl = mocks.redirect.mock.calls[0]?.[0] as string;
+    expect(decodeURIComponent(redirectUrl)).toContain(
+      'Fiscal year FY2027 closed as the final close: no carry-over, 2 snapshot rows.',
+    );
+  });
+
+  it('ignores posted carry fields at the plan end year', async () => {
+    mocks.getCloseState.mockResolvedValue(closeState(FINAL_STATE));
+    const { inserts } = postableDatabase();
+
+    // A carry form that the normal path would accept: the final close does not
+    // read any of it.
+    await expect(runAction(carryForm())).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(inserts.filter((row) => row.table === carryOverEntries)).toHaveLength(0);
+    const snapshots = inserts.filter((row) => row.table === closeSnapshots);
+    expect(snapshots.map((row) => row.values?.carried)).toEqual([0, 0]);
+  });
+
+  it('still refuses a non-final close without the next-year plan', async () => {
+    mocks.getCloseState.mockResolvedValue(closeState({ targetPlan: null }));
+
+    const state = await runAction(carryForm());
+
+    expect(state.status).toBe('error');
+    expect(state.message).toContain(
+      'The FY2028 annual plan does not exist yet; create it before closing.',
+    );
+    expect(mocks.getDb).not.toHaveBeenCalled();
   });
 });

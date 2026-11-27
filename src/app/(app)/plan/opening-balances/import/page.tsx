@@ -4,7 +4,7 @@ import { OpeningImportWizard } from '@/components/plan/opening-import-wizard';
 import { PlanNav } from '@/components/plan-nav';
 import { Card, PageHeader } from '@/components/ui';
 import { getOpeningLoadScene } from '@/server/plan/opening-queries';
-import { getCurrentStrategicPlan } from '@/server/plan/queries';
+import { getCurrentStrategicPlan, isFirstStrategicPlan } from '@/server/plan/queries';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Opening-balance import' };
@@ -30,6 +30,32 @@ export default async function OpeningImportPage() {
           </Link>
           .
         </p>
+      </div>
+    );
+  }
+
+  // Opening balances are recorded once, for the first plan (#109, ADR-0008 §7):
+  // an archived plan is read-only and a successor starts without them, so the
+  // wizard is not offered for either.
+  const firstPlan = await isFirstStrategicPlan(plan);
+  if (plan.status === 'archived' || !firstPlan) {
+    return (
+      <div>
+        <PageHeader
+          title="Opening-balance import"
+          description="Load the prior-year close figures from a CSV or XLSX file."
+        />
+        <PlanNav />
+        <Card title="Opening balances are recorded once, for the first plan">
+          <p className="text-sm text-slate-700">
+            {plan.status === 'archived'
+              ? 'This plan is archived and read-only, so no opening balances can be imported for it.'
+              : 'This plan is a successor plan; it starts without opening balances. The first plan keeps its signed-off figures.'}{' '}
+            <Link href="/plan/strategic/archived" className={linkClass}>
+              Archived plans
+            </Link>
+          </p>
+        </Card>
       </div>
     );
   }

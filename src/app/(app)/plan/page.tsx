@@ -10,6 +10,7 @@ export const metadata: Metadata = { title: 'Plan' };
 
 const secondaryLink =
   'inline-flex items-center justify-center rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50';
+const linkClass = 'text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-900';
 
 export default async function PlanOverviewPage() {
   const plan = await getCurrentStrategicPlan();
@@ -55,6 +56,15 @@ export default async function PlanOverviewPage() {
         }
       />
       <PlanNav />
+
+      {plan.status === 'archived' ? (
+        <p className="mb-6 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          This plan is archived and read-only. Create a successor plan to continue the portfolio.{' '}
+          <Link href="/plan/strategic" className={linkClass}>
+            Create the successor plan
+          </Link>
+        </p>
+      ) : null}
 
       <div className="space-y-6">
         <Card

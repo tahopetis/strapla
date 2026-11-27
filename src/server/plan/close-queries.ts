@@ -64,6 +64,11 @@ export interface CloseState {
   plan: AnnualPlan;
   strategicPlan: StrategicPlan;
   targetPlan: AnnualPlan | null;
+  /**
+   * True when the closed year is the strategic plan's end year (#109, ADR-0008 §3): the close
+   * needs no next-year target and carries nothing across the plan boundary.
+   */
+  isFinalClose: boolean;
   programs: CloseProgramRow[];
   allocations: CloseAllocationRow[];
   carryOvers: CarryOverEntry[];
@@ -92,6 +97,11 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
     .limit(1);
   const loaded = planRows[0];
   if (!loaded) return null;
+
+  // The end year of the strategic plan is closed as a final close (#109, ADR-0008 §3): it has
+  // no next year to carry into, so the target plan below stays optional for it.
+  const isFinalClose =
+    loaded.plan.fiscalYear >= loaded.strategicPlan.endFiscalYear;
 
   // The close candidates use effective budgets and allocations (ADR-0006 §4).
   const deltaMaps = await getRevisionDeltasForPlan(planId);
@@ -233,6 +243,7 @@ export async function getCloseState(planId: string): Promise<CloseState | null> 
     plan: loaded.plan,
     strategicPlan: loaded.strategicPlan,
     targetPlan,
+    isFinalClose,
     programs,
     allocations,
     carryOvers,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState, type Dispatch, type SetStateAction } from 'react';
+import { useActionState, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { FormMessage, SubmitButton } from '@/components/form';
 import { Card, Money } from '@/components/ui';
 import {
@@ -51,9 +51,15 @@ export interface CloseYearAllocation {
 export interface CloseYearFormProps {
   annualPlanId: string;
   fiscalYear: number;
-  targetFiscalYear: number;
+  /** The next fiscal year the carry lands in; absent for a final close. */
+  targetFiscalYear?: number;
   programs: CloseYearProgram[];
   allocations: CloseYearAllocation[];
+  /**
+   * Final-close mode (#109, ADR-0008 §3): the strategic plan's end year carries nothing across
+   * the plan boundary, so the form summarizes and takes no carry decision.
+   */
+  finalClose?: { reason: string };
 }
 
 type Amounts = Record<string, Record<CarryOverComponent, string>>;
@@ -87,6 +93,7 @@ export function CloseYearForm({
   targetFiscalYear,
   programs,
   allocations,
+  finalClose,
 }: CloseYearFormProps) {
   const confirmationPhrase = closeConfirmationPhrase(fiscalYear);
   const [state, formAction] = useActionState(closeFiscalYearAction, initialFormState);
@@ -163,6 +170,147 @@ export function CloseYearForm({
       aria-invalid={required ? true : undefined}
     />
   );
+
+  /** The approval reference and typed confirmation both close modes require. */
+  const approvalFields = (submitLabel: ReactNode) => (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <label className="block text-sm font-medium text-slate-700">
+        Approval reference
+        <input
+          name="reference"
+          required
+          maxLength={160}
+          value={reference}
+          onChange={(event) => setReference(event.target.value)}
+          aria-invalid={referenceError ? true : undefined}
+          aria-describedby={referenceError ? 'close-reference-error' : undefined}
+          placeholder="Board approval or memo reference"
+          className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+        {referenceError ? (
+          <span id="close-reference-error" className="mt-1 block text-xs font-medium text-red-700">
+            {referenceError}
+          </span>
+        ) : null}
+      </label>
+      <label className="block text-sm font-medium text-slate-700">
+        Typed confirmation
+        <input
+          name="confirmation"
+          required
+          autoComplete="off"
+          maxLength={40}
+          pattern={confirmationPhrase}
+          title={`Type ${confirmationPhrase} to confirm`}
+          placeholder={confirmationPhrase}
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          aria-invalid={confirmationError ? true : undefined}
+          aria-describedby={confirmationError ? 'close-confirmation-error' : undefined}
+          className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+        <span className="mt-1 block text-xs font-normal text-slate-500">
+          Type <code className="font-mono">{confirmationPhrase}</code> exactly to confirm.
+        </span>
+        {confirmationError ? (
+          <span id="close-confirmation-error" className="mt-1 block text-xs font-medium text-red-700">
+            {confirmationError}
+          </span>
+        ) : null}
+      </label>
+      <div className="flex items-end sm:col-span-2">
+        <SubmitButton pendingLabel="Closing…">{submitLabel}</SubmitButton>
+      </div>
+    </div>
+  );
+
+  // Final close (#109, ADR-0008 §3): the strategic plan's end year carries nothing across the
+  // plan boundary — there is no next-year target and no carry decision. The form
+  // only summarizes the available amounts and takes the approval reference and
+  // the typed confirmation.
+  if (finalClose) {
+    return (
+      <form action={formAction} className="space-y-6">
+        <input type="hidden" name="annualPlanId" value={annualPlanId} />
+
+        <Card title="Final close">
+          <p className="text-sm text-slate-700">
+            This is the strategic plan&apos;s final fiscal year. Nothing is carried across the plan
+            boundary: every available amount is recorded as not carried, with the reason below.
+            Close the year, then archive the plan.
+          </p>
+
+          <section aria-label="Final close summary" className="mt-4">
+            {programs.length === 0 && allocations.length === 0 ? (
+              <p className="text-sm text-slate-600">No programs or allocations in this fiscal year.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead>
+                    <tr>
+                      <th className={th}>Program / allocation</th>
+                      <th className={th}>Component</th>
+                      <th className={th}>Available</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {programs.map((row) =>
+                      COMPONENTS.map((component) => (
+                        <tr key={`program:${row.id}:${component}`}>
+                          <td className="py-2 pr-3">
+                            <p className="font-medium">{row.code}</p>
+                            <p className="text-slate-600">{row.name}</p>
+                          </td>
+                          <td className="py-2 pr-3 uppercase">{component}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <Money
+                              value={component === 'capex' ? row.availableCapex : row.availableOpex}
+                            />
+                          </td>
+                        </tr>
+                      )),
+                    )}
+                    {allocations.map((row) =>
+                      COMPONENTS.map((component) => (
+                        <tr key={`allocation:${row.id}:${component}`}>
+                          <td className="py-2 pr-3">
+                            <p className="font-medium">{row.projectCode}</p>
+                            <p className="text-slate-600">{row.projectName}</p>
+                          </td>
+                          <td className="py-2 pr-3 uppercase">{component}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <Money
+                              value={component === 'capex' ? row.availableCapex : row.availableOpex}
+                            />
+                          </td>
+                        </tr>
+                      )),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <p className="mt-3 text-xs text-slate-500">
+            Reason recorded on every row:{' '}
+            <span className="font-medium text-slate-700">{finalClose.reason}</span>
+          </p>
+
+          <div className="mt-5">
+            <FormMessage state={state} />
+            {approvalFields(`Close FY${fiscalYear} as the final close`)}
+          </div>
+
+          <p className="mt-3 text-xs text-slate-500">
+            A final close records every available amount as not carried; no carry-over receipt is
+            written and nothing crosses the plan boundary. Closing is irreversible: after this, the
+            plan can be archived.
+          </p>
+        </Card>
+      </form>
+    );
+  }
 
   return (
     <form action={formAction} className="space-y-6">
@@ -422,57 +570,7 @@ export function CloseYearForm({
         </section>
 
         <FormMessage state={state} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-medium text-slate-700">
-            Approval reference
-            <input
-              name="reference"
-              required
-              maxLength={160}
-              value={reference}
-              onChange={(event) => setReference(event.target.value)}
-              aria-invalid={referenceError ? true : undefined}
-              aria-describedby={referenceError ? 'close-reference-error' : undefined}
-              placeholder="Board approval or memo reference"
-              className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
-            />
-            {referenceError ? (
-              <span id="close-reference-error" className="mt-1 block text-xs font-medium text-red-700">
-                {referenceError}
-              </span>
-            ) : null}
-          </label>
-          <label className="block text-sm font-medium text-slate-700">
-            Typed confirmation
-            <input
-              name="confirmation"
-              required
-              autoComplete="off"
-              maxLength={40}
-              pattern={confirmationPhrase}
-              title={`Type ${confirmationPhrase} to confirm`}
-              placeholder={confirmationPhrase}
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              aria-invalid={confirmationError ? true : undefined}
-              aria-describedby={confirmationError ? 'close-confirmation-error' : undefined}
-              className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
-            />
-            <span className="mt-1 block text-xs font-normal text-slate-500">
-              Type <code className="font-mono">{confirmationPhrase}</code> exactly to confirm.
-            </span>
-            {confirmationError ? (
-              <span id="close-confirmation-error" className="mt-1 block text-xs font-medium text-red-700">
-                {confirmationError}
-              </span>
-            ) : null}
-          </label>
-          <div className="flex items-end sm:col-span-2">
-            <SubmitButton pendingLabel="Closing…">
-              Close FY{fiscalYear} and carry over
-            </SubmitButton>
-          </div>
-        </div>
+        {approvalFields(`Close FY${fiscalYear} and carry over`)}
         <p className="mt-3 text-xs text-slate-500">
           Carry amounts start blank: enter an amount for every field — type 0 for none. A blank field
           blocks the close. The close records a snapshot of available / carried / not-carried per entity

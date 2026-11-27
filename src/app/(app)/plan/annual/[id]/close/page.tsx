@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { CloseYearForm } from '@/components/plan/close-year-form';
 import { PlanNav } from '@/components/plan-nav';
 import { Badge, Card, Flash, Money, PageHeader } from '@/components/ui';
+import { finalCloseReason } from '@/lib/close-form';
 import { formatDate } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import { getCloseState } from '@/server/plan/close-queries';
@@ -27,6 +28,27 @@ export default async function CloseYearPage({
   const { error, message } = await searchParams;
   const state = await getCloseState(id);
   if (!state) notFound();
+  // The end year of the strategic plan is a final close (#109, ADR-0008 §3): it has no
+  // next-year target, records zero carry, and is rendered by the final form.
+  const targetPlan = state.targetPlan;
+  const programOptions = state.programs.map((row) => ({
+    id: row.program.id,
+    code: row.program.code,
+    name: row.program.name,
+    availableCapex: row.availableCapex,
+    availableOpex: row.availableOpex,
+    continuationProgramId: row.continuationProgramId,
+    targetPrograms: row.targetPrograms,
+  }));
+  const allocationOptions = state.allocations.map((row) => ({
+    id: row.allocation.id,
+    projectCode: row.project.code,
+    projectName: row.project.name,
+    availableCapex: row.availableCapex,
+    availableOpex: row.availableOpex,
+    hasTargetAllocation: row.targetAllocation !== null,
+    note: row.note,
+  }));
   // The receipt is the ledger view of the close: labels, targets and the
   // approval reference come from the register rows, while the snapshot supplies
   // available / carried / not-carried per entity and component.
@@ -53,7 +75,11 @@ export default async function CloseYearPage({
     <div>
       <PageHeader
         title={`Close FY${state.plan.fiscalYear}`}
-        description={`${state.strategicPlan.name} · close the year and carry remaining budget into FY${state.plan.fiscalYear + 1}`}
+        description={
+          state.isFinalClose
+            ? `${state.strategicPlan.name} · final fiscal year of the strategic plan — nothing is carried across the plan boundary`
+            : `${state.strategicPlan.name} · close the year and carry remaining budget into FY${state.plan.fiscalYear + 1}`
+        }
         actions={
           <Link href={`/plan/annual/${state.plan.id}`} className="text-sm text-slate-600 hover:text-slate-900">
             ← Annual plan
@@ -291,7 +317,15 @@ export default async function CloseYearPage({
             This plan is {state.plan.status}. Activate it on the annual plan page before closing the year.
           </p>
         </Card>
-      ) : !state.targetPlan ? (
+      ) : state.isFinalClose ? (
+        <CloseYearForm
+          annualPlanId={state.plan.id}
+          fiscalYear={state.plan.fiscalYear}
+          finalClose={{ reason: finalCloseReason(state.plan.fiscalYear) }}
+          programs={programOptions}
+          allocations={allocationOptions}
+        />
+      ) : !targetPlan ? (
         <Card title="Next fiscal year is missing" description="Carry-over has nowhere to land.">
           <p className="text-sm text-slate-700">
             Create the FY{state.plan.fiscalYear + 1} annual plan first, then close FY{state.plan.fiscalYear}. Open
@@ -312,7 +346,7 @@ export default async function CloseYearPage({
             <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-slate-500">Target year</p>
-                <p className="mt-1 font-medium">FY{state.targetPlan.fiscalYear}</p>
+                <p className="mt-1 font-medium">FY{targetPlan.fiscalYear}</p>
               </div>
               <div>
                 <p className="text-slate-500">Programs with unallocated budget</p>
@@ -341,25 +375,9 @@ export default async function CloseYearPage({
           <CloseYearForm
             annualPlanId={state.plan.id}
             fiscalYear={state.plan.fiscalYear}
-            targetFiscalYear={state.targetPlan.fiscalYear}
-            programs={state.programs.map((row) => ({
-              id: row.program.id,
-              code: row.program.code,
-              name: row.program.name,
-              availableCapex: row.availableCapex,
-              availableOpex: row.availableOpex,
-              continuationProgramId: row.continuationProgramId,
-              targetPrograms: row.targetPrograms,
-            }))}
-            allocations={state.allocations.map((row) => ({
-              id: row.allocation.id,
-              projectCode: row.project.code,
-              projectName: row.project.name,
-              availableCapex: row.availableCapex,
-              availableOpex: row.availableOpex,
-              hasTargetAllocation: row.targetAllocation !== null,
-              note: row.note,
-            }))}
+            targetFiscalYear={targetPlan.fiscalYear}
+            programs={programOptions}
+            allocations={allocationOptions}
           />
         </div>
       )}
