@@ -493,6 +493,11 @@ describe('updateProgramAction closed-year correction', () => {
     expect(write.set).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Workplace Modernisation 2027 (corrected)' }),
     );
+    // A program's carry-in is a ledger-derived cache, not a correctable field:
+    // the correction never writes it (ADR-0007 §4).
+    const programPayload = write.set.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(programPayload).not.toHaveProperty('carryInCapex');
+    expect(programPayload).not.toHaveProperty('carryInOpex');
     expectOneCorrection({
       entityType: 'annual_program',
       entityId: PROGRAM_ID,

@@ -7,7 +7,7 @@ import {
   SpendSection,
 } from '@/components/execution/execution-sections';
 import { PlanNav } from '@/components/plan-nav';
-import { Flash, PageHeader } from '@/components/ui';
+import { Badge, Flash, PageHeader } from '@/components/ui';
 import { toDateInputValue } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import {
@@ -15,6 +15,7 @@ import {
   listSpendCategoryOptions,
 } from '@/server/plan/execution-queries';
 import { loadCorrectionMarkers } from '@/server/plan/correction-queries';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Recurring ops execution' };
@@ -54,9 +55,17 @@ export default async function RecurringOpsFundingPage({
         title={`FY${funding.annualPlan.fiscalYear} · ${funding.item.name}`}
         description="Recurring operations: opex-only budget, commitments and spend."
         actions={
-          <Link href={`/plan/annual/${funding.annualPlan.id}`} className="text-sm text-slate-600 hover:text-slate-900">
-            ← Annual plan
-          </Link>
+          <div className="flex items-center gap-3">
+            {correctedRecords.has(funding.item.id) ? (
+              <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge>
+            ) : null}
+            <Link
+              href={`/plan/annual/${funding.annualPlan.id}`}
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              ← Annual plan
+            </Link>
+          </div>
         }
       />
       <PlanNav />
