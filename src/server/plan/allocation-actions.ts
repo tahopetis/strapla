@@ -23,9 +23,8 @@ import {
 } from '@/domain/inputs';
 import {
   CORRECTION_WRITE,
-  updateAuditAction,
 } from '@/domain/corrections';
-import { requireCorrectionReason } from './correction-guards';
+import { correctionAuditAction } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import { isComponentShift } from '@/domain/revisions';
 import type { FormState } from '@/lib/form-state';
@@ -142,12 +141,6 @@ function requireProjectEditable(project: Project, strategicPlanStatus: Strategic
 }
 
 /**
- * Capex and opex never shift into each other (ADR-0006 §4), on every path: an
- * allocation edit that raises one component while lowering the other is a
- * component shift, not an allocation change. This is the only refusal an
- * allocation edit adds; the warning-only flags keep their old semantics.
- */
-/**
  * The allocation's editability guard. `allowClosed` is the correction path
  * (ADR-0007 §1): a closed fiscal year still accepts an in-place correction of an
  * allocation that already exists, with a reason. Only the six in-place update
@@ -163,6 +156,12 @@ function requireAllocationEditable(
   }
 }
 
+/**
+ * Capex and opex never shift into each other (ADR-0006 §4), on every path: an
+ * allocation edit that raises one component while lowering the other is a
+ * component shift, not an allocation change. This is the only refusal an
+ * allocation correction adds; the warning-only flags keep their old semantics.
+ */
 function requireNoComponentShift(
   current: { allocationCapex: number; allocationOpex: number },
   next: { allocationCapex: number; allocationOpex: number },
@@ -323,10 +322,9 @@ async function updateAllocation(
   const context = await loadAllocationContext(input.id);
   if (context.allocation.voidedAt) throw new FormError('This allocation is voided and read-only.');
   requireAllocationEditable(context, CORRECTION_WRITE);
-  // ADR-0007 §5: the governing plan's status at write time names the audit
-  // action, so a closed year records exactly one `correction` entry.
-  const auditAction = updateAuditAction(context.annualPlan);
-  requireCorrectionReason(context.annualPlan, input.reason);
+  // ADR-0007 §5: the plan status names the audit action and a correction
+  // needs its reason; one call keeps the six paths one rule.
+  const auditAction = correctionAuditAction(context.annualPlan, input.reason);
   requireNoComponentShift(context.allocation, input);
   requireProjectActiveYear(context.project, context.annualPlan.fiscalYear);
 

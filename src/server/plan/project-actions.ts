@@ -26,9 +26,9 @@ import {
 import {
   CORRECTION_WRITE,
   isCorrectionAfterClose,
-  updateAuditAction,
+  isCorrectionReason,
 } from '@/domain/corrections';
-import { requireCorrectionReason } from './correction-guards';
+import { correctionAuditAction } from './correction-guards';
 import { withCustomFields } from '@/domain/custom-fields';
 import { formatEntityCode, validateProjectYears } from '@/domain/plan';
 import type { FormState } from '@/lib/form-state';
@@ -270,10 +270,9 @@ async function updateProject(
     throw new FormError('This project is cancelled and read-only.');
   }
   requireEditableContext(context, CORRECTION_WRITE);
-  // ADR-0007 §5: the originating plan's status at write time names the audit
-  // action, so a closed year records exactly one `correction` entry.
-  const auditAction = updateAuditAction(context.annualPlan);
-  requireCorrectionReason(context.annualPlan, input.reason);
+  // ADR-0007 §5: the plan status names the audit action and a correction
+  // needs its reason; one call keeps the six paths one rule.
+  const auditAction = correctionAuditAction(context.annualPlan, input.reason);
   checkProjectYears({
     startFiscalYear: input.startFiscalYear,
     endFiscalYear: input.endFiscalYear,
@@ -389,23 +388,20 @@ async function saveIjinPrinsip(
   // A correction corrects a record that already exists (ADR-0007 §1), so the
   // create fallback keeps refusing in a closed year while the rewrite is the
   // correction path.
+  // The rewrite is the correction path in a closed year; the insert is a create
+  // and keeps refusing. Only the rewrite classifies an action from the plan.
+  let updateAction: 'correction' | 'update' = 'update';
   if (existing) {
     requireEditableContext(context, CORRECTION_WRITE);
-    requireCorrectionReason(context.annualPlan, input.reason);
-    // An open year keeps its own ijin wording; the correction rule above already
-    // refused a closed-year rewrite without a reason.
-    if (
-      !isCorrectionAfterClose(context.annualPlan) &&
-      (!input.reason || input.reason.trim().length < 3)
-    ) {
+    updateAction = correctionAuditAction(context.annualPlan, input.reason);
+    // An open year keeps its own ijin wording; the correction call above already
+    // refused a closed-year rewrite without a reason (ADR-0007 §5).
+    if (!isCorrectionAfterClose(context.annualPlan) && !isCorrectionReason(input.reason)) {
       throw new FormError('Give a reason for changing the ijin prinsip record.');
     }
   } else {
     requireIjinCreateContext(context);
   }
-  // ADR-0007 §5: the governing plan's status at write time names the audit
-  // action of the rewrite; only the create branch keeps the plain `create`.
-  const updateAction = updateAuditAction(context.annualPlan);
 
   await getDb().transaction(async (tx) => {
     const values = {

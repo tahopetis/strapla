@@ -9,7 +9,6 @@ import { CORRECTED_AFTER_CLOSE_LABEL, CORRECTION_FOOTNOTE } from '@/domain/corre
  * came from. The footnote sentence comes from the domain so the screen and the
  * CSV/XLSX note cannot drift apart.
  */
-const REPORT_CORRECTION_NOTE = CORRECTION_FOOTNOTE;
 
 /**
  * The row-level badge for a report row corrected after its fiscal year closed.
@@ -24,5 +23,5 @@ export function CorrectionBadge() {
 
 /** The footnote a report shows under its table when at least one row is marked. */
 export function CorrectionNote() {
-  return <p className="mt-3 text-xs text-slate-500">{REPORT_CORRECTION_NOTE}</p>;
+  return <p className="mt-3 text-xs text-slate-500">{CORRECTION_FOOTNOTE}</p>;
 }
