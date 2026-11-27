@@ -468,7 +468,7 @@ export async function getAnnualPlanReport(planId: string): Promise<AnnualPlanRep
       fiscalYear: row.fiscalYear,
       name: row.name,
       categoryName: row.categoryName,
-      corrected: markers.corrected.has(row.itemId),
+      corrected: markers.recurringItems.has(row.itemId),
       opexBudget: row.opexBudget,
       carryInOpex: row.carryInOpex,
       available,

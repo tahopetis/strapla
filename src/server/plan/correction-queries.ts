@@ -98,10 +98,21 @@ export interface CorrectionMarkers {
    * project, its ijin prinsip, one of its allocations or one of its commitments.
    */
   projects: ReadonlySet<string>;
+  /**
+   * Recurring ops item ids whose row shows a corrected figure: the item itself
+   * or one of the commitments booked against it.
+   */
+  recurringItems: ReadonlySet<string>;
 }
 
 function emptyMarkers(): CorrectionMarkers {
-  return { corrected: new Set(), programs: new Set(), initiatives: new Set(), projects: new Set() };
+  return {
+    corrected: new Set(),
+    programs: new Set(),
+    initiatives: new Set(),
+    projects: new Set(),
+    recurringItems: new Set(),
+  };
 }
 
 /** A plan record, loaded with the keys the marker grouping and the links need. */
@@ -114,6 +125,7 @@ interface PlanRecord {
   programId: string | null;
   projectId: string | null;
   initiativeId: string | null;
+  recurringItemId: string | null;
 }
 
 /**
@@ -155,6 +167,7 @@ async function loadPlanRecords(
       programId: program.id,
       projectId: null,
       initiativeId: program.siId,
+      recurringItemId: null,
     });
   }
 
@@ -180,6 +193,7 @@ async function loadPlanRecords(
       programId: allocation.annualProgramId,
       projectId: allocation.projectId,
       initiativeId: program?.siId ?? null,
+      recurringItemId: null,
     });
   }
 
@@ -209,6 +223,7 @@ async function loadPlanRecords(
       programId: program.id,
       projectId: project.id,
       initiativeId: program.siId,
+      recurringItemId: null,
     });
   }
 
@@ -236,6 +251,7 @@ async function loadPlanRecords(
       programId: program.id,
       projectId: project.id,
       initiativeId: program.siId,
+      recurringItemId: null,
     });
   }
 
@@ -258,6 +274,7 @@ async function loadPlanRecords(
       programId: null,
       projectId: null,
       initiativeId: null,
+      recurringItemId: item.id,
     });
   }
 
@@ -296,6 +313,7 @@ async function loadPlanRecords(
           programId: allocation.annualProgramId,
           projectId: allocation.projectId,
           initiativeId: program?.siId ?? null,
+          recurringItemId: null,
         });
         continue;
       }
@@ -312,6 +330,7 @@ async function loadPlanRecords(
         programId: null,
         projectId: null,
         initiativeId: null,
+        recurringItemId: item.id,
       });
     }
   }
@@ -374,6 +393,7 @@ export async function loadCorrectionMarkers(
   const programs = new Set<string>();
   const initiatives = new Set<string>();
   const projectsCorrected = new Set<string>();
+  const recurringItems = new Set<string>();
 
   for (const correction of corrections) {
     const record = records.get(correction.entityId);
@@ -392,9 +412,12 @@ export async function loadCorrectionMarkers(
     // Every one of the six record types except the recurring item sits under a
     // project — a project row is the only report row that shows all of them.
     if (record.projectId) projectsCorrected.add(record.projectId);
+    // A recurring item's row adds up that item's budget and its commitments, so
+    // a corrected commitment booked against it moves the row too.
+    if (record.recurringItemId) recurringItems.add(record.recurringItemId);
   }
 
-  return { corrected, programs, initiatives, projects: projectsCorrected };
+  return { corrected, programs, initiatives, projects: projectsCorrected, recurringItems };
 }
 
 /**

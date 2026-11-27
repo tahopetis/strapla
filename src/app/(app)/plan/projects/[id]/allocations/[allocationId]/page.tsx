@@ -7,7 +7,7 @@ import {
   SpendSection,
 } from '@/components/execution/execution-sections';
 import { PlanNav } from '@/components/plan-nav';
-import { Flash, PageHeader } from '@/components/ui';
+import { Badge, Flash, PageHeader } from '@/components/ui';
 import { toDateInputValue } from '@/lib/format';
 import { isRecordId } from '@/lib/record-id';
 import {
@@ -15,6 +15,7 @@ import {
   listSpendCategoryOptions,
 } from '@/server/plan/execution-queries';
 import { loadCorrectionMarkers } from '@/server/plan/correction-queries';
+import { CORRECTED_AFTER_CLOSE_LABEL } from '@/domain/corrections';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Allocation execution' };
@@ -59,9 +60,17 @@ export default async function AllocationFundingPage({
         title={`FY${funding.annualPlan.fiscalYear} allocation · ${funding.program.code}`}
         description={`${funding.project.code} · ${funding.project.name}`}
         actions={
-          <Link href={`/plan/projects/${funding.project.id}`} className="text-sm text-slate-600 hover:text-slate-900">
-            ← Project
-          </Link>
+          <div className="flex items-center gap-3">
+            {correctedRecords.has(funding.allocation.id) ? (
+              <Badge tone="warning">{CORRECTED_AFTER_CLOSE_LABEL}</Badge>
+            ) : null}
+            <Link
+              href={`/plan/projects/${funding.project.id}`}
+              className="text-sm text-slate-600 hover:text-slate-900"
+            >
+              ← Project
+            </Link>
+          </div>
         }
       />
       <PlanNav />
