@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   recordAudit: vi.fn(),
   saveCustomFieldValues: vi.fn(),
   getCurrentStrategicPlan: vi.fn(),
+  isFirstStrategicPlan: vi.fn(),
   getOpeningLoadScene: vi.fn(),
   listOpeningRegistryFields: vi.fn(),
   parseOpeningImport: vi.fn(),
@@ -27,7 +28,10 @@ vi.mock('@/server/audit', () => ({ recordAudit: mocks.recordAudit }));
 vi.mock('@/server/custom-fields/data', () => ({
   saveCustomFieldValues: mocks.saveCustomFieldValues,
 }));
-vi.mock('./queries', () => ({ getCurrentStrategicPlan: mocks.getCurrentStrategicPlan }));
+vi.mock('./queries', () => ({
+  getCurrentStrategicPlan: mocks.getCurrentStrategicPlan,
+  isFirstStrategicPlan: mocks.isFirstStrategicPlan,
+}));
 vi.mock('./opening-queries', () => ({ getOpeningLoadScene: mocks.getOpeningLoadScene }));
 vi.mock('./opening-import-fields', () => ({
   listOpeningRegistryFields: mocks.listOpeningRegistryFields,
@@ -67,6 +71,7 @@ beforeEach(() => {
     startFiscalYear: 2026,
     endFiscalYear: 2030,
   });
+  mocks.isFirstStrategicPlan.mockResolvedValue(true);
   mocks.getOpeningLoadScene.mockResolvedValue({
     annualPlan: { id: ANNUAL_PLAN_ID, fiscalYear: 2027, status: 'draft' },
     context: {
@@ -188,5 +193,20 @@ describe('openingImportAction carry receipts', () => {
       expect.objectContaining({ action: 'create', entityType: 'annual_program' }),
     );
     expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining('/plan/opening-balances'));
+  });
+});
+
+describe('openingImportAction first-plan gate', () => {
+  it('refuses a successor plan before touching the load scene', async () => {
+    mocks.isFirstStrategicPlan.mockResolvedValue(false);
+
+    const state = await openingImportAction({ status: 'idle' }, importForm());
+
+    expect(state).toEqual({
+      status: 'error',
+      message: 'Opening balances are recorded once, for the first plan.',
+    });
+    expect(mocks.getOpeningLoadScene).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
   });
 });

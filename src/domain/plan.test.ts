@@ -9,6 +9,10 @@ import {
   programAvailability,
   validateProjectYears,
   validatePlanYears,
+  successorStartYearError,
+  latestPlanEndYear,
+  archivePreconditionError,
+  horizonContainmentError,
 } from './plan';
 
 describe('validatePlanYears', () => {
@@ -198,6 +202,108 @@ describe('validateProjectYears', () => {
     );
     expect(validateProjectYears({ startFiscalYear: 2029, endFiscalYear: 2032, horizon })).toMatch(
       /inside the strategic plan horizon/,
+    );
+  });
+});
+
+describe('successorStartYearError', () => {
+  const archived = (name: string, start: number, end: number) =>
+    ({ name, startFiscalYear: start, endFiscalYear: end, status: 'archived' as const });
+
+  it('accepts any start year when no archived plan exists', () => {
+    expect(successorStartYearError(2027, [])).toBeNull();
+    expect(
+      successorStartYearError(2027, [
+        { name: 'Current', startFiscalYear: 2026, endFiscalYear: 2030, status: 'active' },
+      ]),
+    ).toBeNull();
+  });
+
+  it('requires a start year after every archived horizon', () => {
+    const existing = [archived('IT Strategic Plan 2026–2030', 2026, 2030)];
+    expect(successorStartYearError(2031, existing)).toBeNull();
+    expect(successorStartYearError(2030, existing)).toMatch(
+      /must start after FY2030, the end of “IT Strategic Plan 2026–2030”/,
+    );
+    expect(successorStartYearError(2030, existing)).toMatch(/successor plan/i);
+  });
+
+  it('binds on the latest archived end year', () => {
+    const existing = [
+      archived('First plan', 2020, 2024),
+      archived('Second plan', 2025, 2029),
+    ];
+    expect(successorStartYearError(2030, existing)).toBeNull();
+    expect(successorStartYearError(2029, existing)).toMatch(/after FY2029, the end of “Second plan”/);
+  });
+});
+
+describe('latestPlanEndYear', () => {
+  it('returns the latest end year, or null with no plans', () => {
+    expect(latestPlanEndYear([])).toBeNull();
+    expect(
+      latestPlanEndYear([{ endFiscalYear: 2028 }, { endFiscalYear: 2030 }, { endFiscalYear: 2027 }]),
+    ).toBe(2030);
+  });
+});
+
+describe('archivePreconditionError', () => {
+  it('allows archiving when every annual plan is closed', () => {
+    expect(
+      archivePreconditionError([
+        { fiscalYear: 2027, status: 'closed' },
+        { fiscalYear: 2028, status: 'closed' },
+      ]),
+    ).toBeNull();
+    expect(archivePreconditionError([])).toBeNull();
+  });
+
+  it('refuses while an annual plan is draft or active, naming the earliest year', () => {
+    expect(
+      archivePreconditionError([
+        { fiscalYear: 2029, status: 'active' },
+        { fiscalYear: 2027, status: 'closed' },
+        { fiscalYear: 2028, status: 'draft' },
+      ]),
+    ).toBe(
+      'Every annual plan must be closed before the strategic plan is archived: FY2028 is still draft.',
+    );
+    expect(
+      archivePreconditionError([{ fiscalYear: 2029, status: 'active' }]),
+    ).toMatch(/FY2029 is still active/);
+  });
+});
+
+describe('horizonContainmentError', () => {
+  const horizon = { startFiscalYear: 2026, endFiscalYear: 2030 };
+
+  it('accepts a horizon that contains every annual plan and project', () => {
+    expect(
+      horizonContainmentError(horizon, [2027, 2028], [
+        { code: 'PRJ-2027-001', startFiscalYear: 2027, endFiscalYear: 2028 },
+      ]),
+    ).toBeNull();
+  });
+
+  it('refuses a horizon that excludes an annual plan and names the year', () => {
+    expect(horizonContainmentError({ startFiscalYear: 2026, endFiscalYear: 2029 }, [2027, 2030], [])).toBe(
+      'The new horizon excludes the FY2030 annual plan. An annual plan must stay inside the plan horizon.',
+    );
+  });
+
+  it('refuses a horizon that excludes a project and names the project', () => {
+    expect(
+      horizonContainmentError({ startFiscalYear: 2028, endFiscalYear: 2030 }, [2028], [
+        { code: 'PRJ-2027-001', startFiscalYear: 2027, endFiscalYear: 2029 },
+      ]),
+    ).toBe(
+      "The new horizon excludes project PRJ-2027-001 (FY2027–FY2029). A project's full-life years must stay inside the plan horizon.",
+    );
+  });
+
+  it('names the earliest outside annual plan first', () => {
+    expect(horizonContainmentError({ startFiscalYear: 2028, endFiscalYear: 2030 }, [2027, 2029], [])).toMatch(
+      /FY2027 annual plan/,
     );
   });
 });

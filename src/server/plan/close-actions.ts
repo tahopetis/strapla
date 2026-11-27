@@ -14,7 +14,7 @@ import {
   assertCloseConfirmation,
   type CarryOverTotalsByEntity,
 } from '@/domain/close';
-import { buildClosePlan, type ClosePlan } from '@/lib/close-form';
+import { buildClosePlan, finalCloseReason, type ClosePlan } from '@/lib/close-form';
 import type { FormState } from '@/lib/form-state';
 import {
   FormError,
@@ -42,6 +42,10 @@ import { getCloseState } from './close-queries';
  * component — zero carry included — the recomputed `carry_in_*` cache, and the
  * closed status. The snapshot invariants are checked against the ledger in the
  * same transaction, so a partially applied close can never exist.
+ *
+ * The strategic plan's end year is a final close (#109, ADR-0008 §3): it needs no next-year
+ * target, writes no receipt, and snapshots every available amount as not carried
+ * with the fixed plan-boundary reason.
  */
 
 /** The typed phrase is a form error (shown on the close page). */
@@ -52,6 +56,19 @@ function requireConfirmation(confirmation: string, fiscalYear: number): void {
     if (error instanceof CloseError) throw new FormError(error.message);
     throw error;
   }
+}
+
+/**
+ * The carry target: the same strategic plan's next fiscal year. Only a
+ * non-final close writes a receipt, and it always has this target loaded.
+ */
+function requireCarryTarget(plan: AnnualPlan | null, fiscalYear: number): AnnualPlan {
+  if (!plan) {
+    throw new FormError(
+      `The FY${fiscalYear + 1} annual plan does not exist yet; create it before closing.`,
+    );
+  }
+  return plan;
 }
 
 function requireNoCloseError(build: () => ClosePlan): ClosePlan {
@@ -93,6 +110,8 @@ interface WrittenClose {
   totals: CarryOverTotalsByEntity;
   entryCount: number;
   snapshotCount: number;
+  /** True when this was the strategic plan's end-year final close (#109, ADR-0008 §3). */
+  finalClose: boolean;
 }
 
 async function closeFiscalYear(
@@ -109,13 +128,14 @@ async function closeFiscalYear(
   if (state.strategicPlan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
   }
-  if (!state.targetPlan) {
-    throw new FormError(
-      `The FY${state.plan.fiscalYear + 1} annual plan does not exist yet; create it before closing.`,
-    );
-  }
-  const targetPlan = state.targetPlan;
-  if (targetPlan.status === 'closed') {
+  // A final close (#109, ADR-0008 §3) needs no next-year target: the end year carries nothing
+  // across the plan boundary, so there is nowhere for a carry to land. A state
+  // without the flag is an ordinary close.
+  const isFinalClose = state.isFinalClose === true;
+  const targetPlan = isFinalClose
+    ? null
+    : requireCarryTarget(state.targetPlan, state.plan.fiscalYear);
+  if (targetPlan && targetPlan.status === 'closed') {
     throw new FormError('The target fiscal year is already closed.');
   }
   if (state.carryOvers.length > 0) {
@@ -126,7 +146,12 @@ async function closeFiscalYear(
   const closePlan = requireNoCloseError(() =>
     buildClosePlan(
       {
-        defaultEntryReason: `Carried into FY${targetPlan.fiscalYear} at the FY${state.plan.fiscalYear} close (${input.reference})`,
+        defaultEntryReason: targetPlan
+          ? `Carried into FY${targetPlan.fiscalYear} at the FY${state.plan.fiscalYear} close (${input.reference})`
+          : '',
+        finalClose: isFinalClose
+          ? { reason: finalCloseReason(state.plan.fiscalYear) }
+          : undefined,
         programs: state.programs.map((row) => ({
           id: row.program.id,
           code: row.program.code,
@@ -190,11 +215,13 @@ async function closeFiscalYear(
       if (!targetProgramId) {
         throw new FormError(`No target program for ${row.project.code}.`);
       }
+      // Only a non-final close carries allocations, and it always has a target.
+      const carryTarget = requireCarryTarget(targetPlan, state.plan.fiscalYear);
       const [created] = await tx
         .insert(projectYearAllocations)
         .values({
           projectId: row.project.id,
-          annualPlanId: targetPlan.id,
+          annualPlanId: carryTarget.id,
           annualProgramId: targetProgramId,
           allocationCapex: 0,
           allocationOpex: 0,
@@ -212,7 +239,7 @@ async function closeFiscalYear(
         entityId: created.id,
         after: {
           projectId: row.project.id,
-          annualPlanId: targetPlan.id,
+          annualPlanId: carryTarget.id,
           annualProgramId: targetProgramId,
         },
         reason: `Created by the FY${state.plan.fiscalYear} close: ${input.reference}`,
@@ -220,6 +247,8 @@ async function closeFiscalYear(
     }
 
     for (const entry of closePlan.entries) {
+      // Only a non-final close writes receipts, and it always has a target.
+      const carryTarget = requireCarryTarget(targetPlan, state.plan.fiscalYear);
       const targetEntityId =
         entry.entityType === 'allocation'
           ? (resolvedTargets.get(entry.targetEntityId) ?? entry.targetEntityId)
@@ -228,7 +257,7 @@ async function closeFiscalYear(
         origin: 'close',
         sourceAnnualPlanId: state.plan.id,
         sourceEntityId: entry.sourceEntityId,
-        targetAnnualPlanId: targetPlan.id,
+        targetAnnualPlanId: carryTarget.id,
         entityType: entry.entityType,
         targetEntityId,
         component: entry.component,
@@ -256,7 +285,7 @@ async function closeFiscalYear(
           component: entry.component,
           sourceAnnualPlanId: state.plan.id,
           sourceEntityId: entry.sourceEntityId,
-          targetAnnualPlanId: targetPlan.id,
+          targetAnnualPlanId: carryTarget.id,
           carryOverEntryId: receipt.id,
           sourceEntryId: receipt.sourceEntryId,
         },
@@ -309,9 +338,12 @@ async function closeFiscalYear(
       after: {
         status: 'closed',
         closeReference: input.reference,
-        targetAnnualPlanId: targetPlan.id,
+        targetAnnualPlanId: targetPlan?.id ?? null,
         carryOverEntries: entryIds.length,
         closeSnapshots: closePlan.snapshots.length,
+        // Only a final close (#109, ADR-0008 §3) sets this, so earlier years keep the same
+        // audit payload they have always written.
+        ...(isFinalClose ? { finalClose: true } : {}),
       },
       reason: input.reference,
     });
@@ -321,6 +353,7 @@ async function closeFiscalYear(
       totals: closePlan.totals,
       entryCount: entryIds.length,
       snapshotCount: closePlan.snapshots.length,
+      finalClose: isFinalClose,
     };
   });
 
@@ -371,6 +404,8 @@ export async function closeFiscalYearAction(
   }
   finishWith(
     `/plan/annual/${written.closed.id}`,
-    `Fiscal year FY${written.closed.fiscalYear} closed and carry-over recorded (${written.entryCount} receipt${written.entryCount === 1 ? '' : 's'}, ${written.snapshotCount} snapshot rows).`,
+    written.finalClose
+      ? `Fiscal year FY${written.closed.fiscalYear} closed as the final close: no carry-over, ${written.snapshotCount} snapshot rows.`
+      : `Fiscal year FY${written.closed.fiscalYear} closed and carry-over recorded (${written.entryCount} receipt${written.entryCount === 1 ? '' : 's'}, ${written.snapshotCount} snapshot rows).`,
   );
 }

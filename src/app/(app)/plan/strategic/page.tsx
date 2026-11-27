@@ -16,7 +16,11 @@ import { Badge, Card, EmptyState, Flash, Money, PageHeader } from '@/components/
 import type { StrategicPlan } from '@/db/schema';
 import type { CustomFieldDefinition, CustomFieldValues } from '@/domain/custom-fields';
 import type { InitiativeEnvelopeRow } from '@/server/plan/queries';
-import { getCurrentStrategicPlan, listInitiativeEnvelopeRows } from '@/server/plan/queries';
+import {
+  getCurrentStrategicPlan,
+  listArchivedPlans,
+  listInitiativeEnvelopeRows,
+} from '@/server/plan/queries';
 import { listCustomFieldDefinitions, readCustomFieldValuesMap } from '@/server/custom-fields/data';
 import {
   activatePlanAction,
@@ -39,9 +43,18 @@ export default async function StrategicPlanPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { error, message } = await searchParams;
+  const currentYear = new Date().getFullYear();
   const plan = await getCurrentStrategicPlan();
   const rows = plan ? await listInitiativeEnvelopeRows(plan.id) : [];
   const editable = plan !== null && plan.status !== 'archived';
+  // Between the archive and the successor, the archived plan stays visible with
+  // the create card for its successor (#109). The default horizon starts after
+  // the most recent archived plan.
+  const archivedPlans = plan?.status === 'archived' ? await listArchivedPlans() : [];
+  const successorStartYear =
+    plan?.status === 'archived'
+      ? (archivedPlans[0]?.plan.endFiscalYear ?? plan.endFiscalYear) + 1
+      : null;
   const [initiativeFields, initiativeValues] = await Promise.all([
     listCustomFieldDefinitions('strategic_initiative'),
     readCustomFieldValuesMap(
@@ -76,10 +89,26 @@ export default async function StrategicPlanPage({
       <Flash error={error} message={message} />
 
       {plan === null ? (
-        <CreatePlanCard />
+        <CreatePlanCard
+          title="Create the strategic plan"
+          description={`The five-year horizon, for example ${currentYear} to ${currentYear + 4}. One plan is active at a time; a successor starts after the archived plan.`}
+          startFiscalYear={currentYear}
+        />
       ) : (
         <div className="space-y-6">
+          {plan.status === 'archived' ? (
+            <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              This plan is archived and read-only. Create a successor plan to continue the portfolio.
+            </p>
+          ) : null}
           <PlanDetailsCard plan={plan} editable={editable} />
+          {successorStartYear === null ? null : (
+            <CreatePlanCard
+              title="Create the successor plan"
+              description="The successor starts after the archived horizon and begins as a draft. One plan is active at a time."
+              startFiscalYear={successorStartYear}
+            />
+          )}
           <InitiativesSection
             plan={plan}
             rows={rows}
@@ -93,20 +122,24 @@ export default async function StrategicPlanPage({
   );
 }
 
-function CreatePlanCard() {
-  const currentYear = new Date().getFullYear();
-  const horizonEnd = currentYear + 4;
+function CreatePlanCard({
+  title,
+  description,
+  startFiscalYear,
+}: {
+  title: string;
+  description: string;
+  startFiscalYear: number;
+}) {
+  const horizonEnd = startFiscalYear + 4;
   return (
-    <Card
-      title="Create the strategic plan"
-      description={`One plan at a time in v1: the five-year horizon, for example ${currentYear} to ${horizonEnd}.`}
-    >
+    <Card title={title} description={description}>
       <Form action={createPlanAction} className="grid gap-4 sm:grid-cols-2">
         <TextField
           label="Plan name"
           name="name"
           required
-          placeholder={`IT Strategic Plan ${currentYear}–${horizonEnd}`}
+          placeholder={`IT Strategic Plan ${startFiscalYear}–${horizonEnd}`}
           maxLength={160}
         />
         <div className="grid grid-cols-2 gap-4">
@@ -114,7 +147,7 @@ function CreatePlanCard() {
             label="Start fiscal year"
             name="startFiscalYear"
             required
-            defaultValue={String(currentYear)}
+            defaultValue={String(startFiscalYear)}
             maxLength={4}
           />
           <TextField
@@ -181,24 +214,18 @@ function PlanDetailsCard({ plan, editable }: { plan: StrategicPlan; editable: bo
             </Form>
           </details>
 
-          {plan.status === 'active' ? (
-            <ConfirmDialog
-              action={archivePlanAction}
-              triggerLabel="Archive plan"
-              title="Archive the strategic plan?"
-              consequence="Archiving is final: the plan and everything under it become read-only."
-              confirmLabel="Archive plan"
-            >
-              <HiddenField name="id" value={plan.id} />
-              <ReasonField hint="Recorded in the audit trail." />
-            </ConfirmDialog>
-          ) : null}
+          <ConfirmDialog
+            action={archivePlanAction}
+            triggerLabel="Archive plan"
+            title="Archive the strategic plan?"
+            consequence="Archiving is final: the plan and everything under it become read-only."
+            confirmLabel="Archive plan"
+          >
+            <HiddenField name="id" value={plan.id} />
+            <ReasonField hint="Recorded in the audit trail." />
+          </ConfirmDialog>
         </div>
-      ) : (
-        <p className="mt-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          This plan is archived and read-only.
-        </p>
-      )}
+      ) : null}
     </Card>
   );
 }
@@ -255,7 +282,11 @@ function InitiativesSection({
       ) : null}
 
       {rows.length === 0 ? (
-        <EmptyState>No initiatives yet. Add the first initiative with its envelope above.</EmptyState>
+        <EmptyState>
+          {editable
+            ? 'No initiatives yet. Add the first initiative with its envelope above.'
+            : 'No strategic initiatives in this plan.'}
+        </EmptyState>
       ) : (
         <div className="space-y-4">
           {rows.map((row) => (
@@ -369,8 +400,10 @@ function InitiativeCard({
       {initiative.envelopeCapex + initiative.envelopeOpex === 0 && programCount > 0 ? (
         <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           This initiative has no capex/opex envelope split yet. The old single envelope is not
-          carried over automatically: set both component envelopes (and both prior consumed
-          figures) in the edit form below.
+          carried over automatically:{' '}
+          {editable
+            ? 'set both component envelopes (and both prior consumed figures) in the edit form below.'
+            : 'the archived plan keeps the recorded figures as they were.'}
         </p>
       ) : null}
 

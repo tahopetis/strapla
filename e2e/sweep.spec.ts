@@ -39,6 +39,12 @@ test('sweeps the planning routes with real portfolio data @t3', async ({ page })
   await expect(page.getByRole('heading', { name: 'Strategic plan & initiatives' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /^SI-01 · / })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Plan details' })).toBeVisible();
+  // The archived-plans list is reachable from the plan navigation before any
+  // plan is archived; its own heading and empty state are the content at this
+  // point in the shared run (the succession tier archives later).
+  await page.getByRole('link', { name: 'Archived plans' }).click();
+  await expect(page.getByRole('heading', { name: 'Archived plans', exact: true })).toBeVisible();
+  await expect(page.getByText('No archived strategic plans.').first()).toBeVisible();
 
   await page.goto('/plan/annual');
   await expect(

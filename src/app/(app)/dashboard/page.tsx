@@ -190,6 +190,7 @@ export default async function DashboardPage() {
         description={`Portfolio health for ${plan.name} · fiscal years ${plan.startFiscalYear}–${plan.endFiscalYear}`}
         actions={
           <div className="flex flex-wrap gap-2">
+            {plan.status === 'archived' ? <StatusBadge status={plan.status} /> : null}
             {currentYear ? (
               <AnnualPlanBadge annualPlanId={currentYear.annualPlan.id} tone="success">
                 FY{currentYear.annualPlan.fiscalYear} active
@@ -205,6 +206,15 @@ export default async function DashboardPage() {
           </div>
         }
       />
+
+      {plan.status === 'archived' ? (
+        <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          This plan is archived and read-only. Create a successor plan to continue the portfolio.{' '}
+          <Link href="/plan/strategic" className={linkClass}>
+            Create the successor plan
+          </Link>
+        </p>
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat

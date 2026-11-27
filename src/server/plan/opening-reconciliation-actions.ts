@@ -20,7 +20,7 @@ import {
 } from '@/server/actions/common';
 import { recordAudit } from '@/server/audit';
 import { getOpeningReconciliation } from './opening-queries';
-import { getStrategicPlan } from './queries';
+import { getStrategicPlan, isFirstStrategicPlan } from './queries';
 
 const LANDING = '/plan/opening-balances';
 
@@ -50,6 +50,11 @@ async function requirePlan(planId: string) {
   if (!plan) throw new FormError('Strategic plan not found.');
   if (plan.status === 'archived') {
     throw new FormError('The strategic plan is archived and read-only.');
+  }
+  // Opening balances are signed off once, for the first plan (#109,
+  // ADR-0008 §7): a successor plan starts without them.
+  if (!(await isFirstStrategicPlan(plan))) {
+    throw new FormError('Opening balances are recorded once, for the first plan.');
   }
   return plan;
 }

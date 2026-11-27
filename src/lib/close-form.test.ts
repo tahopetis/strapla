@@ -36,7 +36,7 @@ describe('readCarryOverField', () => {
 
 // ---------------------------------------------------------------- close plan (#113)
 
-import { buildClosePlan, notCarriedReasonFieldName, targetProgramFieldName } from './close-form';
+import { buildClosePlan, finalCloseReason, notCarriedReasonFieldName, targetProgramFieldName } from './close-form';
 
 function closeForm(values: Record<string, string>): FormData {
   const form = new FormData();
@@ -297,5 +297,97 @@ describe('buildClosePlan target for a new allocation', () => {
       }),
     );
     expect(plan.programTargets.get(PROGRAM)).toBe('program-3');
+  });
+});
+
+// ------------------------------------------------------------- final close (#109)
+
+describe('finalCloseReason', () => {
+  it('names the fiscal year and the plan boundary', () => {
+    expect(finalCloseReason(2031)).toBe(
+      'Final close: FY2031 is the last year of the strategic plan. No carry-over crosses the plan boundary.',
+    );
+  });
+});
+
+describe('buildClosePlan final close', () => {
+  const FINAL_INPUT = { ...PLAN_INPUT, finalClose: { reason: finalCloseReason(2027) } };
+
+  it('writes no entries or program targets and records every available amount as not carried', () => {
+    const plan = buildClosePlan(FINAL_INPUT, closeForm(FULL_CARRY));
+
+    expect(plan.entries).toEqual([]);
+    expect(plan.programTargets.size).toBe(0);
+    expect(plan.totals).toEqual({
+      program: { capex: 0, opex: 0 },
+      allocation: { capex: 0, opex: 0 },
+    });
+    expect(plan.snapshots).toEqual([
+      {
+        entityType: 'program',
+        entityId: PROGRAM,
+        component: 'capex',
+        available: 700,
+        carried: 0,
+        notCarried: 700,
+        notCarriedReason: finalCloseReason(2027),
+      },
+      {
+        entityType: 'program',
+        entityId: PROGRAM,
+        component: 'opex',
+        available: 300,
+        carried: 0,
+        notCarried: 300,
+        notCarriedReason: finalCloseReason(2027),
+      },
+      {
+        entityType: 'allocation',
+        entityId: ALLOCATION,
+        component: 'capex',
+        available: 200,
+        carried: 0,
+        notCarried: 200,
+        notCarriedReason: finalCloseReason(2027),
+      },
+      {
+        entityType: 'allocation',
+        entityId: ALLOCATION,
+        component: 'opex',
+        available: 0,
+        carried: 0,
+        notCarried: 0,
+        // The row is still written with the fixed reason when nothing is available.
+        notCarriedReason: finalCloseReason(2027),
+      },
+    ]);
+  });
+
+  it('ignores every submitted carry field, target and not-carried reason', () => {
+    const plan = buildClosePlan(
+      FINAL_INPUT,
+      closeForm({
+        ...FULL_CARRY,
+        // A blank carry field and a redirect target would both be refused in the
+        // normal path: the final close does not read them at all.
+        [`carry_program_${PROGRAM}_capex`]: '',
+        [targetProgramFieldName(PROGRAM)]: 'program-9',
+        [notCarriedReasonFieldName('program', PROGRAM)]: 'Typed by the owner but ignored',
+      }),
+    );
+
+    expect(plan.entries).toEqual([]);
+    expect(plan.programTargets.size).toBe(0);
+    expect(plan.snapshots.every((row) => row.carried === 0)).toBe(true);
+    expect(plan.snapshots.every((row) => row.notCarried === row.available)).toBe(true);
+    expect(plan.snapshots.every((row) => row.notCarriedReason === finalCloseReason(2027))).toBe(
+      true,
+    );
+  });
+
+  it('refuses a final close without a reason', () => {
+    expect(() =>
+      buildClosePlan({ ...PLAN_INPUT, finalClose: { reason: '   ' } }, closeForm(FULL_CARRY)),
+    ).toThrow(/reason/i);
   });
 });

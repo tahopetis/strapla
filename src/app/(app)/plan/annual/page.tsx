@@ -55,7 +55,17 @@ export default async function AnnualPlansPage({
       <PlanNav />
       <Flash error={error} message={message} />
 
-      {strategicPlan.status !== 'active' ? (
+      {strategicPlan.status === 'archived' ? (
+        <Card title="The strategic plan is archived" className="mb-6">
+          <p className="text-sm text-slate-700">
+            This plan is archived and read-only. Its annual plans stay readable below.{' '}
+            <Link href="/plan/strategic" className={linkClass}>
+              Open the strategic plan
+            </Link>{' '}
+            to create a successor plan.
+          </p>
+        </Card>
+      ) : strategicPlan.status !== 'active' ? (
         <Card title="The strategic plan is not active yet">
           <p className="text-sm text-slate-700">
             Annual plans can only be created once the strategic plan is active.{' '}

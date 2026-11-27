@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import {
   annualPlans,
   annualPrograms,
+  auditEntries,
   projects,
   recurringOpsItems,
   strategicInitiatives,
@@ -19,12 +20,20 @@ import { getRevisionDeltasForEntities } from './revision-queries';
  * rules come from src/domain.
  */
 
+/**
+ * The plan every surface works with: the non-archived plan (a plan is active or
+ * draft, never both in one deployment), or, while no successor exists yet, the
+ * most recent archived plan. It stays readable between the archive and the
+ * successor creation; a write is refused by the plan's own archived check
+ * (#109, ADR-0008).
+ */
 export async function getCurrentStrategicPlan(): Promise<StrategicPlan | null> {
   const rows = await getDb()
     .select()
     .from(strategicPlans)
     .orderBy(
-      sql`case when ${strategicPlans.status} = 'active' then 0 when ${strategicPlans.status} = 'draft' then 1 else 2 end`,
+      sql`case when ${strategicPlans.status} = 'archived' then 1 else 0 end`,
+      desc(strategicPlans.endFiscalYear),
       desc(strategicPlans.createdAt),
     )
     .limit(1);
@@ -34,6 +43,83 @@ export async function getCurrentStrategicPlan(): Promise<StrategicPlan | null> {
 export async function getStrategicPlan(id: string): Promise<StrategicPlan | null> {
   const rows = await getDb().select().from(strategicPlans).where(eq(strategicPlans.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+/** An archived plan with the archive entry the status change recorded. */
+export interface ArchivedPlanRow {
+  plan: StrategicPlan;
+  /** When the status-change audit entry archived the plan; null if the trail is missing. */
+  archivedAt: Date | null;
+  archivedReason: string | null;
+}
+
+/**
+ * The status-change entry that archived the plan is the archive record: the
+ * plan row itself carries no archive date or reason (#109, ADR-0008 §5). The
+ * audit trail is append-only and an archived plan is never edited again, so the
+ * latest such entry is the one that archived it.
+ */
+async function listArchiveAuditEntries(planIds: readonly string[]) {
+  if (planIds.length === 0) return [];
+  return getDb()
+    .select()
+    .from(auditEntries)
+    .where(
+      and(
+        eq(auditEntries.entityType, 'strategic_plan'),
+        eq(auditEntries.action, 'status_change'),
+        inArray(auditEntries.entityId, planIds),
+        sql`${auditEntries.after}->>'status' = 'archived'`,
+      ),
+    )
+    .orderBy(desc(auditEntries.createdAt));
+}
+
+/** Archived plans, latest horizon first, with their archive date and reason. */
+export async function listArchivedPlans(): Promise<ArchivedPlanRow[]> {
+  const plans = await getDb()
+    .select()
+    .from(strategicPlans)
+    .where(eq(strategicPlans.status, 'archived'))
+    .orderBy(desc(strategicPlans.endFiscalYear));
+  if (plans.length === 0) return [];
+  const audits = await listArchiveAuditEntries(plans.map((plan) => plan.id));
+  const latest = new Map<string, (typeof audits)[number]>();
+  for (const entry of audits) {
+    if (!latest.has(entry.entityId)) latest.set(entry.entityId, entry);
+  }
+  return plans.map((plan) => {
+    const entry = latest.get(plan.id);
+    return {
+      plan,
+      archivedAt: entry?.createdAt ?? null,
+      archivedReason: entry?.reason ?? null,
+    };
+  });
+}
+
+/** The archive date and reason of one plan, or null when it was never archived. */
+export async function getPlanArchiveInfo(
+  planId: string,
+): Promise<{ archivedAt: Date | null; archivedReason: string | null } | null> {
+  const [entry] = await listArchiveAuditEntries([planId]);
+  if (!entry) return null;
+  return { archivedAt: entry.createdAt, archivedReason: entry.reason };
+}
+
+/**
+ * True when no strategic plan ends before this one starts: the deployment's
+ * first plan. Opening balances belong to that plan only (#109, ADR-0008 §7).
+ */
+export async function isFirstStrategicPlan(
+  plan: Pick<StrategicPlan, 'startFiscalYear'>,
+): Promise<boolean> {
+  const rows = await getDb()
+    .select({ id: strategicPlans.id })
+    .from(strategicPlans)
+    .where(lt(strategicPlans.endFiscalYear, plan.startFiscalYear))
+    .limit(1);
+  return rows.length === 0;
 }
 
 export interface InitiativeEnvelopeRow {

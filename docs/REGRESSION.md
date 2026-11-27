@@ -13,6 +13,7 @@ From a machine with the `gh` CLI:
 ```bash
 gh workflow run regression.yml -f tier=all
 gh workflow run regression.yml -f tier=t2 -f grep=BR-9
+gh workflow run regression.yml -f tier=t4
 ```
 
 From this Android device (the `gh` CLI cannot reach the network; `gh-api` can):
@@ -35,7 +36,12 @@ DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm e2e     
 DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm exec playwright test --project=foundation
 DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm exec playwright test --project=t2
 DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm exec playwright test --project=t3
+DATABASE_URL=postgres://strapla:strapla@localhost:5432/strapla_e2e pnpm exec playwright test --project=succession
 ```
+
+Naming `--project=succession` (or dispatching the workflow with tier `t4`) runs its dependencies
+first: the succession journey builds on the plan and later-year state that `t2` and `t3` leave behind,
+and it archives the shared foundation plan, so it is always the last project.
 
 The database must have **no users**: the journey starts at `/setup`, which the app refuses once an account exists. `e2e/support/global-setup.ts` checks this and fails with instructions instead of letting the suite collapse into noise. Re-create the database between runs.
 
@@ -46,12 +52,23 @@ The database must have **no users**: the journey starts at `/setup`, which the a
 | T1 | `foundation` | One journey that builds the portfolio end to end: first-run setup, strategic plan and SI, annual plans, programs, project with ijin prinsip, allocation, commitment, spend, recurring ops, opening-balance import, year close with carry-over, the close receipt (snapshot + ledger receipts) and the continuation program's money line, custom fields, reports, members, audit. Also the only place the empty states and the opening-balance form exist, because the journey starts from nothing and signs off FY2026. |
 | T2 | `t2` | The rules the journey only touches on the happy path: budget revisions (active-only posting, awaiting and recording the decision, the register lines and their program links, the activation freeze, the switch floor and its refusals), per-component envelope and effective-budget figures, carry-in shown separately from the effective budget, edits, voids and their refusals, settlement arithmetic, closed-year corrections and the locks that remain, close preconditions, all four reports with parsed CSV/XLSX and print media, every computed flag, members and audit search, sessions and sign-in boundaries, opening-import XLSX. |
 | T3 | `t3` | Read-only sweep of every route with data, plus the unauthenticated boundaries (`/healthz`, redirect to sign-in, styled 404, ended session). |
+| T4 | `succession` | The end of the plan and the next one: the horizon edit refusals, zero-carry closes of the later years, the end-year **final close** with no carry-over, archiving the plan, creating and activating the successor and its first annual plan, opening balances staying first-plan-only, and the read-only archived plans list and page. It runs last because it archives the shared foundation plan. |
 
-The tiers are Playwright projects: `t2` and `t3` depend on `foundation`, so they run it first and reuse its `storageState` (`e2e/.auth/admin.json`, gitignored). A broken foundation skips the later tiers — which is correct: if the plan cannot be built, nothing downstream is meaningful.
+The tiers are Playwright projects: `t2` and `t3` depend on `foundation`, so they run it first and reuse
+its `storageState` (`e2e/.auth/admin.json`, gitignored). `succession` (T4) depends on `t2` and `t3`
+because it needs the later years they leave open and archives the plan every earlier tier builds on; it
+therefore always runs last. A broken foundation skips the later tiers — which is correct: if the plan
+cannot be built, nothing downstream is meaningful.
 
-A full run is about two minutes of test execution (about 60 tests) and four to five minutes for the whole job including install, build, migrate and browser download on a cold runner.
+A full run is about two minutes of test execution (roughly 60 tests) plus the succession journey, and
+four to six minutes for the whole job including install, build, migrate and browser download on a cold
+runner.
 
-`tier` selects the project. `grep` is an advanced filter passed to `--grep`; it applies to the foundation too, so narrowing it to a later-tier tag starves those tests of data. Use it to run a subset *within* a green project, not instead of one.
+`tier` selects the project: `t1` runs `foundation`, `t2` and `t3` run their projects (plus the
+foundation they depend on), `t4` runs `succession` (plus every dependency), and `all` runs everything in
+dependency order. `grep` is an advanced filter passed to `--grep`; it applies to the foundation too, so
+narrowing it to a later-tier tag starves those tests of data. Use it to run a subset *within* a green
+project, not instead of one.
 
 ## Coverage map
 
@@ -72,6 +89,7 @@ A full run is about two minutes of test execution (about 60 tests) and four to f
 | `flags.spec.ts` | T2 | BR-7, BR-8, BR-9, BR-18, commitments over contract value, spend over fiscal-year commitment, per-component capex/opex envelope overrun, and the project page and register agreeing on the lifetime commitment figure and BR-8. |
 | `sweep.spec.ts` | T3 | Every route renders with data; malformed dynamic record ids render the styled 404; unauthenticated `/healthz` and sign-in redirect. |
 | `resilience.spec.ts` | T3 | Ended session lands on sign-in with an explanation; unknown URL renders the styled 404. |
+| `succession.spec.ts` | T4 | A horizon edit that would exclude the FY2030 annual plan is refused and names the year, and a valid horizon edit saves and is audited; zero-carry closes of FY2028 and FY2029; the FY2030 **final close** (no carry inputs or targets, a close snapshot with carried 0); archiving the plan and its read-only state; **Create the successor plan** appearing only then, created from FY2031 and current on Plan, the plan page and the dashboard; the successor's strategic initiative, activation and first annual plan; opening balances staying first-plan-only (no import or sign-off on the successor, the first plan's signed-off figures read-only from its archived page); and the archived plans list and page (name, horizon, archived date and reason matching the status-change audit entry, no write controls, links into the existing read-only annual plan, program, project and allocation pages). |
 
 ## Known gaps
 
@@ -101,10 +119,11 @@ Two other findings worth knowing when reading the suite:
 
 ## Adding to the suite
 
-- One spec per area, one flow per test, title ends with `@t2` or `@t3`.
+- One spec per area, one flow per test, title ends with `@t2`, `@t3` or `@t4`.
 - Reuse `e2e/support/`: `money.ts` (`rp`), `db.ts` (`withSql`, `createRow` helpers), `auth.ts` (`ADMIN`, `createMember`, `signInWithSessionCookie`), `programs.ts` (`createProgramFixture`).
 - A later-tier spec that needs an active-year program with a budget seeds it with `createProgramFixture`; the freeze is a UI rule, so the direct row keeps the spec focused on the behaviour it pins. The program-creation path (draft with budgets, active at zero plus a revision) is covered by the foundation and `revisions.spec.ts`.
-- FY2027 is closed by the foundation and FY2028 is the open year: create test data in FY2028 with names unique to the spec. A spec that needs an activation boundary may create and activate its own later year (the revisions spec uses FY2030); never assert entity counts inherited from another spec.
+- FY2027 is closed by the foundation, FY2028 stays the open year for T2 and T3, and later years belong to the spec that creates them (the revisions spec uses FY2030). Create test data in an open year with names unique to the spec; never assert entity counts inherited from another spec.
+- The plan's own end state belongs to T4. `succession.spec.ts` is the only spec that changes the strategic plan itself: it closes FY2028, FY2029 and FY2030, final-closes the end year, archives the plan and creates the successor. It depends on `t2` and `t3` and runs last, so a spec that needs the plan open or an archivable plan belongs before it, not beside it.
 - Do not add test-only endpoints or authentication bypasses to the app. A test that needs one is testing the wrong thing.
 - When a control has no stable accessible name, adding one is preferred over a positional CSS selector.
 - Financial assertions use the app's own formatting (`rp`) and exact status strings; "some page rendered" is not a regression test.

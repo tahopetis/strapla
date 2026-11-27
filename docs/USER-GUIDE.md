@@ -15,7 +15,7 @@ everything described here is available to every signed-in user.
 | Version | **v0.5.0 (beta)** |
 | Guide last updated | 2026-11-27 |
 | Audience | Finance and portfolio administrators |
-| App scope | Plan, funding and execution, year close, reports, dashboard, administration, help |
+| App scope | Plan (including plan succession), funding and execution, year close, reports, dashboard, administration, help |
 | In-app help | **Help** in the main navigation |
 
 ## Contents
@@ -75,7 +75,7 @@ There is no self-service sign-up or password reset; if the only administrator lo
 
 - **Dashboard** — portfolio health at a glance.
 - **Plan** — the planning side, with its own sub-navigation: **Overview**, **Strategic plan & SIs**,
-  **Annual plans**, **Projects**, **Opening balances**.
+  **Annual plans**, **Projects**, **Opening balances**, **Archived plans**.
 - **Funding** — allocations, balances, flags and the execution model, with links into the workflows.
 - **Reports** — the four reports, exports and print views.
 - **Administration** — **Members**, **Audit trail** and **Custom fields**; **Help** is the in-app
@@ -118,7 +118,7 @@ There is no self-service sign-up or password reset; if the only administrator lo
 ### 2.1 The portfolio hierarchy
 
 ```
-Strategic plan (e.g. 2026–2030; one per deployment)
+Strategic plan (one active or draft at a time; e.g. 2026–2030, then a successor 2031–2035)
 └── Strategic initiative (SI) — five-year envelope, prior consumption
     └── Annual plan (exactly one per fiscal year; draft → active → closed)
         └── Annual program (one SI; initial capex/opex budget + revisions; ledger carry-in; continuation link)
@@ -142,11 +142,17 @@ Since ADR-0006, an **active** year's program budgets are frozen: a change is a n
 **budget revision**, never an in-place edit. **Carry-in** is received through the carry-over ledger
 (an audited receipt), not typed on a program or allocation.
 
+The strategic plan is a **boundary**, not a one-off record. When its horizon ends (or the owner ends
+it early), its last annual plan closes as a **final close** with nothing carried, the plan is archived
+read-only, and a **successor plan** starts in the year after it. Nothing crosses the boundary — no
+budget, carry-in, project or initiative — and the successor starts empty (§6.6).
+
 ### 2.2 The objects in one table
 
 | Object | What it represents | Where you manage it |
 | --- | --- | --- |
-| **Strategic plan** | The multi-year horizon (start/end fiscal year) and its status. One plan per deployment. | Plan → Strategic plan & SIs |
+| **Strategic plan** | The multi-year horizon (start/end fiscal year) and its status. One plan is active or draft at a time; a successor follows the archived plan. | Plan → Strategic plan & SIs |
+| **Archived plans** | The read-only list of archived plans, with each plan's read-only page: its initiatives with envelope figures, its annual plans and links into the annual plan, program, project and allocation pages. | Plan → Archived plans |
 | **Strategic initiative (SI)** | A five-year envelope: code, name, owner, objective, prior program budget consumed. | Plan → Strategic plan & SIs |
 | **Annual plan** | One fiscal year inside the horizon; draft → active → closed. | Plan → Annual plans |
 | **Annual program** | A budget line for one SI in one year: initial capex/opex budget (frozen once the plan is active), effective budget, ledger carry-in, optional continuation. | Annual plan page |
@@ -167,7 +173,7 @@ Since ADR-0006, an **active** year's program budgets are frozen: a change is a n
 
 | Record | Statuses | What changes it |
 | --- | --- | --- |
-| Strategic plan | `draft`, `active`, `archived` | **Activate plan** / **Archive plan** in the page header (reason required). Archived is final and read-only. |
+| Strategic plan | `draft`, `active`, `archived` | **Activate plan** / **Archive plan** in the page header (reason required). An archive needs every annual plan under the plan closed; a draft plan, which has none, may be archived too. Archived is final and read-only, and a successor can then be created (§6.6). |
 | Annual plan | `draft`, `active`, `closed` | **Activate annual plan** in the page header; **Close fiscal year** workflow. Closed accepts reasoned corrections of existing records only; no reopen (see §6.3). |
 | Project | `active`, `cancelled` | **Cancel project** (reason required). Cancelled is read-only. |
 | Commitment | `open`, `partially settled`, `settled` | Settlements: open = amount − settled. A commitment can be voided only while it has no settlements. |
@@ -188,6 +194,7 @@ Since ADR-0006, an **active** year's program budgets are frozen: a change is a n
 | **Budget revision** | A numbered (`REV-<FY>-<nnn>`), immutable document with one signed line per program/component (and de-allocation lines). It may be posted before its formal decision exists; the register then shows *awaiting decision reference*. |
 | **Carry-in** | Money received into a program or project-year allocation from the carry-over **ledger** (year close, opening balance, or reasoned manual grant). It adds to available money but is not part of this year's initial budget. The `carry_in_*` columns on programs and allocations are a guarded cache; the ledger is the source of truth. A recurring ops item's carry-in is outside the ledger and is a plain typed field. |
 | **Carry-over** | The year-close decision that moves remaining budget into the next year. The close records a snapshot (available / carried / not carried + reason) and writes one receipt per carried amount. |
+| **Final close** | The year close of the annual plan in the plan's end year: no next-year target, every available amount recorded as not carried, and no carry-over receipt. See §6.5. |
 | **Allocation** | The project's slice of a program's available budget for one fiscal year. |
 | **Commitment** | Money promised (PO / contract milestone) but not necessarily paid yet. |
 | **Open commitment** | `commitment amount − settled amount`. Open commitments reduce remaining but are **not** carry-over. |
@@ -254,13 +261,17 @@ execution. Each step needs the step above it.
 
 **Plan → Strategic plan & SIs**
 
-1. **Create the strategic plan**: enter **Plan name**, **Start fiscal year** and **End fiscal year**,
-   then click **Create plan**. The horizon must be 1–10 years and end no earlier than it starts. This
-   release supports **one plan per deployment**: edit the existing plan to change its name or horizon
-   (archiving it is final and does not free the slot for a new plan).
+1. **Create the plan**: enter **Plan name**, **Start fiscal year** and **End fiscal year**, then click
+   **Create plan**. The horizon must be 1–10 years and end no earlier than it starts, and a successor's
+   start year must be after every archived plan's end year (§6.6). Only one plan can be active or
+   draft at a time, and only the first plan has opening balances (§3.6). Edit the existing plan to
+   change its name or horizon; a horizon edit cannot exclude an existing annual plan or a project's
+   full-life years (§6.6).
 2. For a draft plan, the page header carries the status and an **Activate plan** form; enter a reason
    and activate it. Annual plans can only be created once the strategic plan is active. **Archive
-   plan** is final: everything becomes read-only, and no replacement plan can be created in this release.
+   plan** is final: everything becomes read-only, and a successor can then be created (§6.5–6.6). A
+   plan can be archived only when every annual plan under it is closed; a draft plan may also be
+   archived, so a plan created by mistake is not a dead end.
 3. **Add initiative** for each SI:
    - **Code** (letters, digits and hyphens, e.g. `SI-01`) and **Name**;
    - **Owner** and **Objective** (optional);
@@ -272,6 +283,9 @@ execution. Each step needs the step above it.
    initiative** or **Void initiative** below the card; an initiative with annual programs cannot be
    voided until its programs are voided.
 
+**Archived plans** in the Plan sub-navigation lists every archived plan read-only — name, horizon,
+archived date and archived reason — and opens each plan's read-only page (§6.6).
+
 ### 3.2 Annual plans
 
 **Plan → Annual plans**
@@ -282,7 +296,9 @@ execution. Each step needs the step above it.
    reason and activate it when the budget is settled. Activation **freezes the program budgets**:
    from then on a budget change is a budget revision (§3.8). Non-amount fields stay editable, and the
    page header shows the revision count and how many are awaiting their decision reference.
-3. A plan can be closed only through the year-close workflow (§6). The **Annual plans** table lists
+3. A plan can be closed only through the year-close workflow (§6). The annual plan in the strategic
+   plan's end year closes as a **final close** with no next-year plan (§6.5). A successor plan's first
+   annual plan is created the same way once that plan is active. The **Annual plans** table lists
    fiscal year, status, program count, recurring ops count and an **Open** link; the **Program
    threads** card lists continuation chains.
 
@@ -336,7 +352,10 @@ Rules:
 | Final deal price | The negotiated contract value (the ceiling for lifetime commitments, BR-8). |
 
 The originating program's fiscal year must fall inside the project years, and a project cannot start
-before its originating program's year. The plan must be active and the originating year open.
+before its originating program's year. The plan must be active and the originating year open. A
+project does not cross a plan boundary: its whole life must sit inside the strategic plan's horizon,
+so a project that would outlive the plan must end at the boundary, and work that continues after it
+starts as a new project under the successor (§6.6).
 
 On the project page:
 
@@ -370,6 +389,11 @@ existing maintenance and subscriptions:
 The first in-app fiscal year is the year **after** the strategic plan's start year (FY2027 when the
 plan starts at FY2026). The prior year is closed manually in the spreadsheets; pre-app data enters as
 **opening figures**, never as reconstructed records.
+
+Opening balances belong to the **first** strategic plan only. A successor plan does not offer the
+import or the sign-off: it has no pre-app period of its own, and nothing carries across the plan
+boundary (§6.6). The first plan's signed-off figures stay readable from that plan's archived page:
+its **Opening balances** link opens the read-only view of the signed-off figures.
 
 | Opening figure | Where you enter it |
 | --- | --- |
@@ -654,6 +678,8 @@ records can still be corrected in place with a reason (§6.3).
 
 - The annual plan must be **active**.
 - The **next fiscal year's annual plan must exist** and must not be closed — carry-over lands there.
+  The one exception is the strategic plan's end year, which closes as a **final close**: it needs no
+  next-year plan and carries nothing (§6.5).
 - Agree the carry-over amounts and the approval reference with the portfolio owner.
 - Remember: only **remaining budget** and **unallocated program budget** can be carried. Open
   commitments are not carry-over; they stay commitments.
@@ -692,6 +718,10 @@ records can still be corrected in place with a reason (§6.3).
    annual plan through **Close receipt**. If a record of that year is corrected later, the receipt
    gains a **Corrections after close** notice below the frozen snapshot listing the corrected records
    with their links; the snapshot itself never changes (§6.3).
+
+In the strategic plan's end year the close page is in **final close** mode instead: it shows the
+final-close notice, no carry fields and no target programs, and closing records every available amount
+as not carried with a fixed reason (§6.5).
 
 ### 6.3 After the close
 
@@ -802,9 +832,87 @@ the program across fiscal years:
 - The current program links back to the prior year's program. Program carry-in can also come from an
   opening-balance receipt or a reasoned manual grant; both appear in the ledger with an origin.
 
+### 6.5 Final close
+
+The annual plan in the strategic plan's **end year** closes as a **final close** — the only close that
+needs no next-year annual plan. Every other year keeps the ordinary close and its next-year target
+(§6.1).
+
+- The close page shows **Final close** and the notice:
+
+  > This is the strategic plan's final fiscal year. Nothing is carried across the plan boundary:
+  > every available amount is recorded as not carried, with the reason below. Close the year, then
+  > archive the plan.
+
+- There are **no carry fields and no target programs**: there is no next year inside the plan, so no
+  amount is entered and no carry-over receipt is written.
+- The **Approval reference** and the typed confirmation phrase (`CLOSE FY<year>`) are still required,
+  and the button reads **Close FY<year> as the final close**.
+- On success, every available amount — program unallocated and allocation remaining, per component —
+  is recorded in the close snapshot as **not carried**, with the recorded reason *Final close:
+  FY<year> is the last year of the strategic plan. No carry-over crosses the plan boundary.*
+- The snapshot invariants still hold: `available = carried + not carried`, and `carried` equals the
+  carry-over entries written for that entity and component — zero.
+- The year is then closed and read-only like any closed year: corrections of existing records remain
+  available (§6.3), but there is no reopen and no second close.
+
+The final close does not archive the plan by itself — archive it next (§6.6), after the year is
+closed. To end a plan before its planned end year, shrink the horizon first (§6.6, step 1): that is
+what makes the new last year the final close.
+
+### 6.6 Ending a plan and starting the successor
+
+When the horizon ends — or the owner ends the plan early — the portfolio moves to a **successor plan**.
+Nothing crosses the boundary. Four steps:
+
+1. **Shrink the horizon if the plan ends early.** Edit the plan and set **End fiscal year** to the
+   last year that still contains every annual plan and every project's full-life years. A save that
+   would exclude an annual plan or a project is refused, and the message names the offending year or
+   project. A plan that runs to its planned end skips this step.
+2. **Final-close the last annual plan** (§6.5). It needs no next-year annual plan and carries nothing.
+3. **Archive the plan.** **Archive plan** becomes possible once every annual plan under it is closed,
+   and it is final: the plan becomes read-only. A draft plan may be archived directly, which is how a
+   mistaken plan is retired without activating it.
+4. **Create the successor.** With no plan active or draft, **Create the successor plan** appears on
+   **Plan → Strategic plan & SIs**. Its **Start fiscal year** defaults to the year after the most
+   recent archived plan and must be after every archived plan's end year, so horizons never overlap.
+   It starts as an empty draft — no initiatives, programs, projects, allocations or budget are
+   copied. Add the initiatives, activate the plan, then create its first annual plan from its start
+   year under **Plan → Annual plans**.
+
+Between steps 3 and 4 the archived plan stays visible read-only with a prompt to create the successor
+— the notice *This plan is archived and read-only. Create a successor plan to continue the
+portfolio.* — so the portfolio never falls back to an empty state.
+
+**What does not cross the boundary.**
+
+- **No budget or carry.** The final close carries zero and writes no carry-over entry, so the
+  successor has no carry-in from the archived plan and no cross-plan ledger exists.
+- **No copy-forward.** Initiatives, programs and projects are not cloned into the successor; there is
+  no "copy last plan" action.
+- **No project crosses.** A project's years must sit inside its plan (§3.4); work that continues after
+  the boundary starts as a new project under the successor, with its own full-life budget and
+  procurement record.
+- **No plan switcher and no combined report.** Every surface works with the current plan — the
+  non-archived plan when one exists, otherwise the most recent archived plan. Reports never combine
+  plans.
+- **No opening balances.** They belong to the first plan only (§3.6); the successor does not offer
+  the import or the sign-off, and the first plan's signed-off figures stay readable from its archived
+  page.
+- **No restore.** An archived plan cannot be made active or draft again, and a closed year cannot be
+  reopened; a wrong succession is corrected by starting another successor, never by undoing it.
+
+**Archived plans.** **Plan → Archived plans** lists every archived plan with its name, horizon,
+archived date and archived reason (the reason typed when the plan was archived, read from the audit
+trail). Each opens a read-only archived plan page: the plan's initiatives with their envelope figures,
+and its annual plans, with links into the existing read-only annual plan, program, project and
+allocation pages. There are no add, edit, archive or void controls anywhere on an archived plan; for
+the first plan, the page also links to its signed-off opening balances (§3.6).
+
 ## 7. Dashboard
 
-The **Dashboard** summarises portfolio health:
+The **Dashboard** summarises portfolio health for the **current plan** — the non-archived plan, or the
+most recent archived plan while a successor is being set up (§6.6):
 
 - **Stat cards** — **Capex envelope** and **Opex envelope** (with consumed and remaining per
   component), **Effective budget** (initial + posted revisions), **Carry-in received** (a separate
@@ -935,7 +1043,7 @@ detailed, exportable sources.
 
 **Year end**
 
-- [ ] Ensure the next year's annual plan exists and is not closed.
+- [ ] Ensure the next year's annual plan exists and is not closed — except in the strategic plan's end year, which closes as a final close with no next-year plan (§6.5).
 - [ ] Agree the carry-over amounts and the approval reference.
 - [ ] Close the fiscal year (typed phrase `CLOSE FY<year>`) and verify the carry-in on the next year's programs and allocations.
 - [ ] Reconcile the program threads' carry-in against the close snapshot.
@@ -945,12 +1053,20 @@ detailed, exportable sources.
 
 - [ ] Fix a wrong closed-year figure with **Correct record** (reason required). Check the record's **Corrected after close** badge, the **Corrections after close** notice on the close receipt and the marker on the affected reports; the close snapshot and the carry-over receipts must stay unchanged.
 
+**When the plan ends**
+
+- [ ] Decide whether it is the planned end or an early termination; for an early end, first shrink the plan's **End fiscal year** to the last year that still contains every annual plan and project's full-life years (a wider cut is refused and names the record, §6.6).
+- [ ] Final-close the annual plan in the plan's end year — no next-year plan, nothing carried (§6.5).
+- [ ] Archive the plan, then create the successor (its start year must be after the archived plan's end year), add its initiatives, activate it and create its first annual plan (§6.6).
+- [ ] Confirm the archived plan is listed under **Plan → Archived plans** with its archived date and reason, its read-only page and the first plan's signed-off opening balances read correctly, and every other surface shows the successor.
+
 ## 10. Reference
 
 ### 10.1 Field reference
 
 | Record | Fields |
 | --- | --- |
+| Strategic plan | name, start/end fiscal year, status (draft, active, archived) |
 | Strategic initiative | code, name, owner, objective, envelope, prior program budget consumed, notes |
 | Annual plan | fiscal year (one per year), notes, status |
 | Annual program | code, name, SI, continues program, capex/opex budget, capex/opex carry-in, notes |
@@ -960,14 +1076,17 @@ detailed, exportable sources.
 | Recurring ops item | name, category, owner, opex budget, opex carry-in, notes |
 | Commitment entry | component, amount, commitment date, reference, description |
 | Spend entry | component, amount, spent-on date, category, vendor, invoice/reference, description, settlement classification, settlement splits, post-close treatment |
-| Year close | approval reference, typed confirmation, carry amounts and target programs per program, carry amounts per project allocation |
+| Year close | approval reference, typed confirmation, carry amounts and target programs per program, carry amounts per project allocation; in the plan's end year, final-close mode (approval reference and typed confirmation only) |
 | Custom field | field name, type (text, number, date), required flag, description, example value, order, machine key; active or archived |
 
 ### 10.2 Status transitions
 
 ```
 Strategic plan:   draft ──activate──▶ active ──archive──▶ archived (read-only, final)
-Annual plan:      draft ──activate──▶ active ──close────▶ closed (corrections only, no reopen)
+                  draft ──archive──▶ archived (no annual plans to close)
+                  archived ──create──▶ successor draft (start year after the archived horizon)
+Annual plan:      draft ──activate──▶ active ──close────▶ closed (corrections only, no reopen;
+                                                           the plan's end year is a final close)
 Project:          active ──cancel───▶ cancelled (read-only)
 Commitment:       open ──settle──▶ partially settled ──settle──▶ settled   (or void)
 Spend:            recorded ──void──▶ voided (releases its settlements)
@@ -984,7 +1103,15 @@ Member account:   active ──deactivate──▶ deactivated ──activate─
 | `Your session ended. Sign in again to continue.` | The session expired, was revoked, or the account was deactivated. | Sign in again; if it repeats, ask an administrator to check the account. |
 | `Password must be at least 12 characters.` | Setup, member creation or password reset. | Use a password of at least 12 (and at most 200) characters. |
 | `Activate the strategic plan before creating annual plans.` / `... before creating projects.` | The strategic plan is not active. | Activate the plan in its page header. |
-| `A strategic plan already exists. This deployment supports one plan…` | One plan per deployment. | Edit the existing plan under Plan → Strategic plan & SIs; a second plan cannot be created in this release. |
+| `The strategic plan “<name>” is still <status>. Archive it before creating a successor plan.` | An active or draft plan exists, so no successor can be created yet. | Close its open annual plans (the plan's end year as a final close), then archive it and create the successor (§6.6). A mistaken draft plan can be archived directly. |
+| `The successor plan must start after FY<year>, the end of “<plan name>”.` | The new start year overlaps an archived plan's horizon. | Choose a start year after the archived plan's end year; the form defaults to the first free year (§6.6). |
+| `Every annual plan must be closed before the strategic plan is archived: FY<year> is still <status>.` | The plan still has an open annual plan. | Close that year (as a final close if it is the plan's end year) before archiving (§6.5–6.6). A draft plan with no annual plans can be archived directly. |
+| `Another strategic plan is active. Archive it before activating this one.` | Only one plan may be active at a time. | Archive the active plan first, then activate this one. |
+| `The new horizon excludes the FY<year> annual plan. An annual plan must stay inside the plan horizon.` | A horizon edit would leave an annual plan outside the plan. | Keep that year inside the horizon: a horizon can only shrink to the last year that has an annual plan or project (§6.6). |
+| `The new horizon excludes project <code> (FY<start>–FY<end>). A project's full-life years must stay inside the plan horizon.` | A horizon edit would cut a project's life. | Keep the project's years inside the horizon; work continuing after the boundary starts as a new project under the successor (§6.6). |
+| `This plan is archived and read-only. Create a successor plan to continue the portfolio.` | The current plan is archived and has no successor yet. | Create the successor from the same page; the archived plan is history until then (§6.6). |
+| `This strategic plan is archived and read-only.` | A write was attempted on an archived plan. | Archived plans accept no changes; read it under Plan → Archived plans (§6.6). |
+| `Opening balances are recorded once, for the first plan. A successor plan starts without them; the first plan's signed-off figures remain readable from its archived plan page.` | A successor plan is selected under Opening balances. | Nothing to load or sign off there; read the first plan's archived page (§3.6). |
 | `This fiscal year is closed and read-only.` / `That fiscal year is closed and read-only.` / `The originating fiscal year is closed and read-only.` | The annual plan behind the record (or the project's originating year) is closed, and this action is not allowed in a closed year. | Creates, voids and status changes need an open year. A closed year accepts reasoned corrections of existing records (§6.3) and settlement lifecycle writes. |
 | `Give a reason for a correction after close.` | A correction was submitted without a usable reason. | Enter the reason for the correction; it is stored on the audit entry and shown in the record's history. |
 | `This commitment has settlements. Void the settling spend entries first.` | A settled commitment cannot be voided. | Void the spend entries that settled it. |
@@ -1046,6 +1173,19 @@ and in the audit trail.
 No. Closing is irreversible and there is no version restore. Existing records can still be corrected
 with a reason (§6.3), and settlement lifecycle events continue.
 
+**How do I start a new strategic plan when this one ends?**
+Final-close the annual plan in the plan's end year (§6.5) — it needs no next-year plan and carries
+nothing — archive the plan, then create the successor under **Plan → Strategic plan & SIs**; its start
+year must be after the archived plan's end year. Add the initiatives, activate it and create its first
+annual plan (§6.6). To end a plan before its planned end year, first shrink its **End fiscal year**,
+which is refused if the new horizon would exclude an annual plan or a project.
+
+**Do opening balances or projects carry into the successor plan?**
+No. Nothing crosses the plan boundary: the final close carries zero, the successor starts empty, and
+opening balances are a first-plan load. A project must end inside its plan, so work that continues
+after the boundary starts as a new project under the successor (§6.6). The first plan's signed-off
+opening balances stay readable from its archived page (§3.6).
+
 **How do I fix a wrong figure in a closed year?**
 Open the record — the annual plan page, the project page, the allocation page or the recurring ops item
 page — and press **Correct record**. The edit form appears under a banner saying the year is closed;
@@ -1096,7 +1236,10 @@ version restore.
 
 ## 12. Known limitations
 
-- One strategic plan per deployment; one annual plan per fiscal year; plan horizon 1–10 years.
+- One strategic plan active or draft at a time, with a successor after it is archived; one annual plan
+  per fiscal year; plan horizon 1–10 years. Nothing carries across a plan boundary, a project cannot
+  outlive its plan, archived plans are read-only and are never restored, and opening balances belong to
+  the first plan only (§6.5–6.6).
 - No reopen, rollback, undo or version restore. A closed year accepts reasoned, audited corrections of
   existing plan records (annual programs, project year allocations, projects and their ijin prinsip and
   opening figures, recurring ops items and commitment entries), but no creates, voids, status changes or

@@ -64,6 +64,17 @@ export default defineConfig({
       dependencies: ['foundation'],
       use: { storageState: authFile },
     },
+    {
+      // The succession journey (#109): final close, archive, create the
+      // successor, activate it and operate its first annual plan, then reopen
+      // the archived plan read-only. It is declared last and depends on every
+      // earlier tier because it replaces the shared foundation plan — a suite
+      // that ran after it would have no active plan left to work on.
+      name: 'succession',
+      testMatch: /succession\.spec\.ts/,
+      dependencies: ['t2', 't3'],
+      use: { storageState: authFile },
+    },
   ],
   webServer: {
     command: process.env.CI ? 'pnpm start' : 'pnpm dev',
